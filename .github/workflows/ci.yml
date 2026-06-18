@@ -8,12 +8,14 @@ on:
 
 jobs:
   verify:
-    name: Verify FastAPI Template
+    name: Verify Project Stock
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -34,3 +36,8 @@ jobs:
 
       - name: Test
         run: uv run pytest
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
