@@ -1,0 +1,70 @@
+from collections.abc import Generator
+from datetime import datetime, timezone
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.db.base import Base
+from app.domains.raw_news.repository import RawNewsEventRepository
+from app.domains.raw_news.schema import RawNewsEventCreate
+
+
+engine = create_engine(
+    "sqlite://",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@pytest.fixture
+def db() -> Generator[Session, None, None]:
+    Base.metadata.create_all(bind=engine)
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+        Base.metadata.drop_all(bind=engine)
+
+
+def raw_news_payload(url: str = "https://example.com/news/1") -> RawNewsEventCreate:
+    return RawNewsEventCreate(
+        title="Apple supplier expands production",
+        url=url,
+        body="Full article text",
+        source="Example News",
+        published_at=datetime(2026, 6, 18, tzinfo=timezone.utc),
+        payload={"id": "external-1"},
+    )
+
+
+def test_create_raw_news_event_success(db: Session) -> None:
+    event = RawNewsEventRepository(db).create_or_skip(raw_news_payload())
+
+    assert event is not None
+    assert event.id == 1
+    assert event.title == "Apple supplier expands production"
+    assert event.url == "https://example.com/news/1"
+    assert event.source == "Example News"
+    assert event.payload == {"id": "external-1"}
+
+
+def test_create_or_skip_returns_none_for_duplicate_url(db: Session) -> None:
+    repo = RawNewsEventRepository(db)
+    first_event = repo.create_or_skip(raw_news_payload())
+
+    duplicate_event = repo.create_or_skip(raw_news_payload())
+
+    assert first_event is not None
+    assert duplicate_event is None
+    assert repo.get_by_url("https://example.com/news/1") is not None
+
+
+def test_collected_at_is_set_automatically(db: Session) -> None:
+    event = RawNewsEventRepository(db).create_or_skip(raw_news_payload())
+
+    assert event is not None
+    assert event.collected_at is not None
