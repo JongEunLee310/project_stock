@@ -3,5 +3,41 @@
   "review": {
     "mode": "local",
     "defaultOutput": "tmp/claude-pr-review.md"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/protected-files-check.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-implementation-check.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-pr-check.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/docs-consistency-check.sh"
+          }
+        ]
+      }
+    ]
   }
 }
