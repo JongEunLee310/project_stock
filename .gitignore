@@ -3,3 +3,17 @@ __pycache__/
 *.pyc
 .mypy_cache/
 .pytest_cache/
+
+# Coverage reports
+*coverage*
+
+# sonar properties
+*sonar-project.properties*
+!sonar-project.properties
+
+# env
+.env*
+!.env.example
+
+# local-only review and scratch files
+tmp/

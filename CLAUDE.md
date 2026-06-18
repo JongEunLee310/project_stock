@@ -14,6 +14,10 @@ Claude Code is the orchestrator and reviewer for this template.
 
 Claude Code must not act as the primary implementer by default. Implementation should be handed to Codex unless the human explicitly asks Claude Code to implement.
 
+## Branch Rule
+
+Before handing off any task, verify that Codex will work on a feature branch created from the latest `main`. If the current branch is behind `main`, instruct Codex to pull and rebase before starting implementation.
+
 ## Required Context
 
 Before planning or reviewing, read the relevant files:

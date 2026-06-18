@@ -6,6 +6,7 @@ from alembic import context
 
 from app.core.config import settings
 from app.db.base import Base
+import app.domains.assets.model  # noqa: F401 — registers Asset model for autogenerate
 import app.domains.users.model  # noqa: F401 — registers User model for autogenerate
 
 config = context.config

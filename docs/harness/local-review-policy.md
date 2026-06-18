@@ -26,6 +26,15 @@ The default temporary review record is:
 
 The default durable record location is the PR conversation. Reusable findings should be promoted into docs, ADRs, failure records, or the knowledge base.
 
+## Follow-up After Review Feedback
+
+When Codex addresses review feedback on an existing PR:
+
+- **Do not create a new PR.** Push the fix commits directly to the existing branch.
+- Add a follow-up review comment to the **same PR** describing what changed and confirming the fix.
+- Use `gh pr comment <PR_NUMBER> --body-file tmp/claude-pr-review.md`.
+- Only open a new PR if the branch itself was deleted or the scope changed significantly enough to warrant a new issue.
+
 ## Approval
 
 Claude Code must not approve PRs automatically. Human reviewers own final approval.
