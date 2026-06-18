@@ -4,6 +4,7 @@ These instructions apply to all AI coding agents working in this repository.
 
 ## Working Rules
 
+- Before starting any task, pull the latest `main` and create a dedicated feature branch (`feat/<topic>`). Never work directly on `main`.
 - Read the relevant documentation before starting work.
 - Stay within the issue scope and the explicit handoff scope.
 - Distinguish facts, assumptions, and open questions.
