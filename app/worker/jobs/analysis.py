@@ -8,9 +8,10 @@ logger = logging.getLogger(__name__)
 
 def analyze_watchlist_job(watchlist_id: int) -> None:
     db = SessionLocal()
+    job_run_service = JobRunService(db)
     job_run_id: int | None = None
     try:
-        job_run = JobRunService(db).start(
+        job_run = job_run_service.start(
             "watchlist_analysis", {"watchlist_id": watchlist_id}
         )
         job_run_id = job_run.id
@@ -18,10 +19,10 @@ def analyze_watchlist_job(watchlist_id: int) -> None:
             "analyze_watchlist_job called: watchlist_id=%s (not implemented)",
             watchlist_id,
         )
-        JobRunService(db).succeed(job_run.id)
+        job_run_service.succeed(job_run.id)
     except Exception as exc:
         if job_run_id is not None:
-            JobRunService(db).fail(job_run_id, str(exc))
+            job_run_service.fail(job_run_id, str(exc))
         raise
     finally:
         db.close()

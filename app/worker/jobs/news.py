@@ -6,15 +6,16 @@ from app.domains.raw_news.service import RawNewsService
 
 def collect_news_job(symbols: list[str]) -> None:
     db = SessionLocal()
+    job_run_service = JobRunService(db)
     job_run_id: int | None = None
     try:
-        job_run = JobRunService(db).start("news_collection", {"symbols": symbols})
+        job_run = job_run_service.start("news_collection", {"symbols": symbols})
         job_run_id = job_run.id
         RawNewsService(db).collect_and_save(MockNewsAdapter(), symbols)
-        JobRunService(db).succeed(job_run.id)
+        job_run_service.succeed(job_run.id)
     except Exception as exc:
         if job_run_id is not None:
-            JobRunService(db).fail(job_run_id, str(exc))
+            job_run_service.fail(job_run_id, str(exc))
         raise
     finally:
         db.close()
