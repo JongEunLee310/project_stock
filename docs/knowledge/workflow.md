@@ -8,6 +8,10 @@ Create an issue with purpose, background, requirements, out-of-scope items, veri
 
 Claude Code reads the issue and relevant docs, then creates a plan.
 
+## 2a. Design Record
+
+Claude Code writes a skeleton-level design document in `docs/designs/` for any issue that involves new tables, new domains, or architectural decisions. See `docs/harness/design-record-policy.md`.
+
 ## 3. Codex Handoff
 
 Claude Code creates a Codex handoff task using `.codex/task-template.md`.

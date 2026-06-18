@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .mypy_cache/
 .pytest_cache/
+coverage.xml
+.coverage
+htmlcov/
