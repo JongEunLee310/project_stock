@@ -1,0 +1,7 @@
+{
+  "template": "ai-assisted-project-template",
+  "review": {
+    "mode": "local",
+    "defaultOutput": "tmp/claude-pr-review.md"
+  }
+}

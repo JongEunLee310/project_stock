@@ -1,0 +1,10 @@
+# Customize owners for each project.
+* @REPLACE_WITH_OWNER
+
+docs/harness/ @REPLACE_WITH_OWNER
+docs/decisions/ @REPLACE_WITH_OWNER
+docs/failures/ @REPLACE_WITH_OWNER
+.github/workflows/ @REPLACE_WITH_OWNER
+AGENTS.md @REPLACE_WITH_OWNER
+CLAUDE.md @REPLACE_WITH_OWNER
+.codex/instructions.md @REPLACE_WITH_OWNER
