@@ -20,11 +20,11 @@ Claude Code should review:
 
 ## Review Records
 
-The default temporary review record is:
+Review files are stored permanently at:
 
-`tmp/claude-pr-review.md`
+`docs/reviews/pr-{number}.md`
 
-The default durable record location is the PR conversation. Reusable findings should be promoted into docs, ADRs, failure records, or the knowledge base.
+Create the file before posting the comment. Reusable findings should also be promoted into ADRs, failure records, or the knowledge base.
 
 ## Follow-up After Review Feedback
 
@@ -32,7 +32,7 @@ When Codex addresses review feedback on an existing PR:
 
 - **Do not create a new PR.** Push the fix commits directly to the existing branch.
 - Add a follow-up review comment to the **same PR** describing what changed and confirming the fix.
-- Use `gh pr comment <PR_NUMBER> --body-file tmp/claude-pr-review.md`.
+- Use `gh pr comment <PR_NUMBER> --body-file docs/reviews/pr-<PR_NUMBER>.md`.
 - Only open a new PR if the branch itself was deleted or the scope changed significantly enough to warrant a new issue.
 
 ## Approval
