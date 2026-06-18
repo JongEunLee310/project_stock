@@ -115,6 +115,19 @@ def test_update_thesis_success(client: TestClient) -> None:
     assert data["invalidation_conditions"] == "Breaks below cash-flow target"
 
 
+def test_update_thesis_rejects_null_summary(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+    thesis = create_thesis(client, asset["id"])
+
+    response = client.put(
+        f"/api/v1/theses/{thesis['id']}",
+        json={"summary": None},
+    )
+
+    assert response.status_code == 422
+
+
 def test_get_latest_thesis_returns_latest_active_for_user(client: TestClient) -> None:
     set_current_user(1)
     asset = create_asset(client)

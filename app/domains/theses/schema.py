@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class ThesisCreate(BaseModel):
@@ -14,6 +14,13 @@ class ThesisUpdate(BaseModel):
     summary: str | None = None
     risk_factors: str | None = None
     invalidation_conditions: str | None = None
+
+    @field_validator("summary")
+    @classmethod
+    def summary_must_not_be_null(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("summary는 null일 수 없습니다.")
+        return value
 
 
 class ThesisResponse(BaseModel):
