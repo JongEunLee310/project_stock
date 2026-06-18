@@ -1,18 +1,32 @@
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domains.jobs.model import JobRun
+from app.domains.jobs.schema import JobRunCreate
 
 
 class JobRunRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def create(self, job_type: str, metadata: dict[str, Any] | None) -> JobRun:
-        job_run = JobRun(job_type=job_type, status="pending", metadata_=metadata)
+    def create(
+        self,
+        data: JobRunCreate,
+        status: str = "pending",
+        started_at: datetime | None = None,
+        finished_at: datetime | None = None,
+        error_message: str | None = None,
+    ) -> JobRun:
+        job_run = JobRun(
+            job_type=data.job_type,
+            status=status,
+            started_at=started_at,
+            finished_at=finished_at,
+            error_message=error_message,
+            metadata_=data.metadata,
+        )
         self.db.add(job_run)
         self.db.commit()
         self.db.refresh(job_run)

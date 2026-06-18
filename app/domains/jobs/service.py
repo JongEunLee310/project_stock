@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.domains.jobs.model import JobRun
 from app.domains.jobs.repository import JobRunRepository
+from app.domains.jobs.schema import JobRunCreate
 
 
 class JobRunService:
@@ -12,10 +13,9 @@ class JobRunService:
         self.repo = JobRunRepository(db)
 
     def start(self, job_type: str, metadata: dict[str, Any] | None = None) -> JobRun:
-        job_run = self.repo.create(job_type=job_type, metadata=metadata)
-        return self.repo.update_status(
-            job_run.id,
-            "running",
+        return self.repo.create(
+            JobRunCreate(job_type=job_type, metadata=metadata),
+            status="running",
             started_at=datetime.now(timezone.utc),
         )
 
