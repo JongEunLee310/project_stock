@@ -20,7 +20,6 @@ class AssetService:
                 market=data.market,
             )
         except IntegrityError as exc:
-            self.repo.db.rollback()
             raise AppException(status_code=400, detail="이미 등록된 종목입니다.") from exc
         return AssetResponse.model_validate(asset)
 

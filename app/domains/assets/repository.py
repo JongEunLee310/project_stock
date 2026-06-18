@@ -1,4 +1,5 @@
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domains.assets.model import Asset
@@ -24,6 +25,10 @@ class AssetRepository:
     def create(self, symbol: str, name: str, market: str) -> Asset:
         asset = Asset(symbol=symbol, name=name, market=market)
         self.db.add(asset)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            raise
         self.db.refresh(asset)
         return asset

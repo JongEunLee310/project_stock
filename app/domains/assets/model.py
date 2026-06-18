@@ -14,4 +14,8 @@ class Asset(Base, TimestampMixin):
     symbol: Mapped[str] = mapped_column(String(20))
     name: Mapped[str] = mapped_column(String(255))
     market: Mapped[str] = mapped_column(String(20))
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="true",
+    )
