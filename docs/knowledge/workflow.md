@@ -24,13 +24,13 @@ Create a PR using `.github/pull_request_template.md`.
 
 GitHub Actions runs project-specific verification. CI failures are feedback for Codex.
 
-## 7. Claude Local Review
+## 7. Review Record
+
+Record local review in `docs/reviews/pr-{number}.md` and post to the PR conversation using `gh pr comment <PR_NUMBER> --body-file docs/reviews/pr-<PR_NUMBER>.md`.
+
+## 8. Claude Local Review
 
 Claude Code reviews the PR locally after PR creation.
-
-## 8. Review Record
-
-Record local review in `tmp/claude-pr-review.md` and publish to the PR conversation when useful.
 
 ## 9. Document Promotion
 

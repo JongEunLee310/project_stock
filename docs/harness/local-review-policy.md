@@ -26,6 +26,66 @@ Review files are stored permanently at:
 
 Create the file before posting the comment. Reusable findings should also be promoted into ADRs, failure records, or the knowledge base.
 
+## Review Format
+
+모든 리뷰 파일과 PR 코멘트는 아래 섹션 순서와 헤더를 따른다.
+
+```markdown
+## Review Summary
+
+PR #{number} — {이슈 목록} 구현
+
+{전체 판정 1~2문장. 충족 여부, 패턴 일관성, 주요 발견 건수 요약.}
+
+---
+
+## Blocking Issues
+
+없음. (또는 블로킹 이슈 상세)
+
+---
+
+## Suggestions
+
+### 1. {제목} ({Minor/Major})
+
+**위치:** {파일:라인}
+
+{설명}
+
+**권장 수정 방향:** {수정 방향}
+
+---
+
+## Questions
+
+없음. (또는 질문 상세)
+
+---
+
+## CI Result
+
+CI 대기 중 / 통과 / 실패. 로컬 검증 결과:
+
+- `uv run ruff check .` — {결과}
+- `uv run mypy .` — {결과}
+- `uv run pytest {파일} -v` — {결과}
+
+---
+
+## Documentation Impact
+
+{영향 없음 또는 상세}
+
+ADR 불필요/필요. Failure Record 불필요/필요.
+
+---
+
+## Final Recommendation
+
+**{판정}** — {근거 1문장}
+```
+
 ## Follow-up After Review Feedback
 
 When Codex addresses review feedback on an existing PR:
