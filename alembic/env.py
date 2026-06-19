@@ -7,6 +7,7 @@ from alembic import context
 from app.core.config import settings
 from app.db.base import Base
 import app.domains.assets.model  # noqa: F401 — registers Asset model for autogenerate
+import app.domains.decision_checklist.model  # noqa: F401 — registers checklist model
 import app.domains.jobs.model  # noqa: F401 — registers JobRun model for autogenerate
 import app.domains.news.model  # noqa: F401 — registers NewsItem model for autogenerate
 import app.domains.portfolios.model  # noqa: F401 — registers Portfolio models for autogenerate

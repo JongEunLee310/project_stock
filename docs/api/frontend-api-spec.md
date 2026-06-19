@@ -74,6 +74,7 @@
 | 종목 기본 정보 카드 | `GET` | `/api/v1/assets/{asset_id}/detail` | Not required |
 | 최신 투자 가설 | `GET` | `/api/v1/theses/latest?asset_id={asset_id}` | Required |
 | 리서치 요약 | `GET` | `/api/v1/assets/{asset_id}/research-summary` | Required |
+| 매수 전 점검 | `GET/PUT` | `/api/v1/assets/{asset_id}/buy-checklist` | Required |
 | 리서치 리포트 목록 | `GET` | `/api/v1/reports?asset_id={asset_id}&page=1&size=20` | Required |
 | 시그널 목록 | `GET` | `/api/v1/signals?asset_id={asset_id}&include_expired=false&page=1&size=20` | Required |
 
@@ -241,6 +242,32 @@
 ```
 
 - Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
+
+#### `GET /api/v1/assets/{asset_id}/buy-checklist`
+
+- Auth: Required
+- Request: path `asset_id`
+- Success `200`:
+
+```json
+{ "data": { "asset_id": 1, "items": [{ "key": "valuation", "label": "밸류에이션 확인", "status": "pending", "detail": "현재 가격과 최근 실적 기준 밸류에이션을 확인하세요." }], "memo": null, "checked_item_keys": [], "is_complete": false, "decided_at": null }, "message": null, "error": null, "meta": null }
+```
+
+- Completion rule: `is_complete` is true when `memo` has non-whitespace text and all four required keys are checked.
+- `decided_at`: `null` while incomplete; set when the checklist first becomes complete and preserved while it remains complete.
+- Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
+
+#### `PUT /api/v1/assets/{asset_id}/buy-checklist`
+
+- Auth: Required
+- Request:
+
+```json
+{ "memo": "All checks reviewed.", "checked_item_keys": ["valuation", "news_overheated", "portfolio_concentration", "earnings_disclosure"] }
+```
+
+- Success `200`: same `BuyChecklistResponse` envelope as checklist get.
+- Representative error `422 VALIDATION_ERROR`: see Auth section.
 
 ### Watchlists
 
