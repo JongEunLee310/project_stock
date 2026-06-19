@@ -12,11 +12,13 @@ class AppException(Exception):
         status_code: int,
         detail: str,
         error_code: ErrorCode,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
         self.error_code = error_code
+        self.headers = headers
 
 
 async def app_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -28,6 +30,7 @@ async def app_exception_handler(request: Request, exc: Exception) -> JSONRespons
             code=exc.error_code,
             message=exc.detail,
         ).model_dump(),
+        headers=exc.headers,
     )
 
 

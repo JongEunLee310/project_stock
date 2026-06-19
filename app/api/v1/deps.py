@@ -13,6 +13,7 @@ from app.db.session import get_db
 from app.domains.users.model import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+AUTHENTICATE_HEADERS = {"WWW-Authenticate": "Bearer"}
 
 
 def get_current_user(
@@ -24,6 +25,7 @@ def get_current_user(
             status_code=401,
             detail="유효하지 않은 토큰입니다.",
             error_code=ErrorCode.AUTH_INVALID_TOKEN,
+            headers=AUTHENTICATE_HEADERS,
         )
     try:
         payload: dict[str, Any] = jwt.decode(
@@ -35,6 +37,7 @@ def get_current_user(
                 status_code=401,
                 detail="유효하지 않은 토큰입니다.",
                 error_code=ErrorCode.AUTH_INVALID_TOKEN,
+                headers=AUTHENTICATE_HEADERS,
             )
         user_id = int(sub)
     except (JWTError, ValueError):
@@ -42,6 +45,7 @@ def get_current_user(
             status_code=401,
             detail="유효하지 않은 토큰입니다.",
             error_code=ErrorCode.AUTH_INVALID_TOKEN,
+            headers=AUTHENTICATE_HEADERS,
         )
 
     user = db.scalars(select(User).where(User.id == user_id)).first()
@@ -50,5 +54,6 @@ def get_current_user(
             status_code=401,
             detail="사용자를 찾을 수 없습니다.",
             error_code=ErrorCode.AUTH_USER_NOT_FOUND,
+            headers=AUTHENTICATE_HEADERS,
         )
     return user

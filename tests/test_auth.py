@@ -131,6 +131,7 @@ def test_get_me_requires_authorization_header(client: TestClient) -> None:
         "code": "AUTH_INVALID_TOKEN",
         "message": "유효하지 않은 토큰입니다.",
     }
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 def test_get_me_rejects_tampered_token(client: TestClient) -> None:
@@ -147,3 +148,4 @@ def test_get_me_rejects_tampered_token(client: TestClient) -> None:
         "code": "AUTH_INVALID_TOKEN",
         "message": "유효하지 않은 토큰입니다.",
     }
+    assert response.headers["www-authenticate"] == "Bearer"
