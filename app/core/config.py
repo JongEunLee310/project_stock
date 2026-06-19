@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +13,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     OPENAI_API_KEY: str | None = None
     LLM_TIMEOUT_SECONDS: int = 30
+    MARKET_PROVIDER: Literal["mock", "real"] = "mock"
+    NEWS_PROVIDER: Literal["mock", "real"] = "mock"
+    DISCLOSURE_PROVIDER: Literal["mock", "real"] = "mock"
+    PORTFOLIO_PROVIDER: Literal["mock", "real"] = "mock"
 
 
 settings = Settings()

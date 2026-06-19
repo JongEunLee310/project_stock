@@ -70,7 +70,12 @@ def test_collect_news_job_records_failure(
     def raise_error(self: object, symbols: list[str]) -> list[Any]:
         raise RuntimeError("adapter timeout")
 
-    monkeypatch.setattr("app.worker.jobs.news.MockNewsAdapter.fetch", raise_error)
+    failing_adapter = type(
+        "FailingNewsAdapter",
+        (),
+        {"fetch": raise_error},
+    )()
+    monkeypatch.setattr(news, "get_news_adapter", lambda: failing_adapter)
 
     with pytest.raises(RuntimeError, match="adapter timeout"):
         collect_news_job(["AAPL"])

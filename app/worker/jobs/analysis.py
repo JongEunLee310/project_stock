@@ -1,7 +1,7 @@
 import logging
 
+from app.adapters.factory import get_news_adapter
 from app.adapters.llm.mock import MockLLMClient
-from app.adapters.news.mock import MockNewsAdapter
 from app.db.session import SessionLocal
 from app.domains.analysis.service import WatchlistAnalysisService
 from app.domains.jobs.model import JobRun
@@ -37,7 +37,7 @@ def analyze_watchlist_job(watchlist_id: int) -> None:
                     },
                 }
             ),
-            MockNewsAdapter(),
+            get_news_adapter(),
         ).run(watchlist_id)
         if result.failures:
             _record_partial_failures(job_run, result.failures)
