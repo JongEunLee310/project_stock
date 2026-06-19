@@ -53,6 +53,7 @@
 | 포트폴리오 목록 | `GET` | `/api/v1/portfolios?page=1&size=20` | Required | 요약 조회 전 선택 목록. |
 | 포트폴리오 요약 | `GET` | `/api/v1/portfolios/{portfolio_id}/summary` | Required | 집중도/비중 표시. |
 | 관심종목 목록 | `GET` | `/api/v1/watchlists?page=1&size=20` | Required | 사용자 관심종목 그룹 목록. |
+| 관심종목 항목 | `GET` | `/api/v1/watchlists/{watchlist_id}/items?page=1&size=20&sort=priority` | Required | 항목별 사유/태그/메모 표시. |
 | 알림 목록 | `GET` | `/api/v1/alerts?status=UNREAD&page=1&size=20` | Required | unread 카드/배지 표시. |
 
 ### 관심종목
@@ -61,6 +62,7 @@
 | --- | --- | --- | --- |
 | 목록 조회 | `GET` | `/api/v1/watchlists?page=1&size=20` | Required |
 | 관심목록 생성 | `POST` | `/api/v1/watchlists` | Required |
+| 관심종목 항목 조회 | `GET` | `/api/v1/watchlists/{watchlist_id}/items?page=1&size=20&sort=priority` | Required |
 | 관심종목 추가 | `POST` | `/api/v1/watchlists/{watchlist_id}/items` | Required |
 | 관심종목 제거 | `DELETE` | `/api/v1/watchlists/{watchlist_id}/items/{item_id}` | Required |
 
@@ -250,19 +252,35 @@
 - Request:
 
 ```json
-{ "asset_id": 1, "priority": 10 }
+{ "asset_id": 1, "priority": 10, "reason": "Core AI exposure", "tags": ["ai", "large-cap"], "memo": "Watch earnings." }
 ```
 
 - Success `201`:
 
 ```json
-{ "data": { "id": 1, "watchlist_id": 1, "asset_id": 1, "priority": 10, "created_at": "2026-06-19T00:00:00" }, "message": null, "error": null, "meta": null }
+{ "data": { "id": 1, "watchlist_id": 1, "asset_id": 1, "priority": 10, "reason": "Core AI exposure", "tags": ["ai", "large-cap"], "memo": "Watch earnings.", "created_at": "2026-06-19T00:00:00" }, "message": null, "error": null, "meta": null }
 ```
 
 - Representative error `400 WATCHLIST_ITEM_DUPLICATE`:
 
 ```json
 { "data": null, "message": "이미 관심 목록에 추가된 종목입니다.", "error": { "code": "WATCHLIST_ITEM_DUPLICATE" }, "meta": null }
+```
+
+#### `GET /api/v1/watchlists/{watchlist_id}/items`
+
+- Auth: Required
+- Query: `page: int = 1`, `size: int = 20`, `sort: priority | -priority | created_at | -created_at = priority`
+- Success `200`:
+
+```json
+{ "data": [{ "id": 1, "watchlist_id": 1, "asset_id": 1, "priority": 10, "reason": "Core AI exposure", "tags": ["ai", "large-cap"], "memo": "Watch earnings.", "created_at": "2026-06-19T00:00:00" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
+```
+
+- Representative error `403 WATCHLIST_FORBIDDEN`:
+
+```json
+{ "data": null, "message": "관심 목록 접근 권한이 없습니다.", "error": { "code": "WATCHLIST_FORBIDDEN" }, "meta": null }
 ```
 
 #### `DELETE /api/v1/watchlists/{watchlist_id}/items/{item_id}`
