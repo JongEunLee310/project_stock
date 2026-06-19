@@ -18,6 +18,14 @@ class NewsItemRepository:
         self.db.refresh(item)
         return item
 
+    def get_by_url(self, url: str) -> NewsItem | None:
+        stmt = select(NewsItem).where(NewsItem.url == url)
+        return self.db.scalars(stmt).first()
+
+    def exists_by_url(self, url: str) -> bool:
+        stmt = select(NewsItem.id).where(NewsItem.url == url).limit(1)
+        return self.db.scalar(stmt) is not None
+
     def update_summary(
         self, news_item_id: int, data: NewsSummaryResult
     ) -> NewsItem:
