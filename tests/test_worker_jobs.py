@@ -9,8 +9,10 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.domains.jobs.model import JobRun
+from app.domains.raw_news.model import RawNewsEvent
 from app.main import app
 from app.worker.jobs import news
+from app.worker.jobs.analysis import analyze_watchlist_job
 from app.worker.jobs.news import collect_news_job
 
 engine = create_engine(
@@ -45,6 +47,19 @@ def test_collect_news_job_records_success(db: Session) -> None:
     assert job_run.status == "success"
     assert job_run.finished_at is not None
     assert job_run.metadata_ == {"symbols": ["AAPL"]}
+
+    raw_news_events = db.scalars(
+        select(RawNewsEvent).order_by(RawNewsEvent.url)
+    ).all()
+    assert len(raw_news_events) == 2
+    assert [event.title for event in raw_news_events] == [
+        "AAPL mock news 1",
+        "AAPL mock news 2",
+    ]
+    assert [event.payload for event in raw_news_events] == [
+        {"symbol": "AAPL", "index": 1},
+        {"symbol": "AAPL", "index": 2},
+    ]
 
 
 def test_collect_news_job_records_failure(
@@ -90,3 +105,44 @@ def test_enqueue_news_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.status_code == 200
     data = cast(dict[str, str], response.json())
     assert data == {"job_id": "rq-job-1", "status": "queued"}
+
+
+def test_enqueue_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeJob:
+        id = "rq-job-2"
+
+    class FakeQueue:
+        def __init__(self, name: str, connection: object) -> None:
+            self.name = name
+            self.connection = connection
+
+        def enqueue(self, func: object, watchlist_id: int) -> FakeJob:
+            captured["queue_name"] = self.name
+            captured["connection"] = self.connection
+            captured["func"] = func
+            captured["watchlist_id"] = watchlist_id
+            return FakeJob()
+
+    redis_connection = object()
+    monkeypatch.setattr("app.api.v1.endpoints.worker.Queue", FakeQueue)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.worker.get_redis_connection",
+        lambda: redis_connection,
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/worker/jobs/analysis", json={"watchlist_id": 7}
+        )
+
+    assert response.status_code == 200
+    data = cast(dict[str, str], response.json())
+    assert data == {"job_id": "rq-job-2", "status": "queued"}
+    assert captured == {
+        "queue_name": "default",
+        "connection": redis_connection,
+        "func": analyze_watchlist_job,
+        "watchlist_id": 7,
+    }
