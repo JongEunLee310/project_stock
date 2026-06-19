@@ -1,31 +1,18 @@
 import json
-from collections.abc import Generator
 from typing import Any
 
 import pytest
 from pydantic import BaseModel
 from pydantic import ValidationError
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import Session
 
 from app.adapters.llm.base import LLMMessage
 from app.adapters.llm.mock import MockLLMClient
 from app.adapters.llm.prompts.news_summary import build_news_summary_messages
-from app.db.base import Base
 from app.domains.assets.model import Asset
 from app.domains.news.model import NewsItem
 from app.domains.news.service import NewsAnalysisService
 from app.domains.raw_news.model import RawNewsEvent
-
-
-engine = create_engine(
-    "sqlite://",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 
 class RecordingLLMClient(MockLLMClient):
     def __init__(self) -> None:
@@ -50,17 +37,6 @@ class RecordingLLMClient(MockLLMClient):
     ) -> dict[str, Any]:
         self.messages = messages
         return super().complete_json(messages, schema, timeout)
-
-
-@pytest.fixture
-def db() -> Generator[Session, None, None]:
-    Base.metadata.create_all(bind=engine)
-    session = TestingSessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-        Base.metadata.drop_all(bind=engine)
 
 
 def create_asset(db: Session) -> Asset:

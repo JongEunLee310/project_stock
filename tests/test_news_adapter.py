@@ -1,36 +1,14 @@
-from collections.abc import Generator
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import Session
 
 from app.adapters.news.mock import MockNewsAdapter
 from app.adapters.news.rss import RSSNewsAdapter
-from app.db.base import Base
 from app.domains.raw_news.repository import RawNewsEventRepository
 from app.domains.raw_news.service import RawNewsService
-
-engine = create_engine(
-    "sqlite://",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-@pytest.fixture
-def db() -> Generator[Session, None, None]:
-    Base.metadata.create_all(bind=engine)
-    session = TestingSessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-        Base.metadata.drop_all(bind=engine)
 
 
 def test_mock_news_adapter_returns_two_items_per_symbol() -> None:
