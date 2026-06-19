@@ -9,6 +9,7 @@ from app.db.base import Base
 import app.domains.assets.model  # noqa: F401 — registers Asset model for autogenerate
 import app.domains.jobs.model  # noqa: F401 — registers JobRun model for autogenerate
 import app.domains.news.model  # noqa: F401 — registers NewsItem model for autogenerate
+import app.domains.portfolios.model  # noqa: F401 — registers Portfolio models for autogenerate
 import app.domains.raw_news.model  # noqa: F401 — registers RawNewsEvent model for autogenerate
 import app.domains.theses.model  # noqa: F401 — registers InvestmentThesis model for autogenerate
 import app.domains.users.model  # noqa: F401 — registers User model for autogenerate
