@@ -2,7 +2,7 @@ from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import api_data, api_meta, set_current_user
+from tests.conftest import api_data, api_error, api_meta, set_current_user
 
 
 def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
@@ -66,7 +66,13 @@ def test_add_watchlist_item_success(client: TestClient) -> None:
 
     response = client.post(
         f"/api/v1/watchlists/{watchlist['id']}/items",
-        json={"asset_id": asset["id"], "priority": 10},
+        json={
+            "asset_id": asset["id"],
+            "priority": 10,
+            "reason": "Core AI exposure",
+            "tags": ["ai", "large-cap"],
+            "memo": "Watch earnings.",
+        },
     )
 
     assert response.status_code == 201
@@ -74,7 +80,87 @@ def test_add_watchlist_item_success(client: TestClient) -> None:
     assert data["watchlist_id"] == watchlist["id"]
     assert data["asset_id"] == asset["id"]
     assert data["priority"] == 10
+    assert data["reason"] == "Core AI exposure"
+    assert data["tags"] == ["ai", "large-cap"]
+    assert data["memo"] == "Watch earnings."
     assert "created_at" in data
+
+
+def test_list_watchlist_items_round_trips_fields_and_paginates(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+    first_asset = create_asset(client, "AAPL")
+    second_asset = create_asset(client, "MSFT")
+    client.post(
+        f"/api/v1/watchlists/{watchlist['id']}/items",
+        json={
+            "asset_id": first_asset["id"],
+            "priority": 20,
+            "reason": "Long-term compounder",
+            "tags": ["core"],
+            "memo": "Review after earnings.",
+        },
+    )
+    client.post(
+        f"/api/v1/watchlists/{watchlist['id']}/items",
+        json={"asset_id": second_asset["id"], "priority": 10},
+    )
+
+    response = client.get(
+        f"/api/v1/watchlists/{watchlist['id']}/items",
+        params={"page": 2, "size": 1, "sort": "priority"},
+    )
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 1
+    assert data[0]["asset_id"] == first_asset["id"]
+    assert data[0]["reason"] == "Long-term compounder"
+    assert data[0]["tags"] == ["core"]
+    assert data[0]["memo"] == "Review after earnings."
+    assert api_meta(response) == {"page": 2, "size": 1, "total": 2}
+
+
+def test_list_watchlist_items_supports_sort_values(client: TestClient) -> None:
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+    first_asset = create_asset(client, "AAPL")
+    second_asset = create_asset(client, "MSFT")
+    client.post(
+        f"/api/v1/watchlists/{watchlist['id']}/items",
+        json={"asset_id": first_asset["id"], "priority": 1},
+    )
+    client.post(
+        f"/api/v1/watchlists/{watchlist['id']}/items",
+        json={"asset_id": second_asset["id"], "priority": 5},
+    )
+
+    response = client.get(
+        f"/api/v1/watchlists/{watchlist['id']}/items",
+        params={"sort": "-priority"},
+    )
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert [item["asset_id"] for item in data] == [
+        second_asset["id"],
+        first_asset["id"],
+    ]
+
+
+def test_list_watchlist_items_rejects_invalid_sort(client: TestClient) -> None:
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+
+    response = client.get(
+        f"/api/v1/watchlists/{watchlist['id']}/items",
+        params={"sort": "asset_id"},
+    )
+
+    assert response.status_code == 422
+    assert api_error(response)["code"] == "VALIDATION_ERROR"
 
 
 def test_add_watchlist_item_rejects_duplicate_asset(client: TestClient) -> None:
@@ -94,6 +180,10 @@ def test_add_watchlist_item_rejects_duplicate_asset(client: TestClient) -> None:
     )
 
     assert response.status_code == 400
+    assert api_error(response) == {
+        "code": "WATCHLIST_ITEM_DUPLICATE",
+        "message": "이미 관심 목록에 추가된 종목입니다.",
+    }
 
 
 def test_remove_watchlist_item_success(client: TestClient) -> None:
@@ -127,3 +217,17 @@ def test_watchlist_ownership_blocks_other_users(client: TestClient) -> None:
     )
 
     assert response.status_code == 403
+
+
+def test_list_watchlist_items_blocks_other_users(client: TestClient) -> None:
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+    set_current_user(2, "other@example.com")
+
+    response = client.get(f"/api/v1/watchlists/{watchlist['id']}/items")
+
+    assert response.status_code == 403
+    assert api_error(response) == {
+        "code": "WATCHLIST_FORBIDDEN",
+        "message": "관심 목록 접근 권한이 없습니다.",
+    }

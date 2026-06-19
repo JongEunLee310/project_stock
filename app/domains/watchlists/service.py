@@ -13,6 +13,7 @@ from app.domains.watchlists.schema import (
     WatchlistCreate,
     WatchlistItemCreate,
     WatchlistItemResponse,
+    WatchlistItemSort,
     WatchlistResponse,
 )
 
@@ -68,6 +69,9 @@ class WatchlistService:
                 watchlist_id=watchlist.id,
                 asset_id=data.asset_id,
                 priority=data.priority,
+                reason=data.reason,
+                tags=data.tags,
+                memo=data.memo,
             )
         except IntegrityError as exc:
             raise AppException(
@@ -76,6 +80,29 @@ class WatchlistService:
                 error_code=ErrorCode.WATCHLIST_ITEM_DUPLICATE,
             ) from exc
         return WatchlistItemResponse.model_validate(item)
+
+    def list_items(
+        self,
+        watchlist_id: int,
+        user_id: int,
+        offset: int = 0,
+        limit: int | None = None,
+        sort: WatchlistItemSort = "priority",
+    ) -> list[WatchlistItemResponse]:
+        watchlist = self._get_owned_watchlist(watchlist_id, user_id)
+        return [
+            WatchlistItemResponse.model_validate(item)
+            for item in self.item_repo.list_by_watchlist(
+                watchlist.id,
+                offset=offset,
+                limit=limit,
+                sort=sort,
+            )
+        ]
+
+    def count_items(self, watchlist_id: int, user_id: int) -> int:
+        watchlist = self._get_owned_watchlist(watchlist_id, user_id)
+        return self.item_repo.count_by_watchlist(watchlist.id)
 
     def remove_item(self, watchlist_id: int, item_id: int, user_id: int) -> None:
         watchlist = self._get_owned_watchlist(watchlist_id, user_id)
