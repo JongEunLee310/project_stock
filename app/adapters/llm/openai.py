@@ -38,6 +38,7 @@ class OpenAIClient(LLMClient):
         schema: type[BaseModel],
         timeout: float | None = None,
     ) -> dict[str, Any]:
+        # Keep the schema instruction provider-owned by always prepending it.
         schema_message = LLMMessage(
             role="system",
             content=(

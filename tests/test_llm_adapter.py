@@ -40,6 +40,17 @@ def test_mock_llm_client_complete_json_returns_injected_response() -> None:
     assert result == {"summary": "mocked"}
 
 
+def test_mock_llm_client_complete_json_wraps_non_dict_response() -> None:
+    client = MockLLMClient({"ExampleResponse": "plain response"})
+
+    result = client.complete_json(
+        [LLMMessage(role="user", content="summarize")],
+        ExampleResponse,
+    )
+
+    assert result == {"response": "plain response"}
+
+
 def test_openai_client_complete_returns_response() -> None:
     openai_instance = Mock()
     openai_instance.chat.completions.create.return_value = _completion("hello")
@@ -113,3 +124,73 @@ def test_openai_client_complete_json_parses_json_response() -> None:
     assert call_kwargs["response_format"] == {"type": "json_object"}
     assert call_kwargs["timeout"] == 10
     assert "JSON Schema" in call_kwargs["messages"][0]["content"]
+
+
+def test_openai_client_complete_json_converts_timeout_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DummyTimeoutError(Exception):
+        pass
+
+    openai_instance = Mock()
+    openai_instance.chat.completions.create.side_effect = DummyTimeoutError("timeout")
+    monkeypatch.setattr("app.adapters.llm.openai.openai.APITimeoutError", DummyTimeoutError)
+
+    with patch("app.adapters.llm.openai.openai.OpenAI", return_value=openai_instance):
+        client = OpenAIClient(api_key="test-key")
+
+        with pytest.raises(LLMTimeoutError):
+            client.complete_json(
+                [LLMMessage(role="user", content="summarize")],
+                ExampleResponse,
+            )
+
+
+def test_openai_client_complete_json_converts_openai_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DummyOpenAIError(Exception):
+        pass
+
+    openai_instance = Mock()
+    openai_instance.chat.completions.create.side_effect = DummyOpenAIError("failed")
+    monkeypatch.setattr("app.adapters.llm.openai.openai.OpenAIError", DummyOpenAIError)
+
+    with patch("app.adapters.llm.openai.openai.OpenAI", return_value=openai_instance):
+        client = OpenAIClient(api_key="test-key")
+
+        with pytest.raises(LLMCallError):
+            client.complete_json(
+                [LLMMessage(role="user", content="summarize")],
+                ExampleResponse,
+            )
+
+
+def test_openai_client_complete_json_rejects_invalid_json() -> None:
+    openai_instance = Mock()
+    openai_instance.chat.completions.create.return_value = _completion("not json")
+
+    with patch("app.adapters.llm.openai.openai.OpenAI", return_value=openai_instance):
+        client = OpenAIClient(api_key="test-key")
+
+        with pytest.raises(LLMCallError, match="invalid JSON"):
+            client.complete_json(
+                [LLMMessage(role="user", content="summarize")],
+                ExampleResponse,
+            )
+
+
+def test_openai_client_complete_json_rejects_non_object_json() -> None:
+    openai_instance = Mock()
+    openai_instance.chat.completions.create.return_value = _completion(
+        '["not", "an", "object"]'
+    )
+
+    with patch("app.adapters.llm.openai.openai.OpenAI", return_value=openai_instance):
+        client = OpenAIClient(api_key="test-key")
+
+        with pytest.raises(LLMCallError, match="not an object"):
+            client.complete_json(
+                [LLMMessage(role="user", content="summarize")],
+                ExampleResponse,
+            )
