@@ -3,10 +3,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.api.v1.deps import get_current_user
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.assets.schema import AssetCreate, AssetDetailResponse, AssetResponse
 from app.domains.assets.service import AssetService
+from app.domains.research_summary.schema import ResearchSummaryResponse
+from app.domains.research_summary.service import ResearchSummaryService
+from app.domains.users.model import User
 
 router = APIRouter()
 
@@ -54,6 +58,20 @@ def get_asset_detail(
     db: Session = Depends(get_db),
 ) -> ApiResponse[AssetDetailResponse]:
     return success(AssetService(db).get_detail(asset_id))
+
+
+@router.get(
+    "/{asset_id}/research-summary",
+    response_model=ApiResponse[ResearchSummaryResponse],
+    summary="Get asset research summary",
+    description="Return a deterministic mock research summary for an asset.",
+)
+def get_asset_research_summary(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[ResearchSummaryResponse]:
+    return success(ResearchSummaryService(db).get_summary(asset_id))
 
 
 @router.get(
