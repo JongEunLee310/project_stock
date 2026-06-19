@@ -13,7 +13,13 @@ from app.domains.users.model import User
 router = APIRouter()
 
 
-@router.post("", response_model=ApiResponse[SignalResponse], status_code=201)
+@router.post(
+    "",
+    response_model=ApiResponse[SignalResponse],
+    status_code=201,
+    summary="Create signal",
+    description="Create an investment signal for an asset, optionally linked to a thesis or news item.",
+)
 def create_signal(
     data: SignalCreate,
     db: Session = Depends(get_db),
@@ -22,7 +28,12 @@ def create_signal(
     return success(SignalResponse.model_validate(SignalService(db).create_signal(data)))
 
 
-@router.get("", response_model=ApiResponse[list[SignalResponse]])
+@router.get(
+    "",
+    response_model=ApiResponse[list[SignalResponse]],
+    summary="List signals",
+    description="Return paginated signals for an asset, with optional expired-signal inclusion.",
+)
 def list_signals(
     asset_id: int,
     include_expired: bool = False,
@@ -45,7 +56,12 @@ def list_signals(
     return paginated(items, page=page, size=size, total=total)
 
 
-@router.get("/{signal_id}", response_model=ApiResponse[SignalResponse])
+@router.get(
+    "/{signal_id}",
+    response_model=ApiResponse[SignalResponse],
+    summary="Get signal",
+    description="Return a single signal by id.",
+)
 def get_signal(
     signal_id: int,
     db: Session = Depends(get_db),
