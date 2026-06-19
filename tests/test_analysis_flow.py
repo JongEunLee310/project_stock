@@ -286,12 +286,11 @@ def test_analyze_watchlist_job_records_partial_failures_in_metadata(
     failing_asset = create_asset(db, "TSLA")
     watchlist = create_watchlist(db, user.id, [good_asset, failing_asset])
 
-    def fetch(self: object, symbols: list[str]) -> list[NewsAdapterResult]:
-        if "TSLA" in symbols:
-            raise RuntimeError("TSLA feed failed")
-        return [news_result(symbols[0])]
-
-    monkeypatch.setattr("app.worker.jobs.analysis.MockNewsAdapter.fetch", fetch)
+    adapter = FailingNewsAdapter(
+        {"AAPL": [news_result("AAPL")]},
+        failing_symbol="TSLA",
+    )
+    monkeypatch.setattr(analysis, "get_news_adapter", lambda: adapter)
 
     analyze_watchlist_job(watchlist.id)
 
