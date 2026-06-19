@@ -12,7 +12,7 @@
 }
 ```
 
-목록 응답은 `meta`에 `{ "page": 1, "size": 20, "total": 1 }`을 포함한다. 실패 응답은 `data: null`, `meta: null`이며 `error.code`에는 `ErrorCode` 문자열이 들어간다. `/api/v1/health`는 모니터링 호환을 위해 envelope를 사용하지 않는다.
+목록 응답은 `meta`에 `{ "page": 1, "size": 20, "total": 1 }`을 포함한다. 실패 응답은 `data: null`, `meta: null`이며 `error.code`에는 `ErrorCode` 문자열이 들어간다. `/health`와 `/api/v1/health`는 모니터링 호환을 위해 envelope를 사용하지 않는다.
 
 ## Auth
 
@@ -626,6 +626,19 @@
 
 ### Health
 
+#### `GET /health`
+
+- Auth: Not required
+- Request: none
+- Success `200`:
+
+```json
+{ "status": "ok" }
+```
+
+- Notes: root health endpoint for infrastructure/monitoring compatibility. It intentionally mirrors `/api/v1/health` and does not use the common envelope.
+- Representative error: unhandled server errors use `500 INTERNAL_ERROR` envelope.
+
 #### `GET /api/v1/health`
 
 - Auth: Not required
@@ -636,6 +649,7 @@
 { "status": "ok" }
 ```
 
+- Notes: versioned health endpoint for API clients/Swagger discovery. It intentionally mirrors `/health` and does not use the common envelope.
 - Representative error: unhandled server errors use `500 INTERNAL_ERROR` envelope.
 
 ## Candidate APIs Not Implemented
@@ -684,4 +698,5 @@
 - [x] `GET /api/v1/job-runs`
 - [x] `POST /api/v1/worker/jobs/news`
 - [x] `POST /api/v1/worker/jobs/analysis`
+- [x] `GET /health`
 - [x] `GET /api/v1/health`
