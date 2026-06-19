@@ -23,3 +23,5 @@ class NewsItem(Base, TimestampMixin):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     sentiment: Mapped[str | None] = mapped_column(String(20), nullable=True)
     impact_level: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    positive_factors: Mapped[str | None] = mapped_column(Text, nullable=True)
+    negative_factors: Mapped[str | None] = mapped_column(Text, nullable=True)
