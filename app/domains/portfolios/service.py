@@ -35,11 +35,23 @@ class PortfolioService:
         portfolio = self.portfolio_repo.create(user_id=user_id, data=data)
         return PortfolioResponse.model_validate(portfolio)
 
-    def list_portfolios(self, user_id: int) -> list[PortfolioResponse]:
+    def list_portfolios(
+        self,
+        user_id: int,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[PortfolioResponse]:
         return [
             PortfolioResponse.model_validate(portfolio)
-            for portfolio in self.portfolio_repo.list_by_user(user_id)
+            for portfolio in self.portfolio_repo.list_by_user(
+                user_id,
+                offset=offset,
+                limit=limit,
+            )
         ]
+
+    def count_portfolios(self, user_id: int) -> int:
+        return self.portfolio_repo.count_by_user(user_id)
 
     def add_position(
         self, portfolio_id: int, user_id: int, data: PositionCreate

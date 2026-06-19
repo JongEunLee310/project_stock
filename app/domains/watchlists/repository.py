@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -12,9 +12,21 @@ class WatchlistRepository:
     def get_by_id(self, watchlist_id: int) -> Watchlist | None:
         return self.db.get(Watchlist, watchlist_id)
 
-    def list_by_user(self, user_id: int) -> list[Watchlist]:
+    def list_by_user(
+        self,
+        user_id: int,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[Watchlist]:
         stmt = select(Watchlist).where(Watchlist.user_id == user_id).order_by(Watchlist.id)
+        stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(self.db.scalars(stmt).all())
+
+    def count_by_user(self, user_id: int) -> int:
+        stmt = select(func.count()).select_from(Watchlist).where(Watchlist.user_id == user_id)
+        return int(self.db.scalar(stmt) or 0)
 
     def create(self, user_id: int, name: str) -> Watchlist:
         watchlist = Watchlist(user_id=user_id, name=name)

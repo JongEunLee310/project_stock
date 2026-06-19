@@ -1,6 +1,6 @@
 import json
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domains.reports.model import ResearchReport
@@ -31,13 +31,29 @@ class ResearchReportRepository:
     def get_by_id(self, report_id: int) -> ResearchReport | None:
         return self.db.get(ResearchReport, report_id)
 
-    def list_by_asset(self, asset_id: int) -> list[ResearchReport]:
+    def list_by_asset(
+        self,
+        asset_id: int,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[ResearchReport]:
         stmt = (
             select(ResearchReport)
             .where(ResearchReport.asset_id == asset_id)
             .order_by(ResearchReport.created_at.desc(), ResearchReport.id.desc())
         )
+        stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(self.db.scalars(stmt).all())
+
+    def count_by_asset(self, asset_id: int) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(ResearchReport)
+            .where(ResearchReport.asset_id == asset_id)
+        )
+        return int(self.db.scalar(stmt) or 0)
 
     def _dump_json_array(self, value: list[str] | list[int] | None) -> str | None:
         if value is None:

@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -28,12 +28,27 @@ class AlertRepository:
     def get_by_id(self, alert_id: int) -> Alert | None:
         return self.db.get(Alert, alert_id)
 
-    def list_by_user(self, user_id: int, status: str | None) -> list[Alert]:
+    def list_by_user(
+        self,
+        user_id: int,
+        status: str | None,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[Alert]:
         stmt = select(Alert).where(Alert.user_id == user_id)
         if status is not None:
             stmt = stmt.where(Alert.status == status)
         stmt = stmt.order_by(Alert.created_at.desc(), Alert.id.desc())
+        stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(self.db.scalars(stmt).all())
+
+    def count_by_user(self, user_id: int, status: str | None) -> int:
+        stmt = select(func.count()).select_from(Alert).where(Alert.user_id == user_id)
+        if status is not None:
+            stmt = stmt.where(Alert.status == status)
+        return int(self.db.scalar(stmt) or 0)
 
     def update_status(self, alert: Alert, status: str) -> Alert:
         alert.status = status

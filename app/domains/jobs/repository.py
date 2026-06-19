@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domains.jobs.model import JobRun
@@ -48,10 +48,16 @@ class JobRunRepository:
         self.db.refresh(job_run)
         return job_run
 
-    def list_recent(self, limit: int) -> list[JobRun]:
+    def list_recent(self, offset: int = 0, limit: int | None = None) -> list[JobRun]:
         stmt = (
             select(JobRun)
             .order_by(JobRun.created_at.desc(), JobRun.id.desc())
-            .limit(limit)
+            .offset(offset)
         )
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(self.db.scalars(stmt).all())
+
+    def count_all(self) -> int:
+        stmt = select(func.count()).select_from(JobRun)
+        return int(self.db.scalar(stmt) or 0)

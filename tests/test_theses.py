@@ -2,7 +2,7 @@ from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import set_current_user
+from tests.conftest import api_data, set_current_user
 
 
 def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
@@ -11,7 +11,7 @@ def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
         json={"symbol": symbol, "name": f"{symbol} Inc.", "market": "NASDAQ"},
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def thesis_payload(asset_id: int, summary: str = "Long-term compounder") -> dict[str, Any]:
@@ -33,7 +33,7 @@ def create_thesis(
         json=thesis_payload(asset_id, summary),
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def test_create_thesis_success(client: TestClient) -> None:
@@ -67,7 +67,7 @@ def test_update_thesis_success(client: TestClient) -> None:
     )
 
     assert response.status_code == 200
-    data = response.json()
+    data = cast(dict[str, Any], api_data(response))
     assert data["summary"] == "Updated thesis"
     assert data["risk_factors"] is None
     assert data["invalidation_conditions"] == "Breaks below cash-flow target"
@@ -98,7 +98,7 @@ def test_get_latest_thesis_returns_latest_active_for_user(client: TestClient) ->
     )
 
     assert response.status_code == 200
-    assert response.json() == latest
+    assert api_data(response) == latest
 
 
 def test_deactivate_thesis_success_and_excludes_from_latest(client: TestClient) -> None:
@@ -109,7 +109,8 @@ def test_deactivate_thesis_success_and_excludes_from_latest(client: TestClient) 
     response = client.patch(f"/api/v1/theses/{thesis['id']}/deactivate")
 
     assert response.status_code == 200
-    assert response.json()["is_active"] is False
+    data = cast(dict[str, Any], api_data(response))
+    assert data["is_active"] is False
     latest_response = client.get(
         "/api/v1/theses/latest",
         params={"asset_id": asset["id"]},

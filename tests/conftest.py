@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -55,6 +56,22 @@ def set_current_user(user_id: int, email: str = "owner@example.com") -> None:
         return User(id=user_id, email=email, hashed_password="test-hash")
 
     app.dependency_overrides[get_current_user] = override_get_current_user
+
+
+def api_data(response: Any) -> Any:
+    body = response.json()
+    assert body["message"] is None
+    assert body["error"] is None
+    return body["data"]
+
+
+def api_meta(response: Any) -> dict[str, int]:
+    body = response.json()
+    assert body["message"] is None
+    assert body["error"] is None
+    meta = body["meta"]
+    assert isinstance(meta, dict)
+    return meta
 
 
 @pytest.fixture

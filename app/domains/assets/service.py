@@ -29,8 +29,20 @@ class AssetService:
             raise AppException(status_code=404, detail="종목을 찾을 수 없습니다.")
         return AssetResponse.model_validate(asset)
 
-    def list(self, is_active: bool | None = None) -> list[AssetResponse]:
+    def list(
+        self,
+        is_active: bool | None = None,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[AssetResponse]:
         return [
             AssetResponse.model_validate(asset)
-            for asset in self.repo.list_all(is_active=is_active)
+            for asset in self.repo.list_all(
+                is_active=is_active,
+                offset=offset,
+                limit=limit,
+            )
         ]
+
+    def count(self, is_active: bool | None = None) -> int:
+        return self.repo.count_all(is_active=is_active)

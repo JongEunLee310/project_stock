@@ -2,7 +2,7 @@ from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import set_current_user
+from tests.conftest import api_data, api_meta, set_current_user
 
 
 def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
@@ -11,7 +11,7 @@ def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
         json={"symbol": symbol, "name": f"{symbol} Inc.", "market": "NASDAQ"},
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def create_watchlist(
@@ -19,7 +19,7 @@ def create_watchlist(
 ) -> dict[str, Any]:
     response = client.post("/api/v1/watchlists", json={"name": name})
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def test_create_watchlist_success(client: TestClient) -> None:
@@ -43,7 +43,20 @@ def test_list_watchlists_returns_only_current_users_lists(client: TestClient) ->
     response = client.get("/api/v1/watchlists")
 
     assert response.status_code == 200
-    assert response.json() == [owner_watchlist]
+    assert api_data(response) == [owner_watchlist]
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
+
+
+def test_list_watchlists_uses_page_and_size(client: TestClient) -> None:
+    set_current_user(1)
+    create_watchlist(client, "First")
+    second = create_watchlist(client, "Second")
+
+    response = client.get("/api/v1/watchlists", params={"page": 2, "size": 1})
+
+    assert response.status_code == 200
+    assert api_data(response) == [second]
+    assert api_meta(response) == {"page": 2, "size": 1, "total": 2}
 
 
 def test_add_watchlist_item_success(client: TestClient) -> None:
@@ -57,7 +70,7 @@ def test_add_watchlist_item_success(client: TestClient) -> None:
     )
 
     assert response.status_code == 201
-    data = response.json()
+    data = cast(dict[str, Any], api_data(response))
     assert data["watchlist_id"] == watchlist["id"]
     assert data["asset_id"] == asset["id"]
     assert data["priority"] == 10
@@ -92,14 +105,14 @@ def test_remove_watchlist_item_success(client: TestClient) -> None:
         json={"asset_id": asset["id"], "priority": 0},
     )
     assert create_response.status_code == 201
-    item = create_response.json()
+    item = cast(dict[str, Any], api_data(create_response))
 
     response = client.delete(
         f"/api/v1/watchlists/{watchlist['id']}/items/{item['id']}",
     )
 
-    assert response.status_code == 204
-    assert response.content == b""
+    assert response.status_code == 200
+    assert api_data(response) is None
 
 
 def test_watchlist_ownership_blocks_other_users(client: TestClient) -> None:

@@ -3,6 +3,8 @@ from typing import Any, cast
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.conftest import api_data
+
 
 pytestmark = pytest.mark.usefixtures("stable_password_hashing")
 
@@ -17,7 +19,7 @@ def register_user(
         json={"email": email, "password": password},
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def login_user(
@@ -30,7 +32,7 @@ def login_user(
         json={"email": email, "password": password},
     )
     assert response.status_code == 200
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def test_register_user_success(client: TestClient) -> None:
@@ -100,8 +102,9 @@ def test_get_me_with_bearer_token(client: TestClient) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["id"] == user["id"]
-    assert response.json()["email"] == "owner@example.com"
+    data = cast(dict[str, Any], api_data(response))
+    assert data["id"] == user["id"]
+    assert data["email"] == "owner@example.com"
 
 
 def test_get_me_requires_authorization_header(client: TestClient) -> None:

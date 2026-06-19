@@ -3,6 +3,7 @@ from rq import Queue
 
 from fastapi import APIRouter
 
+from app.core.response import ApiResponse, success
 from app.worker.connection import get_redis_connection
 from app.worker.jobs.analysis import analyze_watchlist_job
 from app.worker.jobs.news import collect_news_job
@@ -23,15 +24,15 @@ class JobQueuedResponse(BaseModel):
     status: str
 
 
-@router.post("/jobs/news", response_model=JobQueuedResponse)
-def enqueue_news_job(payload: NewsJobRequest) -> JobQueuedResponse:
+@router.post("/jobs/news", response_model=ApiResponse[JobQueuedResponse])
+def enqueue_news_job(payload: NewsJobRequest) -> ApiResponse[JobQueuedResponse]:
     queue = Queue("default", connection=get_redis_connection())
     job = queue.enqueue(collect_news_job, payload.symbols)
-    return JobQueuedResponse(job_id=str(job.id), status="queued")
+    return success(JobQueuedResponse(job_id=str(job.id), status="queued"))
 
 
-@router.post("/jobs/analysis", response_model=JobQueuedResponse)
-def enqueue_analysis_job(payload: AnalysisJobRequest) -> JobQueuedResponse:
+@router.post("/jobs/analysis", response_model=ApiResponse[JobQueuedResponse])
+def enqueue_analysis_job(payload: AnalysisJobRequest) -> ApiResponse[JobQueuedResponse]:
     queue = Queue("default", connection=get_redis_connection())
     job = queue.enqueue(analyze_watchlist_job, payload.watchlist_id)
-    return JobQueuedResponse(job_id=str(job.id), status="queued")
+    return success(JobQueuedResponse(job_id=str(job.id), status="queued"))
