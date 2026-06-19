@@ -58,9 +58,14 @@ def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
 
 
 def create_portfolio(
-    client: TestClient, name: str = "Long Term"
+    client: TestClient,
+    name: str = "Long Term",
+    concentration_threshold: str | None = None,
 ) -> dict[str, Any]:
-    response = client.post("/api/v1/portfolios", json={"name": name})
+    payload = {"name": name}
+    if concentration_threshold is not None:
+        payload["concentration_threshold"] = concentration_threshold
+    response = client.post("/api/v1/portfolios", json=payload)
     assert response.status_code == 201
     return cast(dict[str, Any], response.json())
 
@@ -92,7 +97,16 @@ def test_create_portfolio_success(client: TestClient) -> None:
     assert data["id"] == 1
     assert data["user_id"] == 1
     assert data["name"] == "Long Term"
+    assert Decimal(data["concentration_threshold"]) == Decimal("0.4")
     assert "created_at" in data
+
+
+def test_create_portfolio_accepts_concentration_threshold(client: TestClient) -> None:
+    set_current_user(1)
+
+    data = create_portfolio(client, concentration_threshold="0.35")
+
+    assert Decimal(data["concentration_threshold"]) == Decimal("0.35")
 
 
 def test_list_portfolios_returns_only_current_users_portfolios(
@@ -269,3 +283,158 @@ def test_add_position_rejects_duplicate_asset(client: TestClient) -> None:
     )
 
     assert response.status_code == 400
+
+
+def test_get_portfolio_summary_calculates_weights_and_threshold(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    portfolio = create_portfolio(client, concentration_threshold="0.6")
+    apple = create_asset(client, "AAPL")
+    microsoft = create_asset(client, "MSFT")
+    add_position(
+        client,
+        portfolio["id"],
+        apple["id"],
+        quantity="3",
+        avg_buy_price="100",
+    )
+    add_position(
+        client,
+        portfolio["id"],
+        microsoft["id"],
+        quantity="1",
+        avg_buy_price="100",
+    )
+
+    response = client.get(f"/api/v1/portfolios/{portfolio['id']}/summary")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["portfolio_id"] == portfolio["id"]
+    assert Decimal(data["concentration_threshold"]) == Decimal("0.6")
+    assert Decimal(data["total_cost_value"]) == Decimal("400.000000000000")
+    positions = data["positions"]
+    assert len(positions) == 2
+    assert Decimal(positions[0]["cost_value"]) == Decimal("300.000000000000")
+    assert Decimal(positions[0]["weight"]) == Decimal("0.75")
+    assert positions[0]["exceeds_threshold"] is True
+    assert Decimal(positions[1]["cost_value"]) == Decimal("100.000000000000")
+    assert Decimal(positions[1]["weight"]) == Decimal("0.25")
+    assert positions[1]["exceeds_threshold"] is False
+
+
+def test_get_portfolio_summary_returns_zero_weights_without_positions(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    portfolio = create_portfolio(client)
+
+    response = client.get(f"/api/v1/portfolios/{portfolio['id']}/summary")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert Decimal(data["total_cost_value"]) == Decimal("0")
+    assert data["positions"] == []
+
+
+def test_check_concentration_creates_risk_alert_signal(client: TestClient) -> None:
+    set_current_user(1)
+    portfolio = create_portfolio(client, concentration_threshold="0.6")
+    apple = create_asset(client, "AAPL")
+    microsoft = create_asset(client, "MSFT")
+    add_position(client, portfolio["id"], apple["id"], quantity="3", avg_buy_price="100")
+    add_position(
+        client,
+        portfolio["id"],
+        microsoft["id"],
+        quantity="1",
+        avg_buy_price="100",
+    )
+
+    response = client.post(f"/api/v1/portfolios/{portfolio['id']}/check")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert Decimal(data["summary"]["positions"][0]["weight"]) == Decimal("0.75")
+    created_signals = data["created_signals"]
+    assert len(created_signals) == 1
+    signal = created_signals[0]
+    assert signal["asset_id"] == apple["id"]
+    assert signal["signal_type"] == "RISK_ALERT"
+    assert signal["score"] == 75
+    assert signal["risk_level"] == "HIGH"
+    assert Decimal(signal["evidence"]["weight"]) == Decimal("0.75")
+    assert Decimal(signal["evidence"]["threshold"]) == Decimal("0.6000")
+    assert Decimal(signal["evidence"]["cost_value"]) == Decimal("300.000000000000")
+
+
+def test_check_concentration_does_not_duplicate_active_signal(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    portfolio = create_portfolio(client, concentration_threshold="0.6")
+    apple = create_asset(client, "AAPL")
+    microsoft = create_asset(client, "MSFT")
+    add_position(client, portfolio["id"], apple["id"], quantity="3", avg_buy_price="100")
+    add_position(
+        client,
+        portfolio["id"],
+        microsoft["id"],
+        quantity="1",
+        avg_buy_price="100",
+    )
+
+    first_response = client.post(f"/api/v1/portfolios/{portfolio['id']}/check")
+    second_response = client.post(f"/api/v1/portfolios/{portfolio['id']}/check")
+
+    assert first_response.status_code == 200
+    assert len(first_response.json()["created_signals"]) == 1
+    assert second_response.status_code == 200
+    assert second_response.json()["created_signals"] == []
+
+
+def test_check_concentration_does_not_create_signal_below_threshold(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    portfolio = create_portfolio(client, concentration_threshold="0.8")
+    apple = create_asset(client, "AAPL")
+    microsoft = create_asset(client, "MSFT")
+    add_position(client, portfolio["id"], apple["id"], quantity="3", avg_buy_price="100")
+    add_position(
+        client,
+        portfolio["id"],
+        microsoft["id"],
+        quantity="1",
+        avg_buy_price="100",
+    )
+
+    response = client.post(f"/api/v1/portfolios/{portfolio['id']}/check")
+
+    assert response.status_code == 200
+    assert response.json()["created_signals"] == []
+
+
+def test_summary_ownership_and_missing_paths(client: TestClient) -> None:
+    set_current_user(1)
+    portfolio = create_portfolio(client)
+    set_current_user(2, "other@example.com")
+
+    forbidden_response = client.get(f"/api/v1/portfolios/{portfolio['id']}/summary")
+    missing_response = client.get("/api/v1/portfolios/999/summary")
+
+    assert forbidden_response.status_code == 403
+    assert missing_response.status_code == 404
+
+
+def test_check_ownership_and_missing_paths(client: TestClient) -> None:
+    set_current_user(1)
+    portfolio = create_portfolio(client)
+    set_current_user(2, "other@example.com")
+
+    forbidden_response = client.post(f"/api/v1/portfolios/{portfolio['id']}/check")
+    missing_response = client.post("/api/v1/portfolios/999/check")
+
+    assert forbidden_response.status_code == 403
+    assert missing_response.status_code == 404

@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domains.portfolios.model import Portfolio, Position
-from app.domains.portfolios.schema import PositionCreate, PositionUpdate
+from app.domains.portfolios.schema import PortfolioCreate, PositionCreate, PositionUpdate
 
 
 class PortfolioRepository:
@@ -17,8 +17,12 @@ class PortfolioRepository:
         stmt = select(Portfolio).where(Portfolio.user_id == user_id).order_by(Portfolio.id)
         return list(self.db.scalars(stmt).all())
 
-    def create(self, user_id: int, name: str) -> Portfolio:
-        portfolio = Portfolio(user_id=user_id, name=name)
+    def create(self, user_id: int, data: PortfolioCreate) -> Portfolio:
+        portfolio = Portfolio(
+            user_id=user_id,
+            name=data.name,
+            concentration_threshold=data.concentration_threshold,
+        )
         self.db.add(portfolio)
         self.db.commit()
         self.db.refresh(portfolio)

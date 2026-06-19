@@ -4,9 +4,16 @@ from typing import Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.domains.signals.schema import SignalResponse
+
 
 class PortfolioCreate(BaseModel):
     name: str = Field(max_length=255)
+    concentration_threshold: Decimal = Field(
+        default=Decimal("0.4"),
+        gt=Decimal("0"),
+        le=Decimal("1"),
+    )
 
 
 class PortfolioResponse(BaseModel):
@@ -15,6 +22,7 @@ class PortfolioResponse(BaseModel):
     id: int
     user_id: int
     name: str
+    concentration_threshold: Decimal
     created_at: datetime
 
 
@@ -44,3 +52,24 @@ class PositionResponse(BaseModel):
     quantity: Decimal
     avg_buy_price: Decimal
     created_at: datetime
+
+
+class PositionWeight(BaseModel):
+    asset_id: int
+    quantity: Decimal
+    avg_buy_price: Decimal
+    cost_value: Decimal
+    weight: Decimal
+    exceeds_threshold: bool
+
+
+class PortfolioSummaryResponse(BaseModel):
+    portfolio_id: int
+    concentration_threshold: Decimal
+    total_cost_value: Decimal
+    positions: list[PositionWeight]
+
+
+class PortfolioCheckResponse(BaseModel):
+    summary: PortfolioSummaryResponse
+    created_signals: list[SignalResponse]
