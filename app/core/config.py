@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    OPENAI_API_KEY: str | None = None
+    LLM_TIMEOUT_SECONDS: int = 30
 
 
 settings = Settings()
