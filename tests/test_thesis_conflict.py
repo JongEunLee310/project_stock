@@ -1,31 +1,20 @@
 import json
-from collections.abc import Generator
 from typing import Any
 
 import pytest
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.adapters.llm.base import LLMMessage
 from app.adapters.llm.mock import MockLLMClient
 from app.adapters.llm.prompts.thesis_conflict import build_thesis_conflict_messages
-from app.db.base import Base
 from app.domains.assets.model import Asset
 from app.domains.news.model import NewsItem
 from app.domains.theses.conflict_model import ThesisConflictAnalysis
 from app.domains.theses.conflict_service import ThesisAnalysisService
 from app.domains.theses.model import InvestmentThesis
 from app.domains.users.model import User
-
-
-engine = create_engine(
-    "sqlite://",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class RecordingLLMClient(MockLLMClient):
@@ -41,17 +30,6 @@ class RecordingLLMClient(MockLLMClient):
     ) -> dict[str, Any]:
         self.messages = messages
         return super().complete_json(messages, schema, timeout)
-
-
-@pytest.fixture
-def db() -> Generator[Session, None, None]:
-    Base.metadata.create_all(bind=engine)
-    session = TestingSessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-        Base.metadata.drop_all(bind=engine)
 
 
 def create_user(db: Session) -> User:

@@ -1,16 +1,9 @@
-from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
-import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import Session
 
-from app.api.v1.deps import get_current_user
-from app.db.base import Base
-from app.db.session import get_db
 from app.domains.assets.model import Asset
 from app.domains.news.model import NewsItem
 from app.domains.signals.repository import SignalRepository
@@ -19,51 +12,7 @@ from app.domains.signals.time import is_expired_at
 from app.domains.signals.types import SignalType
 from app.domains.theses.model import InvestmentThesis
 from app.domains.users.model import User
-from app.main import app
-
-
-engine = create_engine(
-    "sqlite://",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-@pytest.fixture
-def client() -> Generator[TestClient, None, None]:
-    Base.metadata.create_all(bind=engine)
-
-    def override_get_db() -> Generator[Session, None, None]:
-        db = TestingSessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
-    Base.metadata.drop_all(bind=engine)
-
-
-@pytest.fixture
-def db() -> Generator[Session, None, None]:
-    Base.metadata.create_all(bind=engine)
-    session = TestingSessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-        Base.metadata.drop_all(bind=engine)
-
-
-def set_current_user(user_id: int, email: str = "owner@example.com") -> None:
-    def override_get_current_user() -> User:
-        return User(id=user_id, email=email, hashed_password="test-hash")
-
-    app.dependency_overrides[get_current_user] = override_get_current_user
+from tests.conftest import set_current_user
 
 
 def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
