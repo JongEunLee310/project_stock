@@ -6,6 +6,7 @@ from alembic import context
 
 from app.core.config import settings
 from app.db.base import Base
+import app.domains.alert_candidates.model  # noqa: F401 — registers alert candidate model
 import app.domains.assets.model  # noqa: F401 — registers Asset model for autogenerate
 import app.domains.decision_checklist.model  # noqa: F401 — registers checklist model
 import app.domains.jobs.model  # noqa: F401 — registers JobRun model for autogenerate
