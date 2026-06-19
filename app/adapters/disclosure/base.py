@@ -10,7 +10,7 @@ class DisclosureResult:
     title: str
     url: str
     source: str
-    published_at: datetime
+    published_at: datetime | None
     payload: dict[str, Any] | None
 
 
