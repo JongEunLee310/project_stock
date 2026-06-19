@@ -1,6 +1,15 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+class NewsSummaryResult(BaseModel):
+    summary: str
+    positive_factors: list[str]
+    negative_factors: list[str]
+    impact_level: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    sentiment: Literal["POSITIVE", "NEUTRAL", "NEGATIVE"]
 
 
 class NewsItemCreate(BaseModel):
@@ -13,6 +22,8 @@ class NewsItemCreate(BaseModel):
     summary: str | None = None
     sentiment: str | None = Field(default=None, max_length=20)
     impact_level: str | None = Field(default=None, max_length=20)
+    positive_factors: str | None = None
+    negative_factors: str | None = None
 
 
 class NewsItemResponse(BaseModel):
@@ -28,4 +39,6 @@ class NewsItemResponse(BaseModel):
     summary: str | None
     sentiment: str | None
     impact_level: str | None
+    positive_factors: str | None
+    negative_factors: str | None
     created_at: datetime
