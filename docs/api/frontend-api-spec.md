@@ -73,6 +73,7 @@
 | 종목 정보 | `GET` | `/api/v1/assets/{asset_id}` | Not required |
 | 종목 기본 정보 카드 | `GET` | `/api/v1/assets/{asset_id}/detail` | Not required |
 | 최신 투자 가설 | `GET` | `/api/v1/theses/latest?asset_id={asset_id}` | Required |
+| 리서치 요약 | `GET` | `/api/v1/assets/{asset_id}/research-summary` | Required |
 | 리서치 리포트 목록 | `GET` | `/api/v1/reports?asset_id={asset_id}&page=1&size=20` | Required |
 | 시그널 목록 | `GET` | `/api/v1/signals?asset_id={asset_id}&include_expired=false&page=1&size=20` | Required |
 
@@ -81,6 +82,7 @@
 | Purpose | Method | Path | Auth | Notes |
 | --- | --- | --- | --- | --- |
 | 리포트 목록 | `GET` | `/api/v1/reports?asset_id={asset_id}&page=1&size=20` | Required | thesis conflict 필드는 report payload에 포함. |
+| 종목 요약 카드 | `GET` | `/api/v1/assets/{asset_id}/research-summary` | Required | Mock 요약. |
 | 리포트 상세 | `GET` | `/api/v1/reports/{report_id}` | Required | 요약/근거/위험 수준 표시. |
 | 리포트 생성 | `POST` | `/api/v1/reports` | Required | 운영/관리성 생성 API. |
 | 가설 생성/수정/비활성화 | `POST/PUT/PATCH` | `/api/v1/theses...` | Required | 화면 편집 기능이 필요할 때 사용. |
@@ -224,6 +226,18 @@
 
 ```json
 { "data": { "id": 1, "symbol": "AAPL", "name": "Apple Inc.", "market": "NASDAQ", "price": "195.64", "previous_close": "193.20", "change": "2.44", "change_percent": "1.26", "currency": "USD", "sector": "Technology", "industry": "Consumer Electronics", "description": "Makes devices and services.", "as_of": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
+```
+
+- Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
+
+#### `GET /api/v1/assets/{asset_id}/research-summary`
+
+- Auth: Required
+- Request: path `asset_id`
+- Success `200`:
+
+```json
+{ "data": { "asset_id": 1, "positive_factors": ["견조한 매출 성장"], "negative_factors": ["밸류에이션 부담"], "items_to_verify": ["최근 실적 발표 원문 확인"], "sources": [{ "type": "news", "label": "AAPL mock news", "url": null }], "updated_at": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
 ```
 
 - Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
