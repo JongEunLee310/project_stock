@@ -15,6 +15,7 @@ from app.domains.assets.model import Asset
 from app.domains.news.model import NewsItem
 from app.domains.signals.repository import SignalRepository
 from app.domains.signals.schema import SignalCreate
+from app.domains.signals.time import is_expired_at
 from app.domains.signals.types import SignalType
 from app.domains.theses.model import InvestmentThesis
 from app.domains.users.model import User
@@ -236,6 +237,24 @@ def test_list_signals_requires_asset_id(client: TestClient) -> None:
     response = client.get("/api/v1/signals")
 
     assert response.status_code == 422
+
+
+def test_create_signal_rejects_score_outside_0_to_100(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+    payload = signal_payload(asset["id"])
+    payload["score"] = 101
+
+    response = client.post("/api/v1/signals", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_is_expired_at_treats_naive_datetime_as_utc() -> None:
+    now = datetime(2026, 6, 19, 12, 0, tzinfo=timezone.utc)
+
+    assert is_expired_at(datetime(2026, 6, 19, 11, 59), now) is True
+    assert is_expired_at(datetime(2026, 6, 19, 12, 1), now) is False
 
 
 def test_signal_repository_exists_active_ignores_expired_rows(db: Session) -> None:

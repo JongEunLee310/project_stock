@@ -1,5 +1,4 @@
 import json
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import or_, select
@@ -7,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.domains.signals.model import Signal
 from app.domains.signals.schema import SignalCreate
+from app.domains.signals.time import utc_now
 
 
 class SignalRepository:
@@ -59,7 +59,7 @@ class SignalRepository:
         return self.db.scalar(stmt) is not None
 
     def _active_clause(self) -> Any:
-        now = datetime.now(timezone.utc)
+        now = utc_now()
         return or_(Signal.expires_at.is_(None), Signal.expires_at > now)
 
     def _dump_evidence(self, value: dict[str, Any] | None) -> str | None:

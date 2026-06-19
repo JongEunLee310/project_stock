@@ -1,9 +1,10 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.domains.signals.time import is_expired_at
 from app.domains.signals.types import SignalType
 
 
@@ -12,7 +13,7 @@ class SignalCreate(BaseModel):
     thesis_id: int | None = None
     news_item_id: int | None = None
     signal_type: SignalType
-    score: int
+    score: int = Field(ge=0, le=100)
     risk_level: str | None = Field(default=None, max_length=20)
     reason: str
     evidence: dict[str, Any] | None = None
@@ -46,11 +47,5 @@ class SignalResponse(BaseModel):
 
     @model_validator(mode="after")
     def calculate_is_expired(self) -> "SignalResponse":
-        if self.expires_at is None:
-            self.is_expired = False
-            return self
-        expires_at = self.expires_at
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        self.is_expired = expires_at <= datetime.now(timezone.utc)
+        self.is_expired = is_expired_at(self.expires_at)
         return self
