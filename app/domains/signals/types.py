@@ -1,0 +1,10 @@
+from enum import Enum
+
+
+class SignalType(str, Enum):
+    WATCH = "WATCH"
+    RISK_ALERT = "RISK_ALERT"
+    THESIS_BROKEN = "THESIS_BROKEN"
+    BUY_CANDIDATE = "BUY_CANDIDATE"
+    SELL_REVIEW = "SELL_REVIEW"
+    OVERHEATED = "OVERHEATED"

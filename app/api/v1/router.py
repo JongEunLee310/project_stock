@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     health,
     job_runs,
     reports,
+    signals,
     theses,
     watchlists,
     worker,
@@ -18,5 +19,6 @@ api_router.include_router(assets.router, prefix="/assets", tags=["assets"])
 api_router.include_router(watchlists.router, prefix="/watchlists", tags=["watchlists"])
 api_router.include_router(theses.router, prefix="/theses", tags=["theses"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
+api_router.include_router(signals.router, prefix="/signals", tags=["signals"])
 api_router.include_router(job_runs.router, prefix="/job-runs", tags=["job-runs"])
 api_router.include_router(worker.router, prefix="/worker", tags=["worker"])
