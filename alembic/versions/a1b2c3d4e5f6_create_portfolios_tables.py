@@ -61,7 +61,11 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["asset_id"], ["assets.id"]),
         sa.ForeignKeyConstraint(["portfolio_id"], ["portfolios.id"]),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("portfolio_id", "asset_id", name="uq_positions_asset"),
+        sa.UniqueConstraint(
+            "portfolio_id",
+            "asset_id",
+            name="uq_positions_portfolio_asset",
+        ),
     )
 
 

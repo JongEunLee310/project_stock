@@ -133,6 +133,38 @@ def test_add_position_success(client: TestClient) -> None:
     assert "created_at" in data
 
 
+def test_add_position_returns_404_for_missing_portfolio(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+
+    response = client.post(
+        "/api/v1/portfolios/999/positions",
+        json={
+            "asset_id": asset["id"],
+            "quantity": "1",
+            "avg_buy_price": "100",
+        },
+    )
+
+    assert response.status_code == 404
+
+
+def test_add_position_returns_404_for_missing_asset(client: TestClient) -> None:
+    set_current_user(1)
+    portfolio = create_portfolio(client)
+
+    response = client.post(
+        f"/api/v1/portfolios/{portfolio['id']}/positions",
+        json={
+            "asset_id": 999,
+            "quantity": "1",
+            "avg_buy_price": "100",
+        },
+    )
+
+    assert response.status_code == 404
+
+
 def test_update_position_quantity_and_average_price(client: TestClient) -> None:
     set_current_user(1)
     portfolio = create_portfolio(client)
@@ -156,6 +188,32 @@ def test_update_position_quantity_and_average_price(client: TestClient) -> None:
     price_data = price_response.json()
     assert Decimal(price_data["quantity"]) == Decimal("15.25")
     assert Decimal(price_data["avg_buy_price"]) == Decimal("140.125")
+
+
+def test_update_position_returns_404_for_missing_position(client: TestClient) -> None:
+    set_current_user(1)
+    portfolio = create_portfolio(client)
+
+    response = client.patch(
+        f"/api/v1/portfolios/{portfolio['id']}/positions/999",
+        json={"quantity": "1"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_update_position_rejects_empty_body(client: TestClient) -> None:
+    set_current_user(1)
+    portfolio = create_portfolio(client)
+    asset = create_asset(client)
+    position = add_position(client, portfolio["id"], asset["id"])
+
+    response = client.patch(
+        f"/api/v1/portfolios/{portfolio['id']}/positions/{position['id']}",
+        json={},
+    )
+
+    assert response.status_code == 422
 
 
 def test_delete_position_success(client: TestClient) -> None:
