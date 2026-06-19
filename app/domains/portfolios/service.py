@@ -118,6 +118,7 @@ class PortfolioService:
                     risk_level="HIGH",
                     reason="포트폴리오 단일 종목 비중이 임계치를 초과했습니다.",
                     evidence={
+                        "portfolio_id": portfolio.id,
                         "weight": str(position.weight),
                         "threshold": str(summary.concentration_threshold),
                         "cost_value": str(position.cost_value),

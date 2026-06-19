@@ -364,6 +364,7 @@ def test_check_concentration_creates_risk_alert_signal(client: TestClient) -> No
     assert signal["signal_type"] == "RISK_ALERT"
     assert signal["score"] == 75
     assert signal["risk_level"] == "HIGH"
+    assert signal["evidence"]["portfolio_id"] == portfolio["id"]
     assert Decimal(signal["evidence"]["weight"]) == Decimal("0.75")
     assert Decimal(signal["evidence"]["threshold"]) == Decimal("0.6000")
     assert Decimal(signal["evidence"]["cost_value"]) == Decimal("300.000000000000")
