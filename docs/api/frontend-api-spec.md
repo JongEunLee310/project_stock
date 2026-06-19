@@ -55,6 +55,7 @@
 | 관심종목 목록 | `GET` | `/api/v1/watchlists?page=1&size=20` | Required | 사용자 관심종목 그룹 목록. |
 | 관심종목 항목 | `GET` | `/api/v1/watchlists/{watchlist_id}/items?page=1&size=20&sort=priority` | Required | 항목별 사유/태그/메모 표시. |
 | 알림 목록 | `GET` | `/api/v1/alerts?status=UNREAD&page=1&size=20` | Required | unread 카드/배지 표시. |
+| 알림 후보 | `GET` | `/api/v1/alert-candidates?status=UNREAD&page=1&size=20` | Required | 발송 전 후보 검토. |
 
 ### 관심종목
 
@@ -92,6 +93,9 @@
 
 | Purpose | Method | Path | Auth |
 | --- | --- | --- | --- |
+| 알림 후보 목록 | `GET` | `/api/v1/alert-candidates?status=UNREAD&page=1&size=20` | Required |
+| 알림 후보 읽음 | `POST` | `/api/v1/alert-candidates/{candidate_id}/read` | Required |
+| 알림 후보 확인 | `POST` | `/api/v1/alert-candidates/{candidate_id}/confirm` | Required |
 | 시그널 목록 | `GET` | `/api/v1/signals?asset_id={asset_id}&include_expired=false&page=1&size=20` | Required |
 | 시그널 상세 | `GET` | `/api/v1/signals/{signal_id}` | Required |
 | 알림 목록 | `GET` | `/api/v1/alerts?status=UNREAD&page=1&size=20` | Required |
@@ -650,6 +654,48 @@
 
 - Representative error `404 ALERT_NOT_FOUND`: same as mark read.
 
+### Alert Candidates
+
+#### `GET /api/v1/alert-candidates`
+
+- Auth: Required
+- Query: `candidate_type?: NEWS_SURGE | PRICE_MOVEMENT | DISCLOSURE | PORTFOLIO_CONCENTRATION | BUY_CHECKLIST_REQUIRED`, `importance?: LOW | MEDIUM | HIGH`, `status?: UNREAD | READ | CONFIRMED`, `page: int = 1`, `size: int = 20`
+- Success `200`:
+
+```json
+{ "data": [{ "id": 1, "user_id": 1, "candidate_type": "NEWS_SURGE", "importance": "HIGH", "status": "UNREAD", "title": "News volume increased", "message": "Review before sending a notification.", "asset_id": 1, "evidence": { "source": "mock" }, "created_at": "2026-06-20T00:00:00" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
+```
+
+- Representative error `401 AUTH_INVALID_TOKEN`: see Auth section.
+
+#### `POST /api/v1/alert-candidates/{candidate_id}/read`
+
+- Auth: Required
+- Request: path `candidate_id`
+- Success `200`:
+
+```json
+{ "data": { "id": 1, "user_id": 1, "candidate_type": "NEWS_SURGE", "importance": "HIGH", "status": "READ", "title": "News volume increased", "message": "Review before sending a notification.", "asset_id": 1, "evidence": { "source": "mock" }, "created_at": "2026-06-20T00:00:00" }, "message": null, "error": null, "meta": null }
+```
+
+- Representative error `404 ALERT_CANDIDATE_NOT_FOUND`:
+
+```json
+{ "data": null, "message": "알림 후보를 찾을 수 없습니다.", "error": { "code": "ALERT_CANDIDATE_NOT_FOUND" }, "meta": null }
+```
+
+#### `POST /api/v1/alert-candidates/{candidate_id}/confirm`
+
+- Auth: Required
+- Request: path `candidate_id`
+- Success `200`:
+
+```json
+{ "data": { "id": 1, "user_id": 1, "candidate_type": "NEWS_SURGE", "importance": "HIGH", "status": "CONFIRMED", "title": "News volume increased", "message": "Review before sending a notification.", "asset_id": 1, "evidence": { "source": "mock" }, "created_at": "2026-06-20T00:00:00" }, "message": null, "error": null, "meta": null }
+```
+
+- Representative error `404 ALERT_CANDIDATE_NOT_FOUND`: same as mark read.
+
 ### Job Runs and Worker
 
 #### `GET /api/v1/job-runs`
@@ -738,7 +784,6 @@
 | --- | --- |
 | 대시보드 | 전체 자산/전체 포트폴리오를 합산한 대시보드 집계 API |
 | 관심종목 | 관심목록 상세과 포함 항목 목록을 한 번에 반환하는 API |
-| 알림후보 | 시그널에서 알림 후보를 생성/승인하는 전용 API |
 | 설정 | 알림 설정 조회/수정 API |
 
 ## Route Checklist
@@ -770,6 +815,9 @@
 - [x] `POST /api/v1/signals`
 - [x] `GET /api/v1/signals`
 - [x] `GET /api/v1/signals/{signal_id}`
+- [x] `GET /api/v1/alert-candidates`
+- [x] `POST /api/v1/alert-candidates/{candidate_id}/read`
+- [x] `POST /api/v1/alert-candidates/{candidate_id}/confirm`
 - [x] `GET /api/v1/alerts`
 - [x] `POST /api/v1/alerts/{alert_id}/read`
 - [x] `POST /api/v1/alerts/{alert_id}/dismiss`
