@@ -14,6 +14,7 @@ class PortfolioCreate(BaseModel):
         gt=Decimal("0"),
         le=Decimal("1"),
     )
+    cash_balance: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
 
 
 class PortfolioResponse(BaseModel):
@@ -23,6 +24,7 @@ class PortfolioResponse(BaseModel):
     user_id: int
     name: str
     concentration_threshold: Decimal
+    cash_balance: Decimal
     created_at: datetime
 
 
@@ -59,6 +61,15 @@ class PositionWeight(BaseModel):
     quantity: Decimal
     avg_buy_price: Decimal
     cost_value: Decimal
+    market_value: Decimal
+    cost_weight: Decimal
+    weight: Decimal
+    exceeds_threshold: bool
+
+
+class SectorWeight(BaseModel):
+    sector: str
+    market_value: Decimal
     weight: Decimal
     exceeds_threshold: bool
 
@@ -67,7 +78,12 @@ class PortfolioSummaryResponse(BaseModel):
     portfolio_id: int
     concentration_threshold: Decimal
     total_cost_value: Decimal
+    total_value: Decimal
+    cash_balance: Decimal
+    cash_weight: Decimal
+    has_sector_concentration: bool
     positions: list[PositionWeight]
+    sector_weights: list[SectorWeight]
 
 
 class PortfolioCheckResponse(BaseModel):

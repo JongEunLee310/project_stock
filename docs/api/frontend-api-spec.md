@@ -361,13 +361,13 @@
 - Request:
 
 ```json
-{ "name": "Long term", "concentration_threshold": "0.4" }
+{ "name": "Long term", "concentration_threshold": "0.4", "cash_balance": "100" }
 ```
 
 - Success `201`:
 
 ```json
-{ "data": { "id": 1, "user_id": 1, "name": "Long term", "concentration_threshold": "0.4", "created_at": "2026-06-19T00:00:00" }, "message": null, "error": null, "meta": null }
+{ "data": { "id": 1, "user_id": 1, "name": "Long term", "concentration_threshold": "0.4", "cash_balance": "0", "created_at": "2026-06-19T00:00:00" }, "message": null, "error": null, "meta": null }
 ```
 
 - Representative error `422 VALIDATION_ERROR`: see Auth section.
@@ -379,7 +379,7 @@
 - Success `200`:
 
 ```json
-{ "data": [{ "id": 1, "user_id": 1, "name": "Long term", "concentration_threshold": "0.4", "created_at": "2026-06-19T00:00:00" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
+{ "data": [{ "id": 1, "user_id": 1, "name": "Long term", "concentration_threshold": "0.4", "cash_balance": "0", "created_at": "2026-06-19T00:00:00" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
 ```
 
 - Representative error `401 AUTH_INVALID_TOKEN`: see Auth section.
@@ -391,8 +391,14 @@
 - Success `200`:
 
 ```json
-{ "data": { "portfolio_id": 1, "concentration_threshold": "0.4", "total_cost_value": "1000", "positions": [{ "asset_id": 1, "quantity": "10", "avg_buy_price": "100", "cost_value": "1000", "weight": "1", "exceeds_threshold": true }] }, "message": null, "error": null, "meta": null }
+{ "data": { "portfolio_id": 1, "concentration_threshold": "0.4", "total_cost_value": "1000", "total_value": "2056.4", "cash_balance": "100", "cash_weight": "0.048628671465", "has_sector_concentration": true, "positions": [{ "asset_id": 1, "quantity": "10", "avg_buy_price": "100", "cost_value": "1000", "market_value": "1956.4", "cost_weight": "1", "weight": "0.951371328535", "exceeds_threshold": true }], "sector_weights": [{ "sector": "Technology", "market_value": "1956.4", "weight": "0.951371328535", "exceeds_threshold": true }] }, "message": null, "error": null, "meta": null }
 ```
+
+- `total_value` is market value plus `cash_balance`.
+- `positions[].weight`, `sector_weights[].weight`, and `cash_weight` are based on `total_value`.
+- `positions[].cost_weight` remains cost-basis for UIs that need the previous ratio.
+- Null asset sectors are grouped under `UNKNOWN`.
+- Sector concentration reuses `concentration_threshold`.
 
 - Representative error `404 PORTFOLIO_NOT_FOUND`:
 
@@ -407,7 +413,7 @@
 - Success `200`:
 
 ```json
-{ "data": { "summary": { "portfolio_id": 1, "concentration_threshold": "0.4", "total_cost_value": "1000", "positions": [] }, "created_signals": [] }, "message": null, "error": null, "meta": null }
+{ "data": { "summary": { "portfolio_id": 1, "concentration_threshold": "0.4", "total_cost_value": "1000", "total_value": "2056.4", "cash_balance": "100", "cash_weight": "0.048628671465", "has_sector_concentration": true, "positions": [], "sector_weights": [] }, "created_signals": [] }, "message": null, "error": null, "meta": null }
 ```
 
 - Representative error `403 PORTFOLIO_FORBIDDEN`:

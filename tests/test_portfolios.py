@@ -6,10 +6,29 @@ from fastapi.testclient import TestClient
 from tests.conftest import api_data, api_meta, set_current_user
 
 
-def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
+def assert_decimal_close(
+    actual: str | Decimal,
+    expected: Decimal,
+    tolerance: Decimal = Decimal("0.000001"),
+) -> None:
+    assert abs(Decimal(actual) - expected) <= tolerance
+
+
+def create_asset(
+    client: TestClient,
+    symbol: str = "AAPL",
+    sector: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, str] = {
+        "symbol": symbol,
+        "name": f"{symbol} Inc.",
+        "market": "NASDAQ",
+    }
+    if sector is not None:
+        payload["sector"] = sector
     response = client.post(
         "/api/v1/assets",
-        json={"symbol": symbol, "name": f"{symbol} Inc.", "market": "NASDAQ"},
+        json=payload,
     )
     assert response.status_code == 201
     return cast(dict[str, Any], api_data(response))
@@ -19,10 +38,13 @@ def create_portfolio(
     client: TestClient,
     name: str = "Long Term",
     concentration_threshold: str | None = None,
+    cash_balance: str | None = None,
 ) -> dict[str, Any]:
     payload = {"name": name}
     if concentration_threshold is not None:
         payload["concentration_threshold"] = concentration_threshold
+    if cash_balance is not None:
+        payload["cash_balance"] = cash_balance
     response = client.post("/api/v1/portfolios", json=payload)
     assert response.status_code == 201
     return cast(dict[str, Any], api_data(response))
@@ -56,15 +78,21 @@ def test_create_portfolio_success(client: TestClient) -> None:
     assert data["user_id"] == 1
     assert data["name"] == "Long Term"
     assert Decimal(data["concentration_threshold"]) == Decimal("0.4")
+    assert Decimal(data["cash_balance"]) == Decimal("0")
     assert "created_at" in data
 
 
 def test_create_portfolio_accepts_concentration_threshold(client: TestClient) -> None:
     set_current_user(1)
 
-    data = create_portfolio(client, concentration_threshold="0.35")
+    data = create_portfolio(
+        client,
+        concentration_threshold="0.35",
+        cash_balance="1250.50",
+    )
 
     assert Decimal(data["concentration_threshold"]) == Decimal("0.35")
+    assert Decimal(data["cash_balance"]) == Decimal("1250.50")
 
 
 def test_list_portfolios_returns_only_current_users_portfolios(
@@ -256,7 +284,7 @@ def test_add_position_rejects_duplicate_asset(client: TestClient) -> None:
     assert response.status_code == 400
 
 
-def test_get_portfolio_summary_calculates_weights_and_threshold(
+def test_get_portfolio_summary_calculates_market_weights_and_threshold(
     client: TestClient,
 ) -> None:
     set_current_user(1)
@@ -285,14 +313,82 @@ def test_get_portfolio_summary_calculates_weights_and_threshold(
     assert data["portfolio_id"] == portfolio["id"]
     assert Decimal(data["concentration_threshold"]) == Decimal("0.6")
     assert Decimal(data["total_cost_value"]) == Decimal("400.000000000000")
+    assert Decimal(data["total_value"]) == Decimal("750.920000000000")
+    assert Decimal(data["cash_balance"]) == Decimal("0.0000")
+    assert Decimal(data["cash_weight"]) == Decimal("0")
+    assert data["has_sector_concentration"] is True
     positions = data["positions"]
     assert len(positions) == 2
     assert Decimal(positions[0]["cost_value"]) == Decimal("300.000000000000")
-    assert Decimal(positions[0]["weight"]) == Decimal("0.75")
+    assert Decimal(positions[0]["market_value"]) == Decimal("586.920000000000")
+    assert Decimal(positions[0]["cost_weight"]) == Decimal("0.75")
+    assert_decimal_close(positions[0]["weight"], Decimal("586.92") / Decimal("750.92"))
     assert positions[0]["exceeds_threshold"] is True
     assert Decimal(positions[1]["cost_value"]) == Decimal("100.000000000000")
-    assert Decimal(positions[1]["weight"]) == Decimal("0.25")
+    assert Decimal(positions[1]["market_value"]) == Decimal("164.000000000000")
+    assert Decimal(positions[1]["cost_weight"]) == Decimal("0.25")
+    assert_decimal_close(positions[1]["weight"], Decimal("164") / Decimal("750.92"))
     assert positions[1]["exceeds_threshold"] is False
+    assert len(data["sector_weights"]) == 1
+    unknown_sector = data["sector_weights"][0]
+    assert unknown_sector["sector"] == "UNKNOWN"
+    assert Decimal(unknown_sector["market_value"]) == Decimal("750.920000000000")
+    assert Decimal(unknown_sector["weight"]) == Decimal("1")
+    assert unknown_sector["exceeds_threshold"] is True
+
+
+def test_get_portfolio_summary_includes_sectors_unknown_and_cash_weight(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    portfolio = create_portfolio(
+        client,
+        concentration_threshold="0.3",
+        cash_balance="100",
+    )
+    apple = create_asset(client, "AAPL", sector="Technology")
+    tesla = create_asset(client, "TSLA", sector="Consumer Discretionary")
+    unknown = create_asset(client, "ZZZ")
+    add_position(client, portfolio["id"], apple["id"], quantity="1", avg_buy_price="100")
+    add_position(client, portfolio["id"], tesla["id"], quantity="1", avg_buy_price="100")
+    add_position(
+        client,
+        portfolio["id"],
+        unknown["id"],
+        quantity="1",
+        avg_buy_price="100",
+    )
+
+    response = client.get(f"/api/v1/portfolios/{portfolio['id']}/summary")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    total_value = Decimal("597.95")
+    assert Decimal(data["total_value"]) == Decimal("597.950000000000")
+    assert Decimal(data["cash_balance"]) == Decimal("100.0000")
+    assert_decimal_close(data["cash_weight"], Decimal("100") / total_value)
+    assert data["has_sector_concentration"] is True
+
+    sectors = {sector["sector"]: sector for sector in data["sector_weights"]}
+    assert set(sectors) == {"Consumer Discretionary", "Technology", "UNKNOWN"}
+    assert Decimal(sectors["Technology"]["market_value"]) == Decimal("195.640000000000")
+    assert_decimal_close(sectors["Technology"]["weight"], Decimal("195.64") / total_value)
+    assert sectors["Technology"]["exceeds_threshold"] is True
+    assert Decimal(sectors["Consumer Discretionary"]["market_value"]) == Decimal(
+        "182.310000000000"
+    )
+    assert_decimal_close(
+        sectors["Consumer Discretionary"]["weight"],
+        Decimal("182.31") / total_value,
+    )
+    assert sectors["Consumer Discretionary"]["exceeds_threshold"] is True
+    assert Decimal(sectors["UNKNOWN"]["market_value"]) == Decimal("120.000000000000")
+    assert_decimal_close(sectors["UNKNOWN"]["weight"], Decimal("120") / total_value)
+    assert sectors["UNKNOWN"]["exceeds_threshold"] is False
+
+    position_weight_sum = sum(Decimal(position["weight"]) for position in data["positions"])
+    total_weight = position_weight_sum + Decimal(data["cash_weight"])
+    assert_decimal_close(total_weight, Decimal("1"))
 
 
 def test_get_portfolio_summary_returns_zero_weights_without_positions(
@@ -306,7 +402,10 @@ def test_get_portfolio_summary_returns_zero_weights_without_positions(
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
     assert Decimal(data["total_cost_value"]) == Decimal("0")
+    assert Decimal(data["total_value"]) == Decimal("0.0000")
+    assert Decimal(data["cash_weight"]) == Decimal("0")
     assert data["positions"] == []
+    assert data["sector_weights"] == []
 
 
 def test_check_concentration_creates_risk_alert_signal(client: TestClient) -> None:
@@ -327,18 +426,20 @@ def test_check_concentration_creates_risk_alert_signal(client: TestClient) -> No
 
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
-    assert Decimal(data["summary"]["positions"][0]["weight"]) == Decimal("0.75")
+    expected_weight = Decimal("586.92") / Decimal("750.92")
+    assert_decimal_close(data["summary"]["positions"][0]["weight"], expected_weight)
     created_signals = data["created_signals"]
     assert len(created_signals) == 1
     signal = created_signals[0]
     assert signal["asset_id"] == apple["id"]
     assert signal["signal_type"] == "RISK_ALERT"
-    assert signal["score"] == 75
+    assert signal["score"] == 78
     assert signal["risk_level"] == "HIGH"
     assert signal["evidence"]["portfolio_id"] == portfolio["id"]
-    assert Decimal(signal["evidence"]["weight"]) == Decimal("0.75")
+    assert_decimal_close(signal["evidence"]["weight"], expected_weight)
     assert Decimal(signal["evidence"]["threshold"]) == Decimal("0.6000")
     assert Decimal(signal["evidence"]["cost_value"]) == Decimal("300.000000000000")
+    assert Decimal(signal["evidence"]["market_value"]) == Decimal("586.920000000000")
 
 
 def test_check_concentration_does_not_duplicate_active_signal(

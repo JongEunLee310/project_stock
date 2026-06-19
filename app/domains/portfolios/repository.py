@@ -34,6 +34,7 @@ class PortfolioRepository:
             user_id=user_id,
             name=data.name,
             concentration_threshold=data.concentration_threshold,
+            cash_balance=data.cash_balance,
         )
         self.db.add(portfolio)
         self.db.commit()

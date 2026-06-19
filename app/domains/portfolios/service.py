@@ -1,10 +1,13 @@
 from decimal import Decimal
+from typing import Iterable
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.adapters.factory import get_market_provider
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
+from app.domains.assets.model import Asset
 from app.domains.assets.repository import AssetRepository
 from app.domains.portfolios.model import Portfolio, Position
 from app.domains.portfolios.repository import PortfolioRepository, PositionRepository
@@ -13,10 +16,11 @@ from app.domains.portfolios.schema import (
     PortfolioCreate,
     PortfolioResponse,
     PortfolioSummaryResponse,
-    PositionWeight,
     PositionCreate,
+    PositionWeight,
     PositionResponse,
     PositionUpdate,
+    SectorWeight,
 )
 from app.domains.signals.repository import SignalRepository
 from app.domains.signals.schema import SignalCreate, SignalResponse
@@ -151,6 +155,7 @@ class PortfolioService:
                         "weight": str(position.weight),
                         "threshold": str(summary.concentration_threshold),
                         "cost_value": str(position.cost_value),
+                        "market_value": str(position.market_value),
                     },
                 )
             )
@@ -179,40 +184,118 @@ class PortfolioService:
 
     def _build_summary(self, portfolio: Portfolio) -> PortfolioSummaryResponse:
         positions = self.position_repo.list_by_portfolio(portfolio.id)
-        total_cost_value, position_weights = self._calculate_weights(
+        assets_by_id = self._get_assets_by_position(positions)
+        (
+            total_cost_value,
+            total_value,
+            position_weights,
+            sector_weights,
+        ) = self._calculate_weights(
             positions,
+            assets_by_id,
+            portfolio.cash_balance,
             portfolio.concentration_threshold,
         )
         return PortfolioSummaryResponse(
             portfolio_id=portfolio.id,
             concentration_threshold=portfolio.concentration_threshold,
             total_cost_value=total_cost_value,
+            total_value=total_value,
+            cash_balance=portfolio.cash_balance,
+            cash_weight=self._calculate_weight(portfolio.cash_balance, total_value),
+            has_sector_concentration=any(
+                sector_weight.exceeds_threshold for sector_weight in sector_weights
+            ),
             positions=position_weights,
+            sector_weights=sector_weights,
         )
+
+    def _get_assets_by_position(self, positions: list[Position]) -> dict[int, Asset]:
+        asset_ids = {position.asset_id for position in positions}
+        assets: dict[int, Asset] = {}
+        for asset_id in asset_ids:
+            asset = self.asset_repo.get_by_id(asset_id)
+            if asset is not None:
+                assets[asset_id] = asset
+        return assets
 
     def _calculate_weights(
         self,
         positions: list[Position],
+        assets_by_id: dict[int, Asset],
+        cash_balance: Decimal,
         threshold: Decimal,
-    ) -> tuple[Decimal, list[PositionWeight]]:
+    ) -> tuple[Decimal, Decimal, list[PositionWeight], list[SectorWeight]]:
         costs = [position.quantity * position.avg_buy_price for position in positions]
         total_cost_value = sum(costs, Decimal("0"))
+        quotes_by_symbol = self._get_quotes_by_symbol(assets_by_id.values())
+        market_values: list[Decimal] = []
+        sector_market_values: dict[str, Decimal] = {}
+
+        for position in positions:
+            asset = assets_by_id.get(position.asset_id)
+            price = Decimal("0")
+            sector = "UNKNOWN"
+            if asset is not None:
+                price = quotes_by_symbol.get(asset.symbol.upper(), Decimal("0"))
+                sector = asset.sector or "UNKNOWN"
+            market_value = position.quantity * price
+            market_values.append(market_value)
+            sector_market_values[sector] = (
+                sector_market_values.get(sector, Decimal("0")) + market_value
+            )
+
+        total_market_value = sum(market_values, Decimal("0"))
+        total_value = total_market_value + cash_balance
         weights: list[PositionWeight] = []
 
-        for position, cost_value in zip(positions, costs, strict=True):
-            weight = Decimal("0") if total_cost_value == 0 else cost_value / total_cost_value
+        for position, cost_value, market_value in zip(
+            positions,
+            costs,
+            market_values,
+            strict=True,
+        ):
+            weight = self._calculate_weight(market_value, total_value)
             weights.append(
                 PositionWeight(
                     asset_id=position.asset_id,
                     quantity=position.quantity,
                     avg_buy_price=position.avg_buy_price,
                     cost_value=cost_value,
+                    market_value=market_value,
+                    cost_weight=self._calculate_weight(cost_value, total_cost_value),
                     weight=weight,
                     exceeds_threshold=weight > threshold,
                 )
             )
 
-        return total_cost_value, weights
+        sector_weights: list[SectorWeight] = []
+        for sector, market_value in sorted(sector_market_values.items()):
+            sector_weight = self._calculate_weight(market_value, total_value)
+            sector_weights.append(
+                SectorWeight(
+                    sector=sector,
+                    market_value=market_value,
+                    weight=sector_weight,
+                    exceeds_threshold=sector_weight > threshold,
+                )
+            )
+
+        return total_cost_value, total_value, weights, sector_weights
+
+    def _get_quotes_by_symbol(self, assets: Iterable[Asset]) -> dict[str, Decimal]:
+        symbols = sorted({asset.symbol.upper() for asset in assets})
+        if not symbols:
+            return {}
+        return {
+            quote.symbol.upper(): quote.price
+            for quote in get_market_provider().get_quote(symbols)
+        }
+
+    def _calculate_weight(self, value: Decimal, total_value: Decimal) -> Decimal:
+        if total_value == 0:
+            return Decimal("0")
+        return value / total_value
 
     def _score_from_weight(self, weight: Decimal) -> int:
         return max(0, min(100, int(weight * Decimal("100"))))

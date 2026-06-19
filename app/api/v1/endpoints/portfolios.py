@@ -62,7 +62,7 @@ def list_portfolios(
     "/{portfolio_id}/summary",
     response_model=ApiResponse[PortfolioSummaryResponse],
     summary="Get portfolio summary",
-    description="Return cost-value weights and concentration threshold status for a portfolio.",
+    description="Return market-value weights, cash weight, sector weights, and concentration status.",
 )
 def get_portfolio_summary(
     portfolio_id: int,
