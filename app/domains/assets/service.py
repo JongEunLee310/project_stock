@@ -1,10 +1,11 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.adapters.factory import get_market_provider
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.assets.repository import AssetRepository
-from app.domains.assets.schema import AssetCreate, AssetResponse
+from app.domains.assets.schema import AssetCreate, AssetDetailResponse, AssetResponse
 
 
 class AssetService:
@@ -23,6 +24,9 @@ class AssetService:
                 symbol=data.symbol,
                 name=data.name,
                 market=data.market,
+                sector=data.sector,
+                industry=data.industry,
+                description=data.description,
             )
         except IntegrityError as exc:
             raise AppException(
@@ -31,6 +35,31 @@ class AssetService:
                 error_code=ErrorCode.ASSET_DUPLICATE,
             ) from exc
         return AssetResponse.model_validate(asset)
+
+    def get_detail(self, asset_id: int) -> AssetDetailResponse:
+        asset = self.repo.get_by_id(asset_id)
+        if asset is None:
+            raise AppException(
+                status_code=404,
+                detail="종목을 찾을 수 없습니다.",
+                error_code=ErrorCode.ASSET_NOT_FOUND,
+            )
+        quote = get_market_provider().get_quote([asset.symbol])[0]
+        return AssetDetailResponse(
+            id=asset.id,
+            symbol=asset.symbol,
+            name=asset.name,
+            market=asset.market,
+            price=str(quote.price),
+            previous_close=str(quote.previous_close),
+            change=str(quote.change),
+            change_percent=str(quote.change_percent),
+            currency=quote.currency,
+            sector=asset.sector,
+            industry=asset.industry,
+            description=asset.description,
+            as_of=quote.as_of,
+        )
 
     def get(self, asset_id: int) -> AssetResponse:
         asset = self.repo.get_by_id(asset_id)

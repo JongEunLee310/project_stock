@@ -1,4 +1,4 @@
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -52,19 +52,43 @@ class WatchlistItemRepository:
         )
         return self.db.scalars(stmt).first()
 
-    def list_by_watchlist(self, watchlist_id: int) -> list[WatchlistItem]:
-        stmt = (
-            select(WatchlistItem)
-            .where(WatchlistItem.watchlist_id == watchlist_id)
-            .order_by(WatchlistItem.priority, WatchlistItem.id)
-        )
+    def list_by_watchlist(
+        self,
+        watchlist_id: int,
+        offset: int = 0,
+        limit: int | None = None,
+        sort: str = "priority",
+    ) -> list[WatchlistItem]:
+        stmt = select(WatchlistItem).where(WatchlistItem.watchlist_id == watchlist_id)
+        stmt = self._apply_sort(stmt, sort).offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(self.db.scalars(stmt).all())
 
-    def create(self, watchlist_id: int, asset_id: int, priority: int) -> WatchlistItem:
+    def count_by_watchlist(self, watchlist_id: int) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(WatchlistItem)
+            .where(WatchlistItem.watchlist_id == watchlist_id)
+        )
+        return int(self.db.scalar(stmt) or 0)
+
+    def create(
+        self,
+        watchlist_id: int,
+        asset_id: int,
+        priority: int,
+        reason: str | None,
+        tags: list[str],
+        memo: str | None,
+    ) -> WatchlistItem:
         item = WatchlistItem(
             watchlist_id=watchlist_id,
             asset_id=asset_id,
             priority=priority,
+            reason=reason,
+            tags=tags,
+            memo=memo,
         )
         self.db.add(item)
         try:
@@ -81,3 +105,16 @@ class WatchlistItemRepository:
             return
         self.db.delete(item)
         self.db.commit()
+
+    def _apply_sort(
+        self,
+        stmt: Select[tuple[WatchlistItem]],
+        sort: str,
+    ) -> Select[tuple[WatchlistItem]]:
+        if sort == "-priority":
+            return stmt.order_by(WatchlistItem.priority.desc(), WatchlistItem.id.desc())
+        if sort == "created_at":
+            return stmt.order_by(WatchlistItem.created_at, WatchlistItem.id)
+        if sort == "-created_at":
+            return stmt.order_by(WatchlistItem.created_at.desc(), WatchlistItem.id.desc())
+        return stmt.order_by(WatchlistItem.priority, WatchlistItem.id)

@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
@@ -22,3 +22,6 @@ class WatchlistItem(Base, TimestampMixin):
     watchlist_id: Mapped[int] = mapped_column(ForeignKey("watchlists.id"))
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
     priority: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
+    memo: Mapped[str | None] = mapped_column(Text, nullable=True)

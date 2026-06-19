@@ -11,6 +11,7 @@ from app.domains.watchlists.schema import (
     WatchlistCreate,
     WatchlistItemCreate,
     WatchlistItemResponse,
+    WatchlistItemSort,
     WatchlistResponse,
 )
 from app.domains.watchlists.service import WatchlistService
@@ -52,6 +53,32 @@ def list_watchlists(
         limit=size,
     )
     total = service.count_watchlists(current_user.id)
+    return paginated(items, page=page, size=size, total=total)
+
+
+@router.get(
+    "/{watchlist_id}/items",
+    response_model=ApiResponse[list[WatchlistItemResponse]],
+    summary="List watchlist items",
+    description="Return paginated items for a watchlist owned by the authenticated user.",
+)
+def list_watchlist_items(
+    watchlist_id: int,
+    page: Annotated[int, Query(ge=1)] = 1,
+    size: Annotated[int, Query(ge=1, le=100)] = 20,
+    sort: WatchlistItemSort = "priority",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[list[WatchlistItemResponse]]:
+    service = WatchlistService(db)
+    items = service.list_items(
+        watchlist_id,
+        current_user.id,
+        offset=(page - 1) * size,
+        limit=size,
+        sort=sort,
+    )
+    total = service.count_items(watchlist_id, current_user.id)
     return paginated(items, page=page, size=size, total=total)
 
 

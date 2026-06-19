@@ -53,6 +53,7 @@
 | 포트폴리오 목록 | `GET` | `/api/v1/portfolios?page=1&size=20` | Required | 요약 조회 전 선택 목록. |
 | 포트폴리오 요약 | `GET` | `/api/v1/portfolios/{portfolio_id}/summary` | Required | 집중도/비중 표시. |
 | 관심종목 목록 | `GET` | `/api/v1/watchlists?page=1&size=20` | Required | 사용자 관심종목 그룹 목록. |
+| 관심종목 항목 | `GET` | `/api/v1/watchlists/{watchlist_id}/items?page=1&size=20&sort=priority` | Required | 항목별 사유/태그/메모 표시. |
 | 알림 목록 | `GET` | `/api/v1/alerts?status=UNREAD&page=1&size=20` | Required | unread 카드/배지 표시. |
 
 ### 관심종목
@@ -61,6 +62,7 @@
 | --- | --- | --- | --- |
 | 목록 조회 | `GET` | `/api/v1/watchlists?page=1&size=20` | Required |
 | 관심목록 생성 | `POST` | `/api/v1/watchlists` | Required |
+| 관심종목 항목 조회 | `GET` | `/api/v1/watchlists/{watchlist_id}/items?page=1&size=20&sort=priority` | Required |
 | 관심종목 추가 | `POST` | `/api/v1/watchlists/{watchlist_id}/items` | Required |
 | 관심종목 제거 | `DELETE` | `/api/v1/watchlists/{watchlist_id}/items/{item_id}` | Required |
 
@@ -69,7 +71,10 @@
 | Purpose | Method | Path | Auth |
 | --- | --- | --- | --- |
 | 종목 정보 | `GET` | `/api/v1/assets/{asset_id}` | Not required |
+| 종목 기본 정보 카드 | `GET` | `/api/v1/assets/{asset_id}/detail` | Not required |
 | 최신 투자 가설 | `GET` | `/api/v1/theses/latest?asset_id={asset_id}` | Required |
+| 리서치 요약 | `GET` | `/api/v1/assets/{asset_id}/research-summary` | Required |
+| 매수 전 점검 | `GET/PUT` | `/api/v1/assets/{asset_id}/buy-checklist` | Required |
 | 리서치 리포트 목록 | `GET` | `/api/v1/reports?asset_id={asset_id}&page=1&size=20` | Required |
 | 시그널 목록 | `GET` | `/api/v1/signals?asset_id={asset_id}&include_expired=false&page=1&size=20` | Required |
 
@@ -78,6 +83,7 @@
 | Purpose | Method | Path | Auth | Notes |
 | --- | --- | --- | --- | --- |
 | 리포트 목록 | `GET` | `/api/v1/reports?asset_id={asset_id}&page=1&size=20` | Required | thesis conflict 필드는 report payload에 포함. |
+| 종목 요약 카드 | `GET` | `/api/v1/assets/{asset_id}/research-summary` | Required | Mock 요약. |
 | 리포트 상세 | `GET` | `/api/v1/reports/{report_id}` | Required | 요약/근거/위험 수준 표시. |
 | 리포트 생성 | `POST` | `/api/v1/reports` | Required | 운영/관리성 생성 API. |
 | 가설 생성/수정/비활성화 | `POST/PUT/PATCH` | `/api/v1/theses...` | Required | 화면 편집 기능이 필요할 때 사용. |
@@ -213,6 +219,55 @@
 { "data": null, "message": "종목을 찾을 수 없습니다.", "error": { "code": "ASSET_NOT_FOUND" }, "meta": null }
 ```
 
+#### `GET /api/v1/assets/{asset_id}/detail`
+
+- Auth: Not required
+- Request: path `asset_id`
+- Success `200`:
+
+```json
+{ "data": { "id": 1, "symbol": "AAPL", "name": "Apple Inc.", "market": "NASDAQ", "price": "195.64", "previous_close": "193.20", "change": "2.44", "change_percent": "1.26", "currency": "USD", "sector": "Technology", "industry": "Consumer Electronics", "description": "Makes devices and services.", "as_of": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
+```
+
+- Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
+
+#### `GET /api/v1/assets/{asset_id}/research-summary`
+
+- Auth: Required
+- Request: path `asset_id`
+- Success `200`:
+
+```json
+{ "data": { "asset_id": 1, "positive_factors": ["견조한 매출 성장"], "negative_factors": ["밸류에이션 부담"], "items_to_verify": ["최근 실적 발표 원문 확인"], "sources": [{ "type": "news", "label": "AAPL mock news", "url": null }], "updated_at": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
+```
+
+- Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
+
+#### `GET /api/v1/assets/{asset_id}/buy-checklist`
+
+- Auth: Required
+- Request: path `asset_id`
+- Success `200`:
+
+```json
+{ "data": { "asset_id": 1, "items": [{ "key": "valuation", "label": "밸류에이션 확인", "status": "pending", "detail": "현재 가격과 최근 실적 기준 밸류에이션을 확인하세요." }], "memo": null, "checked_item_keys": [], "is_complete": false, "decided_at": null }, "message": null, "error": null, "meta": null }
+```
+
+- Completion rule: `is_complete` is true when `memo` has non-whitespace text and all four required keys are checked.
+- Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
+
+#### `PUT /api/v1/assets/{asset_id}/buy-checklist`
+
+- Auth: Required
+- Request:
+
+```json
+{ "memo": "All checks reviewed.", "checked_item_keys": ["valuation", "news_overheated", "portfolio_concentration", "earnings_disclosure"] }
+```
+
+- Success `200`: same `BuyChecklistResponse` envelope as checklist get.
+- Representative error `422 VALIDATION_ERROR`: see Auth section.
+
 ### Watchlists
 
 #### `POST /api/v1/watchlists`
@@ -250,19 +305,35 @@
 - Request:
 
 ```json
-{ "asset_id": 1, "priority": 10 }
+{ "asset_id": 1, "priority": 10, "reason": "Core AI exposure", "tags": ["ai", "large-cap"], "memo": "Watch earnings." }
 ```
 
 - Success `201`:
 
 ```json
-{ "data": { "id": 1, "watchlist_id": 1, "asset_id": 1, "priority": 10, "created_at": "2026-06-19T00:00:00" }, "message": null, "error": null, "meta": null }
+{ "data": { "id": 1, "watchlist_id": 1, "asset_id": 1, "priority": 10, "reason": "Core AI exposure", "tags": ["ai", "large-cap"], "memo": "Watch earnings.", "created_at": "2026-06-19T00:00:00" }, "message": null, "error": null, "meta": null }
 ```
 
 - Representative error `400 WATCHLIST_ITEM_DUPLICATE`:
 
 ```json
 { "data": null, "message": "이미 관심 목록에 추가된 종목입니다.", "error": { "code": "WATCHLIST_ITEM_DUPLICATE" }, "meta": null }
+```
+
+#### `GET /api/v1/watchlists/{watchlist_id}/items`
+
+- Auth: Required
+- Query: `page: int = 1`, `size: int = 20`, `sort: priority | -priority | created_at | -created_at = priority`
+- Success `200`:
+
+```json
+{ "data": [{ "id": 1, "watchlist_id": 1, "asset_id": 1, "priority": 10, "reason": "Core AI exposure", "tags": ["ai", "large-cap"], "memo": "Watch earnings.", "created_at": "2026-06-19T00:00:00" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
+```
+
+- Representative error `403 WATCHLIST_FORBIDDEN`:
+
+```json
+{ "data": null, "message": "관심 목록 접근 권한이 없습니다.", "error": { "code": "WATCHLIST_FORBIDDEN" }, "meta": null }
 ```
 
 #### `DELETE /api/v1/watchlists/{watchlist_id}/items/{item_id}`
