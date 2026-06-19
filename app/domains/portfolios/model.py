@@ -18,6 +18,12 @@ class Portfolio(Base, TimestampMixin):
         default=Decimal("0.4"),
         server_default="0.4",
     )
+    cash_balance: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4),
+        nullable=False,
+        default=Decimal("0"),
+        server_default="0",
+    )
 
 
 class Position(Base, TimestampMixin):
