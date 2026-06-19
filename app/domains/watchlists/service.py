@@ -1,6 +1,7 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.assets.repository import AssetRepository
 from app.domains.watchlists.model import Watchlist
@@ -51,9 +52,17 @@ class WatchlistService:
     ) -> WatchlistItemResponse:
         watchlist = self._get_owned_watchlist(watchlist_id, user_id)
         if self.asset_repo.get_by_id(data.asset_id) is None:
-            raise AppException(status_code=404, detail="종목을 찾을 수 없습니다.")
+            raise AppException(
+                status_code=404,
+                detail="종목을 찾을 수 없습니다.",
+                error_code=ErrorCode.ASSET_NOT_FOUND,
+            )
         if self.item_repo.get_by_watchlist_asset(watchlist.id, data.asset_id):
-            raise AppException(status_code=400, detail="이미 관심 목록에 추가된 종목입니다.")
+            raise AppException(
+                status_code=400,
+                detail="이미 관심 목록에 추가된 종목입니다.",
+                error_code=ErrorCode.WATCHLIST_ITEM_DUPLICATE,
+            )
         try:
             item = self.item_repo.create(
                 watchlist_id=watchlist.id,
@@ -62,7 +71,9 @@ class WatchlistService:
             )
         except IntegrityError as exc:
             raise AppException(
-                status_code=400, detail="이미 관심 목록에 추가된 종목입니다."
+                status_code=400,
+                detail="이미 관심 목록에 추가된 종목입니다.",
+                error_code=ErrorCode.WATCHLIST_ITEM_DUPLICATE,
             ) from exc
         return WatchlistItemResponse.model_validate(item)
 
@@ -70,13 +81,25 @@ class WatchlistService:
         watchlist = self._get_owned_watchlist(watchlist_id, user_id)
         item = self.item_repo.get_by_id(item_id)
         if item is None or item.watchlist_id != watchlist.id:
-            raise AppException(status_code=404, detail="관심 목록 종목을 찾을 수 없습니다.")
+            raise AppException(
+                status_code=404,
+                detail="관심 목록 종목을 찾을 수 없습니다.",
+                error_code=ErrorCode.WATCHLIST_ITEM_NOT_FOUND,
+            )
         self.item_repo.delete(item_id)
 
     def _get_owned_watchlist(self, watchlist_id: int, user_id: int) -> Watchlist:
         watchlist = self.watchlist_repo.get_by_id(watchlist_id)
         if watchlist is None:
-            raise AppException(status_code=404, detail="관심 목록을 찾을 수 없습니다.")
+            raise AppException(
+                status_code=404,
+                detail="관심 목록을 찾을 수 없습니다.",
+                error_code=ErrorCode.WATCHLIST_NOT_FOUND,
+            )
         if watchlist.user_id != user_id:
-            raise AppException(status_code=403, detail="관심 목록 접근 권한이 없습니다.")
+            raise AppException(
+                status_code=403,
+                detail="관심 목록 접근 권한이 없습니다.",
+                error_code=ErrorCode.WATCHLIST_FORBIDDEN,
+            )
         return watchlist

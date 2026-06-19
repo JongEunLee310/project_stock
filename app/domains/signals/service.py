@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.signals.model import Signal
 from app.domains.signals.repository import SignalRepository
@@ -16,7 +17,11 @@ class SignalService:
     def get_signal(self, signal_id: int) -> Signal:
         signal = self.repo.get_by_id(signal_id)
         if signal is None:
-            raise AppException(status_code=404, detail="신호를 찾을 수 없습니다.")
+            raise AppException(
+                status_code=404,
+                detail="신호를 찾을 수 없습니다.",
+                error_code=ErrorCode.SIGNAL_NOT_FOUND,
+            )
         return signal
 
     def list_signals(

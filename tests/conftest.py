@@ -74,6 +74,15 @@ def api_meta(response: Any) -> dict[str, int]:
     return meta
 
 
+def api_error(response: Any) -> dict[str, Any]:
+    body = response.json()
+    assert body["data"] is None
+    assert body["meta"] is None
+    error = body["error"]
+    assert isinstance(error, dict)
+    return {"message": body["message"], **error}
+
+
 @pytest.fixture
 def stable_password_hashing(monkeypatch: pytest.MonkeyPatch) -> None:
     def hash_password(password: str) -> str:
