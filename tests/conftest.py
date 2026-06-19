@@ -55,3 +55,15 @@ def set_current_user(user_id: int, email: str = "owner@example.com") -> None:
         return User(id=user_id, email=email, hashed_password="test-hash")
 
     app.dependency_overrides[get_current_user] = override_get_current_user
+
+
+@pytest.fixture
+def stable_password_hashing(monkeypatch: pytest.MonkeyPatch) -> None:
+    def hash_password(password: str) -> str:
+        return f"hashed:{password}"
+
+    def verify_password(plain_password: str, hashed_password: str) -> bool:
+        return hashed_password == hash_password(plain_password)
+
+    monkeypatch.setattr("app.domains.users.service.hash_password", hash_password)
+    monkeypatch.setattr("app.domains.users.service.verify_password", verify_password)

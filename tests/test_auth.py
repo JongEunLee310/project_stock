@@ -4,16 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-@pytest.fixture(autouse=True)
-def stable_password_hashing(monkeypatch: pytest.MonkeyPatch) -> None:
-    def hash_password(password: str) -> str:
-        return f"hashed:{password}"
-
-    def verify_password(plain_password: str, hashed_password: str) -> bool:
-        return hashed_password == hash_password(plain_password)
-
-    monkeypatch.setattr("app.domains.users.service.hash_password", hash_password)
-    monkeypatch.setattr("app.domains.users.service.verify_password", verify_password)
+pytestmark = pytest.mark.usefixtures("stable_password_hashing")
 
 
 def register_user(
