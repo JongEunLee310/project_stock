@@ -36,5 +36,6 @@
 
 - 평가금액은 mock provider 시세 기반으로 결정적 — 테스트 안정성 확보.
 - 섹터 쏠림 임계치는 별도 컬럼을 추가하지 않고 기존 `concentration_threshold`를 재사용한다.
+- 집중도 신호(`check_concentration`)의 종목 과다 비중 기준도 시세 기반 `positions[].weight`로 통일한다. 기존 원가 기준 비중은 `positions[].cost_weight`와 signal evidence의 `cost_value`로 추적 가능하게 남긴다.
 - 현금은 영속 필드(`cash_balance`)로 모델링 — 추후 손익 계산 확장 여지를 남기되 현재 범위는 비중 산출에 한정.
 - 비중 합(종목 + 현금)은 반올림 오차 내 1에 수렴.
