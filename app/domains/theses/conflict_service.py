@@ -47,4 +47,6 @@ class ThesisAnalysisService:
         parsed = json.loads(value)
         if isinstance(parsed, list):
             return [str(item) for item in parsed]
+        # News factors are expected to be JSON arrays; ignore unexpected shapes
+        # rather than feeding unrelated serialized data into the LLM prompt.
         return []
