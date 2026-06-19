@@ -8,6 +8,11 @@ from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.assets.schema import AssetCreate, AssetDetailResponse, AssetResponse
 from app.domains.assets.service import AssetService
+from app.domains.decision_checklist.schema import (
+    BuyChecklistNoteUpdate,
+    BuyChecklistResponse,
+)
+from app.domains.decision_checklist.service import DecisionChecklistService
 from app.domains.research_summary.schema import ResearchSummaryResponse
 from app.domains.research_summary.service import ResearchSummaryService
 from app.domains.users.model import User
@@ -72,6 +77,37 @@ def get_asset_research_summary(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[ResearchSummaryResponse]:
     return success(ResearchSummaryService(db).get_summary(asset_id))
+
+
+@router.get(
+    "/{asset_id}/buy-checklist",
+    response_model=ApiResponse[BuyChecklistResponse],
+    summary="Get buy checklist",
+    description="Return a rule-based pre-buy checklist and the authenticated user's note.",
+)
+def get_buy_checklist(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[BuyChecklistResponse]:
+    return success(DecisionChecklistService(db).get_checklist(asset_id, current_user.id))
+
+
+@router.put(
+    "/{asset_id}/buy-checklist",
+    response_model=ApiResponse[BuyChecklistResponse],
+    summary="Save buy checklist note",
+    description="Save the authenticated user's judgment memo and checked checklist items.",
+)
+def save_buy_checklist_note(
+    asset_id: int,
+    data: BuyChecklistNoteUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[BuyChecklistResponse]:
+    return success(
+        DecisionChecklistService(db).save_note(asset_id, current_user.id, data)
+    )
 
 
 @router.get(
