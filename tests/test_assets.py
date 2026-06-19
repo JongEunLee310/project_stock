@@ -8,6 +8,7 @@ from tests.conftest import (
     api_data,
     api_error,
     api_meta,
+    set_current_user,
 )
 
 
@@ -170,6 +171,39 @@ def test_get_asset_returns_404_when_missing(client: TestClient) -> None:
 
 def test_get_asset_detail_returns_404_when_missing(client: TestClient) -> None:
     response = client.get("/api/v1/assets/999/detail")
+
+    assert response.status_code == 404
+    assert api_error(response) == {
+        "code": "ASSET_NOT_FOUND",
+        "message": "종목을 찾을 수 없습니다.",
+    }
+
+
+def test_get_research_summary_returns_deterministic_mock_data(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+
+    first_response = client.get(f"/api/v1/assets/{asset['id']}/research-summary")
+    second_response = client.get(f"/api/v1/assets/{asset['id']}/research-summary")
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    first_data = cast(dict[str, Any], api_data(first_response))
+    assert first_data == api_data(second_response)
+    assert first_data["asset_id"] == asset["id"]
+    assert first_data["positive_factors"]
+    assert first_data["negative_factors"]
+    assert first_data["items_to_verify"]
+    assert first_data["sources"]
+    assert first_data["updated_at"] == "2026-06-19T00:00:00Z"
+
+
+def test_get_research_summary_returns_404_when_missing(client: TestClient) -> None:
+    set_current_user(1)
+
+    response = client.get("/api/v1/assets/999/research-summary")
 
     assert response.status_code == 404
     assert api_error(response) == {
