@@ -277,6 +277,34 @@ def test_analyze_watchlist_job_records_success(db: Session) -> None:
     assert job_run.metadata_ == {"watchlist_id": watchlist.id}
 
 
+def test_analyze_watchlist_job_records_partial_failures_in_metadata(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = create_user(db)
+    good_asset = create_asset(db, "AAPL")
+    failing_asset = create_asset(db, "TSLA")
+    watchlist = create_watchlist(db, user.id, [good_asset, failing_asset])
+
+    def fetch(self: object, symbols: list[str]) -> list[NewsAdapterResult]:
+        if "TSLA" in symbols:
+            raise RuntimeError("TSLA feed failed")
+        return [news_result(symbols[0])]
+
+    monkeypatch.setattr("app.worker.jobs.analysis.MockNewsAdapter.fetch", fetch)
+
+    analyze_watchlist_job(watchlist.id)
+
+    job_run = db.scalars(select(JobRun)).one()
+    assert job_run.status == "success"
+    assert job_run.metadata_ == {
+        "watchlist_id": watchlist.id,
+        "partial_failures": [
+            {"asset_id": failing_asset.id, "error": "TSLA feed failed"}
+        ],
+    }
+
+
 def test_analyze_watchlist_job_records_failure_for_missing_watchlist(
     db: Session,
 ) -> None:
