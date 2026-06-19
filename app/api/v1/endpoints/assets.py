@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
-from app.domains.assets.schema import AssetCreate, AssetResponse
+from app.domains.assets.schema import AssetCreate, AssetDetailResponse, AssetResponse
 from app.domains.assets.service import AssetService
 
 router = APIRouter()
@@ -41,6 +41,19 @@ def list_assets(
     items = service.list(is_active=is_active, offset=(page - 1) * size, limit=size)
     total = service.count(is_active=is_active)
     return paginated(items, page=page, size=size, total=total)
+
+
+@router.get(
+    "/{asset_id}/detail",
+    response_model=ApiResponse[AssetDetailResponse],
+    summary="Get asset detail",
+    description="Return basic asset information with deterministic mock market quote data.",
+)
+def get_asset_detail(
+    asset_id: int,
+    db: Session = Depends(get_db),
+) -> ApiResponse[AssetDetailResponse]:
+    return success(AssetService(db).get_detail(asset_id))
 
 
 @router.get(

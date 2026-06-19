@@ -36,8 +36,23 @@ class AssetRepository:
             stmt = stmt.where(Asset.is_active == is_active)
         return int(self.db.scalar(stmt) or 0)
 
-    def create(self, symbol: str, name: str, market: str) -> Asset:
-        asset = Asset(symbol=symbol, name=name, market=market)
+    def create(
+        self,
+        symbol: str,
+        name: str,
+        market: str,
+        sector: str | None,
+        industry: str | None,
+        description: str | None,
+    ) -> Asset:
+        asset = Asset(
+            symbol=symbol,
+            name=name,
+            market=market,
+            sector=sector,
+            industry=industry,
+            description=description,
+        )
         self.db.add(asset)
         try:
             self.db.commit()

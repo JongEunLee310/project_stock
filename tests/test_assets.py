@@ -3,7 +3,12 @@ from typing import Any, cast
 from fastapi.testclient import TestClient
 
 from app.domains.assets.model import Asset
-from tests.conftest import TestingSessionLocal, api_data, api_error, api_meta
+from tests.conftest import (
+    TestingSessionLocal,
+    api_data,
+    api_error,
+    api_meta,
+)
 
 
 def asset_payload(symbol: str = "AAPL", market: str = "NASDAQ") -> dict[str, str]:
@@ -11,6 +16,9 @@ def asset_payload(symbol: str = "AAPL", market: str = "NASDAQ") -> dict[str, str
         "symbol": symbol,
         "name": "Apple Inc.",
         "market": market,
+        "sector": "Technology",
+        "industry": "Consumer Electronics",
+        "description": "Makes devices and services.",
     }
 
 
@@ -108,8 +116,60 @@ def test_get_asset_detail(client: TestClient) -> None:
     assert api_data(response) == asset
 
 
+def test_get_asset_detail_with_mock_quote(client: TestClient) -> None:
+    asset = create_asset(client)
+
+    response = client.get(f"/api/v1/assets/{asset['id']}/detail")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["id"] == asset["id"]
+    assert data["symbol"] == "AAPL"
+    assert data["market"] == "NASDAQ"
+    assert data["price"] == "195.64"
+    assert data["previous_close"] == "193.20"
+    assert data["change"] == "2.44"
+    assert data["change_percent"] == "1.26"
+    assert data["currency"] == "USD"
+    assert data["sector"] == "Technology"
+    assert data["industry"] == "Consumer Electronics"
+    assert data["description"] == "Makes devices and services."
+    assert data["as_of"] == "2026-06-19T00:00:00Z"
+
+
+def test_get_asset_detail_uses_mock_fallback_for_unknown_symbol(
+    client: TestClient,
+) -> None:
+    asset = create_asset(
+        client,
+        {
+            "symbol": "ZZZZ",
+            "name": "Unknown Mock",
+            "market": "NASDAQ",
+        },
+    )
+
+    response = client.get(f"/api/v1/assets/{asset['id']}/detail")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["symbol"] == "ZZZZ"
+    assert data["price"] == "210"
+    assert data["change"] == "1.00"
+
+
 def test_get_asset_returns_404_when_missing(client: TestClient) -> None:
     response = client.get("/api/v1/assets/999")
+
+    assert response.status_code == 404
+    assert api_error(response) == {
+        "code": "ASSET_NOT_FOUND",
+        "message": "종목을 찾을 수 없습니다.",
+    }
+
+
+def test_get_asset_detail_returns_404_when_missing(client: TestClient) -> None:
+    response = client.get("/api/v1/assets/999/detail")
 
     assert response.status_code == 404
     assert api_error(response) == {
