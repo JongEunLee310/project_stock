@@ -28,7 +28,7 @@ If a single unit of work mixes unrelated commit types (e.g., a doc update bundle
 
 - `main`, `fastapi`, and `spring-boot` are protected: direct push is rejected by repository rules. Push to a feature branch (e.g., `docs/<topic>`, `feat/<topic>`, `fix/<topic>`) and open a PR with `gh pr create` targeting the correct base branch.
 - PR body must include a closing keyword (`Closes #N`) for every related issue so that GitHub automatically closes the issue on merge. If the PR addresses multiple issues, list each on a separate line (e.g., `Closes #8`, `Closes #9`, `Closes #12`). The `.github/pull_request_template.md` already contains a `Closes #` placeholder — always fill in the issue number before creating the PR.
-- PR body Summary section: each bullet point must indicate which issue it belongs to. If the PR covers multiple issues, group bullets under a bold issue header (e.g., `**Issue #10 — 제목**`) or append `(Issue #N)` inline per bullet. Reviewers must be able to tell at a glance which change addresses which issue.
+- PR body Summary section: group bullets by issue, not by individual bullet. If the PR covers a single issue, list all bullets together without per-bullet issue annotations (the PR title already carries the issue number). If the PR covers multiple issues, introduce each group with a bold issue header (e.g., `**Issue #10 — 제목**`) so reviewers can tell at a glance which change addresses which issue.
 - Claude Code does not approve or merge the PR it opens. Human approval is still required per `local-review-policy.md`.
 
 ## Step 4: CI Failure Response

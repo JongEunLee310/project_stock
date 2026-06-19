@@ -23,6 +23,7 @@ class NewsItemRepository:
     ) -> NewsItem:
         item = self.db.get(NewsItem, news_item_id)
         if item is None:
+            # Keep direct repository callers from silently updating a missing row.
             raise ValueError("news item not found")
 
         item.summary = data.summary

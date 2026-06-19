@@ -1,12 +1,15 @@
 import json
 from collections.abc import Generator
+from typing import Any
 
 import pytest
+from pydantic import BaseModel
 from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.adapters.llm.base import LLMMessage
 from app.adapters.llm.mock import MockLLMClient
 from app.adapters.llm.prompts.news_summary import build_news_summary_messages
 from app.db.base import Base
@@ -22,6 +25,31 @@ engine = create_engine(
     poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+class RecordingLLMClient(MockLLMClient):
+    def __init__(self) -> None:
+        super().__init__(
+            {
+                "NewsSummaryResult": {
+                    "summary": "Fallback text was analyzed.",
+                    "positive_factors": [],
+                    "negative_factors": [],
+                    "impact_level": "LOW",
+                    "sentiment": "NEUTRAL",
+                }
+            }
+        )
+        self.messages: list[LLMMessage] = []
+
+    def complete_json(
+        self,
+        messages: list[LLMMessage],
+        schema: type[BaseModel],
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        self.messages = messages
+        return super().complete_json(messages, schema, timeout)
 
 
 @pytest.fixture
@@ -68,6 +96,24 @@ def create_news_item(db: Session) -> NewsItem:
     return item
 
 
+def create_news_item_without_raw_event(
+    db: Session, raw_news_event_id: int | None = None
+) -> NewsItem:
+    asset = create_asset(db)
+    item = NewsItem(
+        raw_news_event_id=raw_news_event_id,
+        asset_id=asset.id,
+        title="Apple supplier update",
+        url="https://example.com/news/no-raw",
+        source="Example News",
+        summary="Stored summary fallback.",
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 def test_news_analysis_service_summarize_updates_news_item(db: Session) -> None:
     item = create_news_item(db)
     client = MockLLMClient(
@@ -95,6 +141,19 @@ def test_news_analysis_service_summarize_updates_news_item(db: Session) -> None:
         "Lower costs",
     ]
     assert json.loads(updated.negative_factors or "[]") == ["Execution risk"]
+
+
+@pytest.mark.parametrize("raw_news_event_id", [None, 999])
+def test_news_analysis_service_uses_summary_fallback_when_raw_body_is_missing(
+    db: Session, raw_news_event_id: int | None
+) -> None:
+    item = create_news_item_without_raw_event(db, raw_news_event_id)
+    client = RecordingLLMClient()
+
+    NewsAnalysisService(db, client).summarize(item.id)
+
+    assert client.messages
+    assert "Stored summary fallback." in client.messages[1].content
 
 
 def test_news_analysis_service_rejects_invalid_llm_response(
