@@ -71,6 +71,7 @@
 | Purpose | Method | Path | Auth |
 | --- | --- | --- | --- |
 | 종목 정보 | `GET` | `/api/v1/assets/{asset_id}` | Not required |
+| 종목 기본 정보 카드 | `GET` | `/api/v1/assets/{asset_id}/detail` | Not required |
 | 최신 투자 가설 | `GET` | `/api/v1/theses/latest?asset_id={asset_id}` | Required |
 | 리서치 리포트 목록 | `GET` | `/api/v1/reports?asset_id={asset_id}&page=1&size=20` | Required |
 | 시그널 목록 | `GET` | `/api/v1/signals?asset_id={asset_id}&include_expired=false&page=1&size=20` | Required |
@@ -214,6 +215,18 @@
 ```json
 { "data": null, "message": "종목을 찾을 수 없습니다.", "error": { "code": "ASSET_NOT_FOUND" }, "meta": null }
 ```
+
+#### `GET /api/v1/assets/{asset_id}/detail`
+
+- Auth: Not required
+- Request: path `asset_id`
+- Success `200`:
+
+```json
+{ "data": { "id": 1, "symbol": "AAPL", "name": "Apple Inc.", "market": "NASDAQ", "price": "195.64", "previous_close": "193.20", "change": "2.44", "change_percent": "1.26", "currency": "USD", "sector": "Technology", "industry": "Consumer Electronics", "description": "Makes devices and services.", "as_of": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
+```
+
+- Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
 
 ### Watchlists
 
