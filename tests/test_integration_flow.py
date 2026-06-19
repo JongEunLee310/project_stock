@@ -3,6 +3,8 @@ from typing import Any, cast
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.conftest import api_data, api_meta
+
 
 pytestmark = pytest.mark.usefixtures("stable_password_hashing")
 
@@ -19,7 +21,8 @@ def register_and_login(client: TestClient) -> dict[str, str]:
         json={"email": "flow@example.com", "password": "correct-password"},
     )
     assert login_response.status_code == 200
-    token = login_response.json()["access_token"]
+    login_data = cast(dict[str, str], api_data(login_response))
+    token = login_data["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -29,7 +32,7 @@ def create_asset(client: TestClient, symbol: str) -> dict[str, Any]:
         json={"symbol": symbol, "name": f"{symbol} Inc.", "market": "NASDAQ"},
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def test_authenticated_http_flow_creates_risk_alert_signal(
@@ -45,7 +48,7 @@ def test_authenticated_http_flow_creates_risk_alert_signal(
         json={"name": "Core"},
     )
     assert watchlist_response.status_code == 201
-    watchlist = watchlist_response.json()
+    watchlist = cast(dict[str, Any], api_data(watchlist_response))
 
     item_response = client.post(
         f"/api/v1/watchlists/{watchlist['id']}/items",
@@ -53,8 +56,9 @@ def test_authenticated_http_flow_creates_risk_alert_signal(
         json={"asset_id": apple["id"], "priority": 10},
     )
     assert item_response.status_code == 201
-    assert item_response.json()["watchlist_id"] == watchlist["id"]
-    assert item_response.json()["asset_id"] == apple["id"]
+    item = cast(dict[str, Any], api_data(item_response))
+    assert item["watchlist_id"] == watchlist["id"]
+    assert item["asset_id"] == apple["id"]
 
     thesis_response = client.post(
         "/api/v1/theses",
@@ -67,7 +71,7 @@ def test_authenticated_http_flow_creates_risk_alert_signal(
         },
     )
     assert thesis_response.status_code == 201
-    thesis = thesis_response.json()
+    thesis = cast(dict[str, Any], api_data(thesis_response))
     assert thesis["asset_id"] == apple["id"]
 
     portfolio_response = client.post(
@@ -76,7 +80,7 @@ def test_authenticated_http_flow_creates_risk_alert_signal(
         json={"name": "Long Term", "concentration_threshold": "0.6"},
     )
     assert portfolio_response.status_code == 201
-    portfolio = portfolio_response.json()
+    portfolio = cast(dict[str, Any], api_data(portfolio_response))
 
     apple_position_response = client.post(
         f"/api/v1/portfolios/{portfolio['id']}/positions",
@@ -84,7 +88,8 @@ def test_authenticated_http_flow_creates_risk_alert_signal(
         json={"asset_id": apple["id"], "quantity": "3", "avg_buy_price": "100"},
     )
     assert apple_position_response.status_code == 201
-    assert apple_position_response.json()["asset_id"] == apple["id"]
+    apple_position = cast(dict[str, Any], api_data(apple_position_response))
+    assert apple_position["asset_id"] == apple["id"]
 
     microsoft_position_response = client.post(
         f"/api/v1/portfolios/{portfolio['id']}/positions",
@@ -92,14 +97,15 @@ def test_authenticated_http_flow_creates_risk_alert_signal(
         json={"asset_id": microsoft["id"], "quantity": "1", "avg_buy_price": "100"},
     )
     assert microsoft_position_response.status_code == 201
-    assert microsoft_position_response.json()["asset_id"] == microsoft["id"]
+    microsoft_position = cast(dict[str, Any], api_data(microsoft_position_response))
+    assert microsoft_position["asset_id"] == microsoft["id"]
 
     check_response = client.post(
         f"/api/v1/portfolios/{portfolio['id']}/check",
         headers=headers,
     )
     assert check_response.status_code == 200
-    check_data = check_response.json()
+    check_data = cast(dict[str, Any], api_data(check_response))
     assert check_data["summary"]["portfolio_id"] == portfolio["id"]
     assert len(check_data["created_signals"]) == 1
 
@@ -114,5 +120,6 @@ def test_authenticated_http_flow_creates_risk_alert_signal(
         params={"asset_id": apple["id"]},
     )
     assert signals_response.status_code == 200
-    signals = signals_response.json()
+    signals = cast(list[dict[str, Any]], api_data(signals_response))
     assert [signal["id"] for signal in signals] == [created_signal["id"]]
+    assert api_meta(signals_response) == {"page": 1, "size": 20, "total": 1}

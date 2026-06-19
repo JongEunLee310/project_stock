@@ -21,8 +21,22 @@ class AlertService:
             )
         )
 
-    def list_alerts(self, user_id: int, status: str | None = None) -> list[Alert]:
-        return self.repo.list_by_user(user_id, status)
+    def list_alerts(
+        self,
+        user_id: int,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[Alert]:
+        return self.repo.list_by_user(
+            user_id,
+            status,
+            offset=offset,
+            limit=limit,
+        )
+
+    def count_alerts(self, user_id: int, status: str | None = None) -> int:
+        return self.repo.count_by_user(user_id, status)
 
     def mark_read(self, alert_id: int, user_id: int) -> Alert:
         return self._update_owned_alert(alert_id, user_id, AlertStatus.READ.value)

@@ -3,7 +3,7 @@ from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import set_current_user
+from tests.conftest import api_data, api_meta, set_current_user
 
 
 def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
@@ -12,7 +12,7 @@ def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
         json={"symbol": symbol, "name": f"{symbol} Inc.", "market": "NASDAQ"},
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def create_portfolio(
@@ -25,7 +25,7 @@ def create_portfolio(
         payload["concentration_threshold"] = concentration_threshold
     response = client.post("/api/v1/portfolios", json=payload)
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def add_position(
@@ -44,7 +44,7 @@ def add_position(
         },
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def test_create_portfolio_success(client: TestClient) -> None:
@@ -79,7 +79,20 @@ def test_list_portfolios_returns_only_current_users_portfolios(
     response = client.get("/api/v1/portfolios")
 
     assert response.status_code == 200
-    assert response.json() == [owner_portfolio]
+    assert api_data(response) == [owner_portfolio]
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
+
+
+def test_list_portfolios_uses_page_and_size(client: TestClient) -> None:
+    set_current_user(1)
+    create_portfolio(client, "First")
+    second = create_portfolio(client, "Second")
+
+    response = client.get("/api/v1/portfolios", params={"page": 2, "size": 1})
+
+    assert response.status_code == 200
+    assert api_data(response) == [second]
+    assert api_meta(response) == {"page": 2, "size": 1, "total": 2}
 
 
 def test_add_position_success(client: TestClient) -> None:
@@ -97,7 +110,7 @@ def test_add_position_success(client: TestClient) -> None:
     )
 
     assert response.status_code == 201
-    data = response.json()
+    data = cast(dict[str, Any], api_data(response))
     assert data["portfolio_id"] == portfolio["id"]
     assert data["asset_id"] == asset["id"]
     assert Decimal(data["quantity"]) == Decimal("10.5")
@@ -148,7 +161,7 @@ def test_update_position_quantity_and_average_price(client: TestClient) -> None:
         json={"quantity": "15.25"},
     )
     assert quantity_response.status_code == 200
-    quantity_data = quantity_response.json()
+    quantity_data = cast(dict[str, Any], api_data(quantity_response))
     assert Decimal(quantity_data["quantity"]) == Decimal("15.25")
     assert Decimal(quantity_data["avg_buy_price"]) == Decimal("123.45")
 
@@ -157,7 +170,7 @@ def test_update_position_quantity_and_average_price(client: TestClient) -> None:
         json={"avg_buy_price": "140.125"},
     )
     assert price_response.status_code == 200
-    price_data = price_response.json()
+    price_data = cast(dict[str, Any], api_data(price_response))
     assert Decimal(price_data["quantity"]) == Decimal("15.25")
     assert Decimal(price_data["avg_buy_price"]) == Decimal("140.125")
 
@@ -198,8 +211,8 @@ def test_delete_position_success(client: TestClient) -> None:
         f"/api/v1/portfolios/{portfolio['id']}/positions/{position['id']}",
     )
 
-    assert response.status_code == 204
-    assert response.content == b""
+    assert response.status_code == 200
+    assert api_data(response) is None
 
 
 def test_portfolio_ownership_blocks_other_users(client: TestClient) -> None:
@@ -268,7 +281,7 @@ def test_get_portfolio_summary_calculates_weights_and_threshold(
     response = client.get(f"/api/v1/portfolios/{portfolio['id']}/summary")
 
     assert response.status_code == 200
-    data = response.json()
+    data = cast(dict[str, Any], api_data(response))
     assert data["portfolio_id"] == portfolio["id"]
     assert Decimal(data["concentration_threshold"]) == Decimal("0.6")
     assert Decimal(data["total_cost_value"]) == Decimal("400.000000000000")
@@ -291,7 +304,7 @@ def test_get_portfolio_summary_returns_zero_weights_without_positions(
     response = client.get(f"/api/v1/portfolios/{portfolio['id']}/summary")
 
     assert response.status_code == 200
-    data = response.json()
+    data = cast(dict[str, Any], api_data(response))
     assert Decimal(data["total_cost_value"]) == Decimal("0")
     assert data["positions"] == []
 
@@ -313,7 +326,7 @@ def test_check_concentration_creates_risk_alert_signal(client: TestClient) -> No
     response = client.post(f"/api/v1/portfolios/{portfolio['id']}/check")
 
     assert response.status_code == 200
-    data = response.json()
+    data = cast(dict[str, Any], api_data(response))
     assert Decimal(data["summary"]["positions"][0]["weight"]) == Decimal("0.75")
     created_signals = data["created_signals"]
     assert len(created_signals) == 1
@@ -348,9 +361,11 @@ def test_check_concentration_does_not_duplicate_active_signal(
     second_response = client.post(f"/api/v1/portfolios/{portfolio['id']}/check")
 
     assert first_response.status_code == 200
-    assert len(first_response.json()["created_signals"]) == 1
+    first_data = cast(dict[str, Any], api_data(first_response))
+    second_data = cast(dict[str, Any], api_data(second_response))
+    assert len(first_data["created_signals"]) == 1
     assert second_response.status_code == 200
-    assert second_response.json()["created_signals"] == []
+    assert second_data["created_signals"] == []
 
 
 def test_check_concentration_does_not_create_signal_below_threshold(
@@ -372,7 +387,8 @@ def test_check_concentration_does_not_create_signal_below_threshold(
     response = client.post(f"/api/v1/portfolios/{portfolio['id']}/check")
 
     assert response.status_code == 200
-    assert response.json()["created_signals"] == []
+    data = cast(dict[str, Any], api_data(response))
+    assert data["created_signals"] == []
 
 
 def test_summary_ownership_and_missing_paths(client: TestClient) -> None:

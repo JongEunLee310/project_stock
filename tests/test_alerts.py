@@ -12,7 +12,7 @@ from app.domains.signals.repository import SignalRepository
 from app.domains.signals.schema import SignalCreate
 from app.domains.signals.types import SignalType
 from app.domains.users.model import User
-from tests.conftest import TestingSessionLocal, set_current_user
+from tests.conftest import TestingSessionLocal, api_data, api_meta, set_current_user
 
 
 def create_asset(db: Session, symbol: str = "AAPL") -> Asset:
@@ -111,9 +111,23 @@ def test_list_alerts_returns_only_current_users_alerts(client: TestClient) -> No
     response = client.get("/api/v1/alerts")
 
     assert response.status_code == 200
-    data = response.json()
+    data = cast(list[dict[str, Any]], api_data(response))
     assert [item["id"] for item in data] == [owner_alert["id"]]
     assert data[0]["user_id"] == 1
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
+
+
+def test_list_alerts_uses_page_and_size(client: TestClient) -> None:
+    create_alert_for_user(1, title="First alert")
+    second_alert = create_alert_for_user(1, title="Second alert")
+    set_current_user(1)
+
+    response = client.get("/api/v1/alerts", params={"page": 1, "size": 1})
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert [item["id"] for item in data] == [second_alert["id"]]
+    assert api_meta(response) == {"page": 1, "size": 1, "total": 2}
 
 
 def test_list_alerts_filters_by_status(client: TestClient) -> None:
@@ -126,9 +140,10 @@ def test_list_alerts_filters_by_status(client: TestClient) -> None:
     response = client.get("/api/v1/alerts", params={"status": AlertStatus.UNREAD.value})
 
     assert response.status_code == 200
-    data = response.json()
+    data = cast(list[dict[str, Any]], api_data(response))
     assert [item["id"] for item in data] == [unread["id"]]
     assert data[0]["status"] == AlertStatus.UNREAD.value
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
 
 
 def test_mark_alert_read_updates_status(client: TestClient) -> None:
@@ -138,7 +153,7 @@ def test_mark_alert_read_updates_status(client: TestClient) -> None:
     response = client.post(f"/api/v1/alerts/{alert['id']}/read")
 
     assert response.status_code == 200
-    data = cast(dict[str, Any], response.json())
+    data = cast(dict[str, Any], api_data(response))
     assert data["status"] == AlertStatus.READ.value
 
 
@@ -149,7 +164,7 @@ def test_dismiss_alert_updates_status(client: TestClient) -> None:
     response = client.post(f"/api/v1/alerts/{alert['id']}/dismiss")
 
     assert response.status_code == 200
-    data = cast(dict[str, Any], response.json())
+    data = cast(dict[str, Any], api_data(response))
     assert data["status"] == AlertStatus.DISMISSED.value
 
 

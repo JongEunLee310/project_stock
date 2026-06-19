@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Depends, Response
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
+from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.users.model import User
 from app.domains.watchlists.schema import (
@@ -15,39 +18,55 @@ from app.domains.watchlists.service import WatchlistService
 router = APIRouter()
 
 
-@router.post("", response_model=WatchlistResponse, status_code=201)
+@router.post("", response_model=ApiResponse[WatchlistResponse], status_code=201)
 def create_watchlist(
     data: WatchlistCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> WatchlistResponse:
-    return WatchlistService(db).create_watchlist(current_user.id, data)
+) -> ApiResponse[WatchlistResponse]:
+    return success(WatchlistService(db).create_watchlist(current_user.id, data))
 
 
-@router.get("", response_model=list[WatchlistResponse])
+@router.get("", response_model=ApiResponse[list[WatchlistResponse]])
 def list_watchlists(
+    page: Annotated[int, Query(ge=1)] = 1,
+    size: Annotated[int, Query(ge=1, le=100)] = 20,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[WatchlistResponse]:
-    return WatchlistService(db).list_watchlists(current_user.id)
+) -> ApiResponse[list[WatchlistResponse]]:
+    service = WatchlistService(db)
+    items = service.list_watchlists(
+        current_user.id,
+        offset=(page - 1) * size,
+        limit=size,
+    )
+    total = service.count_watchlists(current_user.id)
+    return paginated(items, page=page, size=size, total=total)
 
 
-@router.post("/{watchlist_id}/items", response_model=WatchlistItemResponse, status_code=201)
+@router.post(
+    "/{watchlist_id}/items",
+    response_model=ApiResponse[WatchlistItemResponse],
+    status_code=201,
+)
 def add_watchlist_item(
     watchlist_id: int,
     data: WatchlistItemCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> WatchlistItemResponse:
-    return WatchlistService(db).add_item(watchlist_id, current_user.id, data)
+) -> ApiResponse[WatchlistItemResponse]:
+    return success(WatchlistService(db).add_item(watchlist_id, current_user.id, data))
 
 
-@router.delete("/{watchlist_id}/items/{item_id}", status_code=204)
+@router.delete(
+    "/{watchlist_id}/items/{item_id}",
+    response_model=ApiResponse[None],
+)
 def remove_watchlist_item(
     watchlist_id: int,
     item_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> Response:
+) -> ApiResponse[None]:
     WatchlistService(db).remove_item(watchlist_id, item_id, current_user.id)
-    return Response(status_code=204)
+    return success(None)

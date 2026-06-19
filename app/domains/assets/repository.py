@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,11 +16,25 @@ class AssetRepository:
         stmt = select(Asset).where(Asset.symbol == symbol, Asset.market == market)
         return self.db.scalars(stmt).first()
 
-    def list_all(self, is_active: bool | None = None) -> list[Asset]:
+    def list_all(
+        self,
+        is_active: bool | None = None,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[Asset]:
         stmt = select(Asset).order_by(Asset.id)
         if is_active is not None:
             stmt = stmt.where(Asset.is_active == is_active)
+        stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(self.db.scalars(stmt).all())
+
+    def count_all(self, is_active: bool | None = None) -> int:
+        stmt = select(func.count()).select_from(Asset)
+        if is_active is not None:
+            stmt = stmt.where(Asset.is_active == is_active)
+        return int(self.db.scalar(stmt) or 0)
 
     def create(self, symbol: str, name: str, market: str) -> Asset:
         asset = Asset(symbol=symbol, name=name, market=market)

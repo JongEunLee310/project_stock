@@ -3,7 +3,7 @@ from typing import Any, cast
 from fastapi.testclient import TestClient
 
 from app.domains.assets.model import Asset
-from tests.conftest import TestingSessionLocal
+from tests.conftest import TestingSessionLocal, api_data, api_meta
 
 
 def asset_payload(symbol: str = "AAPL", market: str = "NASDAQ") -> dict[str, str]:
@@ -17,7 +17,7 @@ def asset_payload(symbol: str = "AAPL", market: str = "NASDAQ") -> dict[str, str
 def create_asset(client: TestClient, payload: dict[str, str] | None = None) -> dict[str, Any]:
     response = client.post("/api/v1/assets", json=payload or asset_payload())
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def test_register_asset_success(client: TestClient) -> None:
@@ -53,7 +53,8 @@ def test_list_assets(client: TestClient) -> None:
     response = client.get("/api/v1/assets")
 
     assert response.status_code == 200
-    assert response.json() == [first_asset, second_asset]
+    assert api_data(response) == [first_asset, second_asset]
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 2}
 
 
 def test_list_assets_filters_by_is_active(client: TestClient) -> None:
@@ -72,7 +73,26 @@ def test_list_assets_filters_by_is_active(client: TestClient) -> None:
     response = client.get("/api/v1/assets", params={"is_active": True})
 
     assert response.status_code == 200
-    assert response.json() == [active_asset]
+    assert api_data(response) == [active_asset]
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
+
+
+def test_list_assets_uses_page_and_size(client: TestClient) -> None:
+    create_asset(client)
+    second_asset = create_asset(
+        client,
+        {
+            "symbol": "MSFT",
+            "name": "Microsoft Corporation",
+            "market": "NASDAQ",
+        },
+    )
+
+    response = client.get("/api/v1/assets", params={"page": 2, "size": 1})
+
+    assert response.status_code == 200
+    assert api_data(response) == [second_asset]
+    assert api_meta(response) == {"page": 2, "size": 1, "total": 2}
 
 
 def test_get_asset_detail(client: TestClient) -> None:
@@ -81,7 +101,7 @@ def test_get_asset_detail(client: TestClient) -> None:
     response = client.get(f"/api/v1/assets/{asset['id']}")
 
     assert response.status_code == 200
-    assert response.json() == asset
+    assert api_data(response) == asset
 
 
 def test_get_asset_returns_404_when_missing(client: TestClient) -> None:

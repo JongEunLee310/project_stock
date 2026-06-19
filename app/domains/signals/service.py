@@ -23,5 +23,19 @@ class SignalService:
         self,
         asset_id: int,
         include_expired: bool = False,
+        offset: int = 0,
+        limit: int | None = None,
     ) -> list[Signal]:
-        return self.repo.list_by_asset(asset_id, include_expired)
+        return self.repo.list_by_asset(
+            asset_id,
+            include_expired,
+            offset=offset,
+            limit=limit,
+        )
+
+    def count_signals(
+        self,
+        asset_id: int,
+        include_expired: bool = False,
+    ) -> int:
+        return self.repo.count_by_asset(asset_id, include_expired)

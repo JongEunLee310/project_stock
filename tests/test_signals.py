@@ -12,7 +12,7 @@ from app.domains.signals.time import is_expired_at
 from app.domains.signals.types import SignalType
 from app.domains.theses.model import InvestmentThesis
 from app.domains.users.model import User
-from tests.conftest import set_current_user
+from tests.conftest import api_data, api_meta, set_current_user
 
 
 def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
@@ -21,7 +21,7 @@ def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
         json={"symbol": symbol, "name": f"{symbol} Inc.", "market": "NASDAQ"},
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def signal_payload(
@@ -54,7 +54,7 @@ def create_signal(
         json=signal_payload(asset_id, signal_type, expires_at),
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def create_db_asset(db: Session) -> Asset:
@@ -127,7 +127,8 @@ def test_list_signals_excludes_expired_by_default(client: TestClient) -> None:
     response = client.get("/api/v1/signals", params={"asset_id": asset["id"]})
 
     assert response.status_code == 200
-    assert response.json() == [active]
+    assert api_data(response) == [active]
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
 
 
 def test_list_signals_includes_expired_when_requested(client: TestClient) -> None:
@@ -143,7 +144,24 @@ def test_list_signals_includes_expired_when_requested(client: TestClient) -> Non
     )
 
     assert response.status_code == 200
-    assert response.json() == [expired, active]
+    assert api_data(response) == [expired, active]
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 2}
+
+
+def test_list_signals_uses_page_and_size(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+    first = create_signal(client, asset["id"], SignalType.WATCH.value)
+    create_signal(client, asset["id"], SignalType.SELL_REVIEW.value)
+
+    response = client.get(
+        "/api/v1/signals",
+        params={"asset_id": asset["id"], "page": 2, "size": 1},
+    )
+
+    assert response.status_code == 200
+    assert api_data(response) == [first]
+    assert api_meta(response) == {"page": 2, "size": 1, "total": 2}
 
 
 def test_is_expired_for_past_future_and_null_expires_at(client: TestClient) -> None:
@@ -169,7 +187,7 @@ def test_get_signal_detail(client: TestClient) -> None:
     response = client.get(f"/api/v1/signals/{signal['id']}")
 
     assert response.status_code == 200
-    assert response.json() == signal
+    assert api_data(response) == signal
 
 
 def test_get_signal_returns_404_when_missing(client: TestClient) -> None:

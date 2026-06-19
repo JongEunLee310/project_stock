@@ -34,5 +34,8 @@ class JobRunService:
             error_message=error_message,
         )
 
-    def list_recent(self, limit: int = 50) -> list[JobRun]:
-        return self.repo.list_recent(limit)
+    def list_recent(self, offset: int = 0, limit: int | None = None) -> list[JobRun]:
+        return self.repo.list_recent(offset=offset, limit=limit)
+
+    def count(self) -> int:
+        return self.repo.count_all()

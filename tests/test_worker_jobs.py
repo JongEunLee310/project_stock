@@ -14,6 +14,7 @@ from app.main import app
 from app.worker.jobs import news
 from app.worker.jobs.analysis import analyze_watchlist_job
 from app.worker.jobs.news import collect_news_job
+from tests.conftest import api_data
 
 engine = create_engine(
     "sqlite://",
@@ -103,7 +104,7 @@ def test_enqueue_news_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     assert response.status_code == 200
-    data = cast(dict[str, str], response.json())
+    data = cast(dict[str, str], api_data(response))
     assert data == {"job_id": "rq-job-1", "status": "queued"}
 
 
@@ -138,7 +139,7 @@ def test_enqueue_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     assert response.status_code == 200
-    data = cast(dict[str, str], response.json())
+    data = cast(dict[str, str], api_data(response))
     assert data == {"job_id": "rq-job-2", "status": "queued"}
     assert captured == {
         "queue_name": "default",

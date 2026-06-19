@@ -19,5 +19,13 @@ class ResearchReportService:
             raise AppException(status_code=404, detail="리포트를 찾을 수 없습니다.")
         return report
 
-    def list_reports(self, asset_id: int) -> list[ResearchReport]:
-        return self.repo.list_by_asset(asset_id)
+    def list_reports(
+        self,
+        asset_id: int,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[ResearchReport]:
+        return self.repo.list_by_asset(asset_id, offset=offset, limit=limit)
+
+    def count_reports(self, asset_id: int) -> int:
+        return self.repo.count_by_asset(asset_id)

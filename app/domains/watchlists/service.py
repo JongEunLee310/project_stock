@@ -28,11 +28,23 @@ class WatchlistService:
         watchlist = self.watchlist_repo.create(user_id=user_id, name=data.name)
         return WatchlistResponse.model_validate(watchlist)
 
-    def list_watchlists(self, user_id: int) -> list[WatchlistResponse]:
+    def list_watchlists(
+        self,
+        user_id: int,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[WatchlistResponse]:
         return [
             WatchlistResponse.model_validate(watchlist)
-            for watchlist in self.watchlist_repo.list_by_user(user_id)
+            for watchlist in self.watchlist_repo.list_by_user(
+                user_id,
+                offset=offset,
+                limit=limit,
+            )
         ]
+
+    def count_watchlists(self, user_id: int) -> int:
+        return self.watchlist_repo.count_by_user(user_id)
 
     def add_item(
         self, watchlist_id: int, user_id: int, data: WatchlistItemCreate

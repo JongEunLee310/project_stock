@@ -2,7 +2,7 @@ from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import set_current_user
+from tests.conftest import api_data, api_meta, set_current_user
 
 
 def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
@@ -11,7 +11,7 @@ def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
         json={"symbol": symbol, "name": f"{symbol} Inc.", "market": "NASDAQ"},
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def report_payload(asset_id: int) -> dict[str, Any]:
@@ -30,7 +30,7 @@ def report_payload(asset_id: int) -> dict[str, Any]:
 def create_report(client: TestClient, asset_id: int) -> dict[str, Any]:
     response = client.post("/api/v1/reports", json=report_payload(asset_id))
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast(dict[str, Any], api_data(response))
 
 
 def test_create_research_report_success(client: TestClient) -> None:
@@ -60,7 +60,24 @@ def test_list_research_reports_by_asset(client: TestClient) -> None:
     response = client.get("/api/v1/reports", params={"asset_id": asset["id"]})
 
     assert response.status_code == 200
-    assert response.json() == [report]
+    assert api_data(response) == [report]
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
+
+
+def test_list_research_reports_uses_page_and_size(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+    create_report(client, asset["id"])
+    latest_report = create_report(client, asset["id"])
+
+    response = client.get(
+        "/api/v1/reports",
+        params={"asset_id": asset["id"], "page": 1, "size": 1},
+    )
+
+    assert response.status_code == 200
+    assert api_data(response) == [latest_report]
+    assert api_meta(response) == {"page": 1, "size": 1, "total": 2}
 
 
 def test_get_research_report_detail(client: TestClient) -> None:
@@ -71,7 +88,7 @@ def test_get_research_report_detail(client: TestClient) -> None:
     response = client.get(f"/api/v1/reports/{report['id']}")
 
     assert response.status_code == 200
-    assert response.json() == report
+    assert api_data(response) == report
 
 
 def test_get_research_report_returns_404_when_missing(client: TestClient) -> None:
