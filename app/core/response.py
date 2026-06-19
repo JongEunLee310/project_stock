@@ -2,6 +2,8 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel
 
+from app.core.error_codes import ErrorCode
+
 T = TypeVar("T")
 
 
@@ -32,3 +34,14 @@ def paginated(
         data=items,
         meta=PageMeta(page=page, size=size, total=total),
     )
+
+
+def error_response(
+    code: ErrorCode,
+    message: str,
+    fields: list[dict[str, Any]] | None = None,
+) -> ApiResponse[None]:
+    error: dict[str, Any] = {"code": code.value}
+    if fields is not None:
+        error["fields"] = fields
+    return ApiResponse(data=None, message=message, error=error, meta=None)

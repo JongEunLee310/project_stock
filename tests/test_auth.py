@@ -3,7 +3,7 @@ from typing import Any, cast
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.conftest import api_data
+from tests.conftest import api_data, api_error
 
 
 pytestmark = pytest.mark.usefixtures("stable_password_hashing")
@@ -51,7 +51,11 @@ def test_register_user_rejects_duplicate_email(client: TestClient) -> None:
         json={"email": "owner@example.com", "password": "correct-password"},
     )
 
-    assert 400 <= response.status_code < 500
+    assert response.status_code == 400
+    assert api_error(response) == {
+        "code": "USER_EMAIL_DUPLICATE",
+        "message": "이미 등록된 이메일입니다.",
+    }
 
 
 def test_register_user_rejects_invalid_email(client: TestClient) -> None:
@@ -61,6 +65,14 @@ def test_register_user_rejects_invalid_email(client: TestClient) -> None:
     )
 
     assert response.status_code == 422
+    error = api_error(response)
+    assert error["code"] == "VALIDATION_ERROR"
+    assert error["message"] == "요청 값이 올바르지 않습니다."
+    assert any(
+        field["loc"] == ["body", "email"]
+        and field["msg"].startswith("value is not a valid email address")
+        for field in error["fields"]
+    )
 
 
 def test_login_user_success(client: TestClient) -> None:
@@ -81,6 +93,10 @@ def test_login_user_rejects_wrong_password(client: TestClient) -> None:
     )
 
     assert response.status_code == 401
+    assert api_error(response) == {
+        "code": "AUTH_INVALID_CREDENTIALS",
+        "message": "이메일 또는 비밀번호가 올바르지 않습니다.",
+    }
 
 
 def test_login_user_rejects_missing_user(client: TestClient) -> None:
@@ -111,6 +127,11 @@ def test_get_me_requires_authorization_header(client: TestClient) -> None:
     response = client.get("/api/v1/auth/me")
 
     assert response.status_code == 401
+    assert api_error(response) == {
+        "code": "AUTH_INVALID_TOKEN",
+        "message": "유효하지 않은 토큰입니다.",
+    }
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 def test_get_me_rejects_tampered_token(client: TestClient) -> None:
@@ -123,3 +144,8 @@ def test_get_me_rejects_tampered_token(client: TestClient) -> None:
     )
 
     assert response.status_code == 401
+    assert api_error(response) == {
+        "code": "AUTH_INVALID_TOKEN",
+        "message": "유효하지 않은 토큰입니다.",
+    }
+    assert response.headers["www-authenticate"] == "Bearer"

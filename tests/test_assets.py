@@ -3,7 +3,7 @@ from typing import Any, cast
 from fastapi.testclient import TestClient
 
 from app.domains.assets.model import Asset
-from tests.conftest import TestingSessionLocal, api_data, api_meta
+from tests.conftest import TestingSessionLocal, api_data, api_error, api_meta
 
 
 def asset_payload(symbol: str = "AAPL", market: str = "NASDAQ") -> dict[str, str]:
@@ -37,6 +37,10 @@ def test_register_asset_rejects_duplicate_symbol_market(client: TestClient) -> N
     response = client.post("/api/v1/assets", json=asset_payload())
 
     assert response.status_code == 400
+    assert api_error(response) == {
+        "code": "ASSET_DUPLICATE",
+        "message": "이미 등록된 종목입니다.",
+    }
 
 
 def test_list_assets(client: TestClient) -> None:
@@ -108,3 +112,7 @@ def test_get_asset_returns_404_when_missing(client: TestClient) -> None:
     response = client.get("/api/v1/assets/999")
 
     assert response.status_code == 404
+    assert api_error(response) == {
+        "code": "ASSET_NOT_FOUND",
+        "message": "종목을 찾을 수 없습니다.",
+    }

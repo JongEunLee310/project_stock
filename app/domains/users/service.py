@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.core.security import create_access_token, hash_password, verify_password
 from app.domains.users.model import User
@@ -13,7 +14,11 @@ class UserService:
 
     def register(self, data: UserCreate) -> User:
         if self.repo.get_by_email(data.email):
-            raise AppException(status_code=400, detail="이미 등록된 이메일입니다.")
+            raise AppException(
+                status_code=400,
+                detail="이미 등록된 이메일입니다.",
+                error_code=ErrorCode.USER_EMAIL_DUPLICATE,
+            )
         return self.repo.create(
             email=data.email,
             hashed_password=hash_password(data.password),
@@ -22,5 +27,9 @@ class UserService:
     def login(self, data: UserLogin) -> Token:
         user = self.repo.get_by_email(data.email)
         if not user or not verify_password(data.password, user.hashed_password):
-            raise AppException(status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
+            raise AppException(
+                status_code=401,
+                detail="이메일 또는 비밀번호가 올바르지 않습니다.",
+                error_code=ErrorCode.AUTH_INVALID_CREDENTIALS,
+            )
         return Token(access_token=create_access_token(subject=user.id))

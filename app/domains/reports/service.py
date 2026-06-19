@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.reports.model import ResearchReport
 from app.domains.reports.repository import ResearchReportRepository
@@ -16,7 +17,11 @@ class ResearchReportService:
     def get_report(self, report_id: int) -> ResearchReport:
         report = self.repo.get_by_id(report_id)
         if report is None:
-            raise AppException(status_code=404, detail="리포트를 찾을 수 없습니다.")
+            raise AppException(
+                status_code=404,
+                detail="리포트를 찾을 수 없습니다.",
+                error_code=ErrorCode.REPORT_NOT_FOUND,
+            )
         return report
 
     def list_reports(

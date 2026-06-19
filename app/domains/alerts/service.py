@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.alerts.model import Alert
 from app.domains.alerts.repository import AlertRepository
@@ -47,7 +48,11 @@ class AlertService:
     def _update_owned_alert(self, alert_id: int, user_id: int, status: str) -> Alert:
         alert = self.repo.get_by_id(alert_id)
         if alert is None or alert.user_id != user_id:
-            raise AppException(status_code=404, detail="알림을 찾을 수 없습니다.")
+            raise AppException(
+                status_code=404,
+                detail="알림을 찾을 수 없습니다.",
+                error_code=ErrorCode.ALERT_NOT_FOUND,
+            )
         return self.repo.update_status(alert, status)
 
     def _dedup_key(self, signal: Signal) -> str:

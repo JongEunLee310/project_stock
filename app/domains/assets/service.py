@@ -1,6 +1,7 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.assets.repository import AssetRepository
 from app.domains.assets.schema import AssetCreate, AssetResponse
@@ -12,7 +13,11 @@ class AssetService:
 
     def register(self, data: AssetCreate) -> AssetResponse:
         if self.repo.get_by_symbol_market(data.symbol, data.market):
-            raise AppException(status_code=400, detail="이미 등록된 종목입니다.")
+            raise AppException(
+                status_code=400,
+                detail="이미 등록된 종목입니다.",
+                error_code=ErrorCode.ASSET_DUPLICATE,
+            )
         try:
             asset = self.repo.create(
                 symbol=data.symbol,
@@ -20,13 +25,21 @@ class AssetService:
                 market=data.market,
             )
         except IntegrityError as exc:
-            raise AppException(status_code=400, detail="이미 등록된 종목입니다.") from exc
+            raise AppException(
+                status_code=400,
+                detail="이미 등록된 종목입니다.",
+                error_code=ErrorCode.ASSET_DUPLICATE,
+            ) from exc
         return AssetResponse.model_validate(asset)
 
     def get(self, asset_id: int) -> AssetResponse:
         asset = self.repo.get_by_id(asset_id)
         if asset is None:
-            raise AppException(status_code=404, detail="종목을 찾을 수 없습니다.")
+            raise AppException(
+                status_code=404,
+                detail="종목을 찾을 수 없습니다.",
+                error_code=ErrorCode.ASSET_NOT_FOUND,
+            )
         return AssetResponse.model_validate(asset)
 
     def list(

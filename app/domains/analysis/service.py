@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters.llm.base import LLMClient
 from app.adapters.news.base import NewsAdapter, NewsAdapterResult
+from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.analysis.schema import AnalysisFlowResult
 from app.domains.alerts.service import AlertService
@@ -54,6 +55,7 @@ class WatchlistAnalysisService:
             raise AppException(
                 status_code=404,
                 detail="관심 목록을 찾을 수 없습니다.",
+                error_code=ErrorCode.WATCHLIST_NOT_FOUND,
             )
 
         result = AnalysisFlowResult(
