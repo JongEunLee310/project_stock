@@ -18,7 +18,13 @@ from app.domains.watchlists.service import WatchlistService
 router = APIRouter()
 
 
-@router.post("", response_model=ApiResponse[WatchlistResponse], status_code=201)
+@router.post(
+    "",
+    response_model=ApiResponse[WatchlistResponse],
+    status_code=201,
+    summary="Create watchlist",
+    description="Create a watchlist owned by the authenticated user.",
+)
 def create_watchlist(
     data: WatchlistCreate,
     db: Session = Depends(get_db),
@@ -27,7 +33,12 @@ def create_watchlist(
     return success(WatchlistService(db).create_watchlist(current_user.id, data))
 
 
-@router.get("", response_model=ApiResponse[list[WatchlistResponse]])
+@router.get(
+    "",
+    response_model=ApiResponse[list[WatchlistResponse]],
+    summary="List watchlists",
+    description="Return paginated watchlists for the authenticated user.",
+)
 def list_watchlists(
     page: Annotated[int, Query(ge=1)] = 1,
     size: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -48,6 +59,8 @@ def list_watchlists(
     "/{watchlist_id}/items",
     response_model=ApiResponse[WatchlistItemResponse],
     status_code=201,
+    summary="Add watchlist item",
+    description="Add an asset to a watchlist owned by the authenticated user.",
 )
 def add_watchlist_item(
     watchlist_id: int,
@@ -61,6 +74,8 @@ def add_watchlist_item(
 @router.delete(
     "/{watchlist_id}/items/{item_id}",
     response_model=ApiResponse[None],
+    summary="Remove watchlist item",
+    description="Remove an item from a watchlist owned by the authenticated user.",
 )
 def remove_watchlist_item(
     watchlist_id: int,

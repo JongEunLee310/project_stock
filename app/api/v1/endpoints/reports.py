@@ -13,7 +13,13 @@ from app.domains.users.model import User
 router = APIRouter()
 
 
-@router.post("", response_model=ApiResponse[ResearchReportResponse], status_code=201)
+@router.post(
+    "",
+    response_model=ApiResponse[ResearchReportResponse],
+    status_code=201,
+    summary="Create research report",
+    description="Create a research report for an asset, optionally linked to a thesis and source news items.",
+)
 def create_report(
     data: ResearchReportCreate,
     db: Session = Depends(get_db),
@@ -26,7 +32,12 @@ def create_report(
     )
 
 
-@router.get("", response_model=ApiResponse[list[ResearchReportResponse]])
+@router.get(
+    "",
+    response_model=ApiResponse[list[ResearchReportResponse]],
+    summary="List research reports",
+    description="Return paginated research reports for an asset.",
+)
 def list_reports(
     asset_id: int,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -47,7 +58,12 @@ def list_reports(
     return paginated(items, page=page, size=size, total=total)
 
 
-@router.get("/{report_id}", response_model=ApiResponse[ResearchReportResponse])
+@router.get(
+    "/{report_id}",
+    response_model=ApiResponse[ResearchReportResponse],
+    summary="Get research report",
+    description="Return a single research report by id.",
+)
 def get_report(
     report_id: int,
     db: Session = Depends(get_db),

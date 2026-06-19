@@ -17,6 +17,11 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 app.include_router(api_router)
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["health"],
+    summary="Root health check",
+    description="Return service health status without the common API envelope for monitoring compatibility.",
+)
 def health_check() -> dict[str, str]:
     return {"status": "ok"}

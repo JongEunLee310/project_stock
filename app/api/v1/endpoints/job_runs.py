@@ -11,7 +11,12 @@ from app.domains.jobs.service import JobRunService
 router = APIRouter()
 
 
-@router.get("", response_model=ApiResponse[list[JobRunResponse]])
+@router.get(
+    "",
+    response_model=ApiResponse[list[JobRunResponse]],
+    summary="List job runs",
+    description="Return paginated background job execution records.",
+)
 def list_job_runs(
     page: Annotated[int, Query(ge=1)] = 1,
     size: Annotated[int, Query(ge=1, le=100)] = 20,

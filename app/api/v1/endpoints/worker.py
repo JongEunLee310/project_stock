@@ -24,14 +24,24 @@ class JobQueuedResponse(BaseModel):
     status: str
 
 
-@router.post("/jobs/news", response_model=ApiResponse[JobQueuedResponse])
+@router.post(
+    "/jobs/news",
+    response_model=ApiResponse[JobQueuedResponse],
+    summary="Enqueue news collection job",
+    description="Queue a background job that collects news for one or more asset symbols.",
+)
 def enqueue_news_job(payload: NewsJobRequest) -> ApiResponse[JobQueuedResponse]:
     queue = Queue("default", connection=get_redis_connection())
     job = queue.enqueue(collect_news_job, payload.symbols)
     return success(JobQueuedResponse(job_id=str(job.id), status="queued"))
 
 
-@router.post("/jobs/analysis", response_model=ApiResponse[JobQueuedResponse])
+@router.post(
+    "/jobs/analysis",
+    response_model=ApiResponse[JobQueuedResponse],
+    summary="Enqueue watchlist analysis job",
+    description="Queue a background job that analyzes a watchlist and produces research artifacts.",
+)
 def enqueue_analysis_job(payload: AnalysisJobRequest) -> ApiResponse[JobQueuedResponse]:
     queue = Queue("default", connection=get_redis_connection())
     job = queue.enqueue(analyze_watchlist_job, payload.watchlist_id)

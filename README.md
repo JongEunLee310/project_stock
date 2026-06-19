@@ -106,6 +106,7 @@ uv run pytest
 ## 주요 API
 
 모든 라우터는 `/api/v1` 아래에 연결됩니다.
+프론트엔드 화면별 연동 명세는 [docs/api/frontend-api-spec.md](docs/api/frontend-api-spec.md)를 참고하세요.
 
 | Prefix | 설명 |
 | --- | --- |

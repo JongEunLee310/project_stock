@@ -14,7 +14,12 @@ from app.domains.users.model import User
 router = APIRouter()
 
 
-@router.get("", response_model=ApiResponse[list[AlertResponse]])
+@router.get(
+    "",
+    response_model=ApiResponse[list[AlertResponse]],
+    summary="List alerts",
+    description="Return paginated alerts for the authenticated user, optionally filtered by status.",
+)
 def list_alerts(
     status: AlertStatus | None = None,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -37,7 +42,12 @@ def list_alerts(
     return paginated(items, page=page, size=size, total=total)
 
 
-@router.post("/{alert_id}/read", response_model=ApiResponse[AlertResponse])
+@router.post(
+    "/{alert_id}/read",
+    response_model=ApiResponse[AlertResponse],
+    summary="Mark alert read",
+    description="Mark an alert as read for the authenticated user.",
+)
 def mark_alert_read(
     alert_id: int,
     db: Session = Depends(get_db),
@@ -50,7 +60,12 @@ def mark_alert_read(
     )
 
 
-@router.post("/{alert_id}/dismiss", response_model=ApiResponse[AlertResponse])
+@router.post(
+    "/{alert_id}/dismiss",
+    response_model=ApiResponse[AlertResponse],
+    summary="Dismiss alert",
+    description="Dismiss an alert for the authenticated user.",
+)
 def dismiss_alert(
     alert_id: int,
     db: Session = Depends(get_db),

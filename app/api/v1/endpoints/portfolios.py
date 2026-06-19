@@ -21,7 +21,13 @@ from app.domains.users.model import User
 router = APIRouter()
 
 
-@router.post("", response_model=ApiResponse[PortfolioResponse], status_code=201)
+@router.post(
+    "",
+    response_model=ApiResponse[PortfolioResponse],
+    status_code=201,
+    summary="Create portfolio",
+    description="Create a portfolio with a concentration threshold for the authenticated user.",
+)
 def create_portfolio(
     data: PortfolioCreate,
     db: Session = Depends(get_db),
@@ -30,7 +36,12 @@ def create_portfolio(
     return success(PortfolioService(db).create_portfolio(current_user.id, data))
 
 
-@router.get("", response_model=ApiResponse[list[PortfolioResponse]])
+@router.get(
+    "",
+    response_model=ApiResponse[list[PortfolioResponse]],
+    summary="List portfolios",
+    description="Return paginated portfolios for the authenticated user.",
+)
 def list_portfolios(
     page: Annotated[int, Query(ge=1)] = 1,
     size: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -47,7 +58,12 @@ def list_portfolios(
     return paginated(items, page=page, size=size, total=total)
 
 
-@router.get("/{portfolio_id}/summary", response_model=ApiResponse[PortfolioSummaryResponse])
+@router.get(
+    "/{portfolio_id}/summary",
+    response_model=ApiResponse[PortfolioSummaryResponse],
+    summary="Get portfolio summary",
+    description="Return cost-value weights and concentration threshold status for a portfolio.",
+)
 def get_portfolio_summary(
     portfolio_id: int,
     db: Session = Depends(get_db),
@@ -56,7 +72,12 @@ def get_portfolio_summary(
     return success(PortfolioService(db).get_summary(portfolio_id, current_user.id))
 
 
-@router.post("/{portfolio_id}/check", response_model=ApiResponse[PortfolioCheckResponse])
+@router.post(
+    "/{portfolio_id}/check",
+    response_model=ApiResponse[PortfolioCheckResponse],
+    summary="Check portfolio concentration",
+    description="Evaluate portfolio concentration and return any created concentration signals.",
+)
 def check_portfolio_concentration(
     portfolio_id: int,
     db: Session = Depends(get_db),
@@ -69,6 +90,8 @@ def check_portfolio_concentration(
     "/{portfolio_id}/positions",
     response_model=ApiResponse[PositionResponse],
     status_code=201,
+    summary="Add portfolio position",
+    description="Add an asset position to a portfolio owned by the authenticated user.",
 )
 def add_position(
     portfolio_id: int,
@@ -82,6 +105,8 @@ def add_position(
 @router.patch(
     "/{portfolio_id}/positions/{position_id}",
     response_model=ApiResponse[PositionResponse],
+    summary="Update portfolio position",
+    description="Update quantity and/or average buy price for a portfolio position.",
 )
 def update_position(
     portfolio_id: int,
@@ -103,6 +128,8 @@ def update_position(
 @router.delete(
     "/{portfolio_id}/positions/{position_id}",
     response_model=ApiResponse[None],
+    summary="Remove portfolio position",
+    description="Remove a position from a portfolio owned by the authenticated user.",
 )
 def remove_position(
     portfolio_id: int,
