@@ -93,7 +93,7 @@ def create_news_item(db: Session, asset_id: int, title: str = "Guidance cut") ->
 def create_signal(
     db: Session,
     asset_id: int,
-    news_item_id: int,
+    news_item_id: int | None,
     signal_type: SignalType = SignalType.RISK_ALERT,
 ) -> Signal:
     return SignalRepository(db).create(
@@ -230,3 +230,21 @@ def test_create_alert_deduplicates_same_signal_event(db: Session) -> None:
 
     assert first is not None
     assert second is None
+
+
+def test_create_alert_does_not_collapse_signals_without_news_item(
+    db: Session,
+) -> None:
+    user = create_user(db)
+    asset = create_asset(db)
+    first_signal = create_signal(db, asset.id, None)
+    second_signal = create_signal(db, asset.id, None)
+    service = AlertService(db)
+
+    first = service.create_alert(user.id, first_signal)
+    second = service.create_alert(user.id, second_signal)
+
+    assert first is not None
+    assert first.dedup_key == f"{SignalType.RISK_ALERT.value}:signal:{first_signal.id}"
+    assert second is not None
+    assert second.dedup_key == f"{SignalType.RISK_ALERT.value}:signal:{second_signal.id}"

@@ -17,7 +17,7 @@ class AlertService:
             AlertCreate(
                 user_id=user_id,
                 signal_id=signal.id,
-                dedup_key=f"{signal.signal_type}:{signal.news_item_id}",
+                dedup_key=self._dedup_key(signal),
             )
         )
 
@@ -35,3 +35,8 @@ class AlertService:
         if alert is None or alert.user_id != user_id:
             raise AppException(status_code=404, detail="알림을 찾을 수 없습니다.")
         return self.repo.update_status(alert, status)
+
+    def _dedup_key(self, signal: Signal) -> str:
+        if signal.news_item_id is not None:
+            return f"{signal.signal_type}:{signal.news_item_id}"
+        return f"{signal.signal_type}:signal:{signal.id}"
