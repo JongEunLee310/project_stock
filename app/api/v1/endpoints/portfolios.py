@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 from app.api.v1.deps import get_current_user
 from app.db.session import get_db
 from app.domains.portfolios.schema import (
+    PortfolioCheckResponse,
     PortfolioCreate,
     PortfolioResponse,
+    PortfolioSummaryResponse,
     PositionCreate,
     PositionResponse,
     PositionUpdate,
@@ -31,6 +33,24 @@ def list_portfolios(
     current_user: User = Depends(get_current_user),
 ) -> list[PortfolioResponse]:
     return PortfolioService(db).list_portfolios(current_user.id)
+
+
+@router.get("/{portfolio_id}/summary", response_model=PortfolioSummaryResponse)
+def get_portfolio_summary(
+    portfolio_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PortfolioSummaryResponse:
+    return PortfolioService(db).get_summary(portfolio_id, current_user.id)
+
+
+@router.post("/{portfolio_id}/check", response_model=PortfolioCheckResponse)
+def check_portfolio_concentration(
+    portfolio_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PortfolioCheckResponse:
+    return PortfolioService(db).check_concentration(portfolio_id, current_user.id)
 
 
 @router.post("/{portfolio_id}/positions", response_model=PositionResponse, status_code=201)

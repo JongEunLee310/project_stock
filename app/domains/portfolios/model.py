@@ -12,6 +12,12 @@ class Portfolio(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     name: Mapped[str] = mapped_column(String(255))
+    concentration_threshold: Mapped[Decimal] = mapped_column(
+        Numeric(5, 4),
+        nullable=False,
+        default=Decimal("0.4"),
+        server_default="0.4",
+    )
 
 
 class Position(Base, TimestampMixin):
