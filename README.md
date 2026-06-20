@@ -147,9 +147,10 @@ uv run pytest
 
 | Prefix | 설명 |
 | --- | --- |
-| `/api/v1/health` | 서비스 상태 확인 |
+| `/api/v1/health` | 서비스 상태 확인 (liveness, `/readiness`에서 의존성·provider·version 점검) |
 | `/api/v1/auth` | 사용자 등록, 로그인, 현재 사용자 조회 |
 | `/api/v1/alerts` | 알림 목록 조회, 읽음 처리, 숨김 처리 |
+| `/api/v1/alert-candidates` | 알림 후보 목록 조회, 읽음 처리, 확정 처리 |
 | `/api/v1/assets` | 투자 자산 등록, 목록 조회, 단건 조회 |
 | `/api/v1/watchlists` | 관심종목 목록과 항목 관리 |
 | `/api/v1/portfolios` | 포트폴리오, 포지션, 집중도 점검 |
@@ -159,10 +160,22 @@ uv run pytest
 | `/api/v1/job-runs` | 백그라운드 잡 실행 기록 조회 |
 | `/api/v1/worker` | 뉴스 수집과 관심종목 분석 잡 enqueue |
 
-## 1차 MVP 범위와 제외
+## 마일스톤 범위와 제외
 
 v0.1 MVP 범위는 투자 리서치/감시 흐름입니다. 포함되는 흐름은 뉴스 수집,
 AI 요약, 투자 가설 충돌 판단, Signal/Alert 생성, 포트폴리오 집중도 점검입니다.
 
-자동매매(automated trading)는 v0.1 MVP 범위가 아닙니다. 이 프로젝트는 주문 실행,
+v0.2는 이 흐름을 프론트엔드 연동과 운영이 가능한 수준으로 다듬은 백엔드
+마일스톤입니다. 주요 변경은 다음과 같습니다. 통합 가이드는
+[docs/backend-v0.2.md](docs/backend-v0.2.md)를 참고하세요.
+
+- deterministic mock data provider와 `*_PROVIDER` 환경 변수 기반 provider 전환
+- 종목 기본 정보 상세, 리서치 요약, 매수 전 체크리스트 API
+- 관심종목 항목 사유/태그/메모와 항목 목록 조회 API
+- 포트폴리오 요약 확장(시세 평가금액, 섹터/현금 비중)과 알림 후보(alert-candidates) 도메인
+- 목록 공통 pagination/sort 규칙, CORS 설정, `APP_ENV` 기반 설정 구조 정리
+- DB 마이그레이션 구조 정리, 주요 API·계약 스냅샷 테스트 보강
+- request id·민감정보 마스킹 로깅, liveness/readiness 분리 health check, 스케줄러 스켈레톤
+
+자동매매(automated trading)는 v0.1과 v0.2 범위가 아닙니다. 이 프로젝트는 주문 실행,
 브로커 연동, 실거래 자동화, 포지션 자동 조정 기능을 제공하지 않습니다.
