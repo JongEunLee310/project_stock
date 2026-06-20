@@ -19,6 +19,10 @@
 
 ## 로컬 실행
 
+Backend v0.2 기준으로 로컬 실행부터 API 호출, provider 전환, 프론트엔드 연동
+주의사항, 테스트까지 한 번에 따라가려면
+[docs/backend-v0.2.md](docs/backend-v0.2.md)를 먼저 참고하세요.
+
 의존성을 설치합니다.
 
 ```bash
