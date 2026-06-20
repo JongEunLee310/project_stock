@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.middleware.cors import CORSMiddleware
 
+from app.api.v1.endpoints import health
 from app.api.v1.router import api_router
 from app.core.config import Settings, settings
 from app.core.exceptions import (
@@ -30,16 +31,8 @@ def create_app(app_settings: Settings = settings) -> FastAPI:
     application.add_exception_handler(AppException, app_exception_handler)
     application.add_exception_handler(RequestValidationError, validation_exception_handler)
     application.add_exception_handler(Exception, unhandled_exception_handler)
+    application.include_router(health.router, prefix="/health", tags=["health"])
     application.include_router(api_router)
-
-    @application.get(
-        "/health",
-        tags=["health"],
-        summary="Root health check",
-        description="Return service health status without the common API envelope for monitoring compatibility.",
-    )
-    def health_check() -> dict[str, str]:
-        return {"status": "ok"}
 
     return application
 
