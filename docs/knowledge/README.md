@@ -6,7 +6,8 @@ This directory stores project workflow knowledge, glossary terms, and project-sp
 
 ## Included Documents
 
-- `workflow.md`
+- `workflow.md` (개발/하네스 절차)
+- `product-workflow.md` (제품 런타임 흐름)
 - `glossary.md`
 - `domain-knowledge.md`
 - `template-usage.md`
