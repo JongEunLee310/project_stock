@@ -6,6 +6,23 @@
 뉴스 수집, AI 요약, 투자 가설과의 충돌 판단, Signal/Alert 생성, 포트폴리오
 집중도 점검을 통해 사람이 투자 판단에 필요한 변화를 빠르게 확인하도록 돕습니다.
 
+## 전체 플로우
+
+백그라운드 분석이 뉴스를 가공해 Signal/Alert를 만들고, 사용자는 API로 그 결과와
+포트폴리오·체크리스트를 확인합니다. 단계별 상세는
+[docs/knowledge/product-workflow.md](docs/knowledge/product-workflow.md)를 참고하세요.
+
+```mermaid
+flowchart LR
+    NEWS["뉴스 수집"] --> SUMMARY["AI 요약"]
+    SUMMARY --> CONFLICT["가설 충돌 판단"]
+    CONFLICT --> SIGNAL["Signal 생성"]
+    SIGNAL --> ALERT["Alert 생성"]
+    PORT["포트폴리오 집중도 점검"] --> SIGNAL
+    ALERT --> USER["사용자 검토<br/>(알림 / 후보)"]
+    SIGNAL --> USER
+```
+
 ## 기술 스택
 
 - Python 3.12, FastAPI, Uvicorn
