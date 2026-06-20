@@ -24,6 +24,30 @@
 `-field`는 내림차순이며, 허용되지 않은 필드는 `422 VALIDATION_ERROR`로 거부된다.
 필터는 리소스별 typed query parameter를 사용한다.
 
+## Contract 변경 검토 기준
+
+프론트엔드가 직접 연동하는 응답 contract 변경은 의도적 변경으로 간주한다. 다음
+변경은 반드시 `tests/test_api_contract.py`와 이 문서를 함께 갱신한다.
+
+- 공통 envelope의 `data`, `message`, `error`, `meta` 키 변경
+- 목록 응답의 `meta.page`, `meta.size`, `meta.total` 키 또는 타입 변경
+- 프론트 직접 연동 API의 `data` 필수 필드 추가, 삭제, 이름 변경, 타입 변경
+- nullable 여부 변경, 배열 item 구조 변경, enum/string 값 범위 변경
+- OpenAPI path, response schema, 인증 필요 여부 변경
+
+응답 값의 구체적인 숫자, 날짜, mock 데이터 내용은 contract가 아니라 동작 테스트
+대상이다. contract 테스트는 필수 키와 타입만 고정한다.
+
+## 프론트 영향 범위 확인 절차
+
+contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
+
+1. 이 문서의 Screen Map에서 변경 path를 사용하는 화면을 찾는다.
+2. `Implemented API Catalog`의 요청/응답 예시와 인증 여부를 변경 내용에 맞춘다.
+3. `tests/test_api_contract.py`의 필수 필드·타입 기대값을 의도한 contract로 갱신한다.
+4. `/openapi.json` 또는 `app.openapi()`에서 path와 response component가 남아 있는지 확인한다.
+5. 변경된 화면, 필드, 마이그레이션 필요 여부를 PR 본문에 적고 프론트엔드 확인을 요청한다.
+
 ## Auth
 
 인증 필요 API는 `Authorization: Bearer <access_token>` 헤더가 필요하다.
