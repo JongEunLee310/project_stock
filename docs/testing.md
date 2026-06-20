@@ -33,6 +33,16 @@ domain API tests may still override the current user through the shared
 `set_current_user` helper when the test is focused on domain behavior rather
 than authentication.
 
+## Major API Regression Coverage
+
+The suite includes focused API tests for watchlists, asset detail, research
+summary, portfolio summary, and alert candidates. These tests cover successful
+responses, pagination metadata where applicable, representative 404 paths, and
+alert candidate read/confirm status transitions.
+
+Common error envelope tests live in `tests/test_error_responses.py` and verify
+401, 404, and 422 responses keep the `{data: null, error: {code}}` shape.
+
 ## Verification
 
 Run lint, type checks, and tests before opening a pull request:
