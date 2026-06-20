@@ -2,7 +2,7 @@
   "template": "ai-assisted-project-template",
   "review": {
     "mode": "local",
-    "defaultOutput": "tmp/claude-pr-review.md"
+    "defaultOutput": "docs/reviews/pr-{number}.md"
   },
   "hooks": {
     "PreToolUse": [

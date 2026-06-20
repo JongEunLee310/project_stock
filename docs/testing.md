@@ -43,6 +43,11 @@ alert candidate read/confirm status transitions.
 Common error envelope tests live in `tests/test_error_responses.py` and verify
 401, 404, and 422 responses keep the `{data: null, error: {code}}` shape.
 
+API contract snapshot tests live in `tests/test_api_contract.py` and pin the
+required keys and types of the common envelope and the frontend-facing
+responses. Treat a contract change as intentional and update both the test and
+`docs/api/frontend-api-spec.md` together.
+
 ## Verification
 
 Run lint, type checks, and tests before opening a pull request:
