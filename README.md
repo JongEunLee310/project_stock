@@ -31,6 +31,13 @@ uv sync
 cp .env.example .env
 ```
 
+`APP_ENV`는 실행 환경을 `dev`, `test`, `prod` 중 하나로 표시하며 기본값은 `dev`입니다.
+설정은 `app/core/config.py`의 단일 `Settings`가 `.env`와 프로세스 환경 변수에서
+로드합니다. `OPENAI_API_KEY`, `SECRET_KEY`, DB/Redis URL 같은 민감 정보는 실제 값을
+커밋하지 말고 로컬 `.env`나 배포 환경 변수로 주입하세요. `MARKET_PROVIDER`,
+`NEWS_PROVIDER`, `DISCLOSURE_PROVIDER`, `PORTFOLIO_PROVIDER`는 `mock` 또는 `real`을
+사용하며, 로컬 기본값은 deterministic mock adapter입니다.
+
 로컬에서 PostgreSQL과 Redis를 직접 실행하는 경우 `.env`의 호스트를 로컬 환경에
 맞게 조정합니다. 예를 들어 Docker Compose 밖에서 API를 실행하고 로컬 포트로
 접속한다면 `DATABASE_URL`의 호스트는 `localhost`, `REDIS_URL`의 호스트도

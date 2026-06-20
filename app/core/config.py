@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    APP_ENV: Literal["dev", "test", "prod"] = "dev"
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/stock_db"
     REDIS_URL: str = "redis://localhost:6379/0"
     SECRET_KEY: str = "change-me-in-production"
