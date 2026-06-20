@@ -10,11 +10,15 @@ from app.core.exceptions import (
     unhandled_exception_handler,
     validation_exception_handler,
 )
+from app.core.logging import setup_logging
+from app.core.middleware import RequestIdMiddleware
 
 
 def create_app(app_settings: Settings = settings) -> FastAPI:
+    setup_logging(app_settings)
     application = FastAPI(title="Project Stock API")
 
+    application.add_middleware(RequestIdMiddleware)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.CORS_ORIGINS,
