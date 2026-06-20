@@ -12,7 +12,7 @@
 }
 ```
 
-목록 응답은 `meta`에 `{ "page": 1, "size": 20, "total": 1 }`을 포함한다. 실패 응답은 `data: null`, `meta: null`이며 `error.code`에는 `ErrorCode` 문자열이 들어간다. `/health`와 `/api/v1/health`는 모니터링 호환을 위해 envelope를 사용하지 않는다.
+목록 응답은 `meta`에 `{ "page": 1, "size": 20, "total": 1 }`을 포함한다. 실패 응답은 `data: null`, `meta: null`이며 `error.code`에는 `ErrorCode` 문자열이 들어간다. `/health`, `/api/v1/health`, `/api/v1/health/readiness`는 모니터링 호환을 위해 envelope를 사용하지 않는다.
 
 ## Common List Query Rules
 
@@ -793,6 +793,19 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 { "data": null, "message": "관심 목록을 찾을 수 없습니다.", "error": { "code": "WATCHLIST_NOT_FOUND" }, "meta": null }
 ```
 
+#### `POST /api/v1/worker/scheduler/jobs/{job_name}/run`
+
+- Auth: Not required
+- Request: path `job_name` (현재 등록된 job: `mock_collection`)
+- Success `200`:
+
+```json
+{ "data": { "job_name": "mock_collection", "job_run_id": 1, "status": "success" }, "message": null, "error": null, "meta": null }
+```
+
+- Notes: 등록된 scheduler job을 실제 주기 트리거 등록 없이 한 번 즉시 실행한다. Redis 없이 동작한다.
+- Representative error `404`: unknown job name. `409`: disabled job.
+
 ### Health
 
 #### `GET /health`
@@ -820,6 +833,19 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 
 - Notes: versioned health endpoint for API clients/Swagger discovery. It intentionally mirrors `/health` and does not use the common envelope.
 - Representative error: unhandled server errors use `500 INTERNAL_ERROR` envelope.
+
+#### `GET /api/v1/health/readiness`
+
+- Auth: Not required
+- Request: none
+- Success `200`:
+
+```json
+{ "status": "ok", "checks": { "db": { "status": "ok" } }, "providers": { "market": "mock", "news": "mock", "disclosure": "mock", "portfolio": "mock" }, "version": "0.1.0" }
+```
+
+- Notes: dependency readiness, provider modes, application version. Does not use the common envelope.
+- Dependency failure `503`: same shape with `status: "error"` and the failing entry in `checks` set to `{ "status": "error" }` (현재 `db` 점검만 수행한다).
 
 ## Candidate APIs Not Implemented
 
@@ -869,5 +895,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - [x] `GET /api/v1/job-runs`
 - [x] `POST /api/v1/worker/jobs/news`
 - [x] `POST /api/v1/worker/jobs/analysis`
+- [x] `POST /api/v1/worker/scheduler/jobs/{job_name}/run`
 - [x] `GET /health`
 - [x] `GET /api/v1/health`
+- [x] `GET /api/v1/health/readiness`
