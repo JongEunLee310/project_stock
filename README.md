@@ -78,10 +78,20 @@ docker compose down
 
 ## Alembic
 
-현재 스키마까지 마이그레이션을 적용합니다.
+Alembic은 `alembic/env.py`에서 `DATABASE_URL`을 읽고 전체 도메인 모델을
+`Base.metadata`에 등록해 autogenerate 대상에 포함합니다.
+
+현재 스키마까지 마이그레이션을 적용합니다. 새 로컬 DB를 준비한 뒤 이 명령만으로
+현재 head까지 재현되어야 합니다.
 
 ```bash
 uv run alembic upgrade head
+```
+
+현재 head가 하나인지 확인합니다.
+
+```bash
+uv run alembic heads
 ```
 
 모델 변경 후 새 마이그레이션 초안을 생성합니다.
@@ -90,7 +100,23 @@ uv run alembic upgrade head
 uv run alembic revision --autogenerate -m "describe change"
 ```
 
-생성된 revision은 실제 의도와 일치하는지 검토한 뒤 커밋합니다.
+생성된 revision은 실제 의도와 일치하는지 검토한 뒤 커밋합니다. 의도하지 않은
+테이블/컬럼 diff가 보이면 revision을 커밋하기 전에 모델 import 누락 또는 기존
+마이그레이션과의 불일치를 먼저 확인하세요.
+
+직전 revision으로 되돌립니다.
+
+```bash
+uv run alembic downgrade -1
+```
+
+전체 마이그레이션 왕복 검증이 필요할 때는 로컬 검증 DB에서만 base까지 내린 뒤
+다시 head까지 올립니다.
+
+```bash
+uv run alembic downgrade base
+uv run alembic upgrade head
+```
 
 ## 테스트 실행
 
