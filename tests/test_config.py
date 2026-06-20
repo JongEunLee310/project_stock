@@ -33,6 +33,8 @@ def test_settings_use_defaults_without_env_file(monkeypatch: pytest.MonkeyPatch)
     assert settings.NEWS_PROVIDER == "mock"
     assert settings.DISCLOSURE_PROVIDER == "mock"
     assert settings.PORTFOLIO_PROVIDER == "mock"
+    assert settings.CORS_ORIGINS == []
+    assert settings.CORS_ALLOW_CREDENTIALS is False
 
 
 def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -49,6 +51,8 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("NEWS_PROVIDER", "real")
     monkeypatch.setenv("DISCLOSURE_PROVIDER", "real")
     monkeypatch.setenv("PORTFOLIO_PROVIDER", "real")
+    monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000, http://localhost:5173")
+    monkeypatch.setenv("CORS_ALLOW_CREDENTIALS", "true")
 
     settings = _settings_without_env_file()
 
@@ -64,6 +68,22 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     assert settings.NEWS_PROVIDER == "real"
     assert settings.DISCLOSURE_PROVIDER == "real"
     assert settings.PORTFOLIO_PROVIDER == "real"
+    assert settings.CORS_ORIGINS == [
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ]
+    assert settings.CORS_ALLOW_CREDENTIALS is True
+
+
+def test_settings_reject_wildcard_origin_with_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_settings_env(monkeypatch)
+    monkeypatch.setenv("CORS_ORIGINS", "*")
+    monkeypatch.setenv("CORS_ALLOW_CREDENTIALS", "true")
+
+    with pytest.raises(ValueError, match="CORS_ALLOW_CREDENTIALS"):
+        _settings_without_env_file()
 
 
 def test_env_example_keys_match_settings_fields() -> None:
