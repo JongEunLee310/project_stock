@@ -43,6 +43,17 @@
 }
 ```
 
+## Frontend Dev Environment
+
+브라우저 기반 프론트엔드에서 API를 호출할 때 허용 origin은 백엔드 환경 변수
+`CORS_ORIGINS`로 주입한다. 로컬 개발 예시는
+`http://localhost:3000,http://localhost:5173`이고, 운영에서는 배포된 프론트엔드
+도메인만 명시한다.
+
+`CORS_ALLOW_CREDENTIALS` 기본값은 `false`다. 쿠키 기반 인증 등 credential 동반
+요청이 필요해지면 `CORS_ORIGINS=*`를 사용할 수 없고 명시 origin 목록을 설정해야
+한다. `OPTIONS` preflight 요청은 FastAPI CORS middleware가 처리한다.
+
 ## Screen Map
 
 ### 대시보드

@@ -1,6 +1,7 @@
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -18,6 +19,23 @@ class Settings(BaseSettings):
     NEWS_PROVIDER: Literal["mock", "real"] = "mock"
     DISCLOSURE_PROVIDER: Literal["mock", "real"] = "mock"
     PORTFOLIO_PROVIDER: Literal["mock", "real"] = "mock"
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = []
+    CORS_ALLOW_CREDENTIALS: bool = False
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: Any) -> list[str] | Any:
+        if isinstance(value, str):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @model_validator(mode="after")
+    def validate_cors_credentials(self) -> "Settings":
+        if self.CORS_ALLOW_CREDENTIALS and "*" in self.CORS_ORIGINS:
+            raise ValueError(
+                "CORS_ALLOW_CREDENTIALS=true cannot be used with CORS_ORIGINS=*"
+            )
+        return self
 
 
 settings = Settings()
