@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Any, cast
 
 import openai
@@ -9,6 +10,8 @@ from pydantic import BaseModel
 from app.adapters.llm.base import LLMClient, LLMMessage
 from app.adapters.llm.exceptions import LLMCallError, LLMTimeoutError
 
+logger = logging.getLogger(__name__)
+
 
 class OpenAIClient(LLMClient):
     def __init__(self, api_key: str, model: str = "gpt-4o-mini") -> None:
@@ -18,6 +21,10 @@ class OpenAIClient(LLMClient):
     def complete(
         self, messages: list[LLMMessage], timeout: float | None = None
     ) -> str:
+        logger.info(
+            "provider call started",
+            extra={"provider": "openai", "operation": "chat.completions.create"},
+        )
         try:
             completion = self.client.chat.completions.create(
                 model=self.model,
@@ -25,10 +32,22 @@ class OpenAIClient(LLMClient):
                 timeout=timeout,
             )
         except openai.APITimeoutError as exc:
+            logger.warning(
+                "provider call timed out",
+                extra={"provider": "openai", "operation": "chat.completions.create"},
+            )
             raise LLMTimeoutError("OpenAI request timed out") from exc
         except openai.OpenAIError as exc:
+            logger.warning(
+                "provider call failed",
+                extra={"provider": "openai", "operation": "chat.completions.create"},
+            )
             raise LLMCallError("OpenAI request failed") from exc
 
+        logger.info(
+            "provider call completed",
+            extra={"provider": "openai", "operation": "chat.completions.create"},
+        )
         content = completion.choices[0].message.content
         return content or ""
 
@@ -38,6 +57,11 @@ class OpenAIClient(LLMClient):
         schema: type[BaseModel],
         timeout: float | None = None,
     ) -> dict[str, Any]:
+        operation = "chat.completions.create_json"
+        logger.info(
+            "provider call started",
+            extra={"provider": "openai", "operation": operation},
+        )
         # Keep the schema instruction provider-owned by always prepending it.
         schema_message = LLMMessage(
             role="system",
@@ -55,8 +79,16 @@ class OpenAIClient(LLMClient):
                 timeout=timeout,
             )
         except openai.APITimeoutError as exc:
+            logger.warning(
+                "provider call timed out",
+                extra={"provider": "openai", "operation": operation},
+            )
             raise LLMTimeoutError("OpenAI request timed out") from exc
         except openai.OpenAIError as exc:
+            logger.warning(
+                "provider call failed",
+                extra={"provider": "openai", "operation": operation},
+            )
             raise LLMCallError("OpenAI request failed") from exc
 
         content = completion.choices[0].message.content
@@ -66,10 +98,22 @@ class OpenAIClient(LLMClient):
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError as exc:
+            logger.warning(
+                "provider call returned invalid json",
+                extra={"provider": "openai", "operation": operation},
+            )
             raise LLMCallError("OpenAI returned invalid JSON") from exc
 
         if not isinstance(parsed, dict):
+            logger.warning(
+                "provider call returned non-object json",
+                extra={"provider": "openai", "operation": operation},
+            )
             raise LLMCallError("OpenAI returned JSON that is not an object")
+        logger.info(
+            "provider call completed",
+            extra={"provider": "openai", "operation": operation},
+        )
         return parsed
 
 
