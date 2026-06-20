@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
+from app.core.pagination import PaginationParams, SortParams, sort_param
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.alert_candidates.schema import AlertCandidateResponse
@@ -16,6 +17,10 @@ from app.domains.alert_candidates.types import (
 from app.domains.users.model import User
 
 router = APIRouter()
+alert_candidate_sort = sort_param(
+    allowed_fields={"created_at", "id"},
+    default="-created_at",
+)
 
 
 @router.get(
@@ -28,11 +33,11 @@ router = APIRouter()
     ),
 )
 def list_alert_candidates(
+    pagination: Annotated[PaginationParams, Depends()],
+    sort: Annotated[SortParams, Depends(alert_candidate_sort)],
     candidate_type: AlertCandidateType | None = None,
     importance: AlertImportance | None = None,
     status: AlertCandidateStatus | None = None,
-    page: Annotated[int, Query(ge=1)] = 1,
-    size: Annotated[int, Query(ge=1, le=100)] = 20,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[list[AlertCandidateResponse]]:
@@ -49,8 +54,9 @@ def list_alert_candidates(
             candidate_type=candidate_type_value,
             importance=importance_value,
             status=status_value,
-            offset=(page - 1) * size,
-            limit=size,
+            offset=pagination.offset,
+            limit=pagination.limit,
+            sort=sort.value,
         )
     ]
     total = service.count_candidates(
@@ -59,7 +65,12 @@ def list_alert_candidates(
         importance=importance_value,
         status=status_value,
     )
-    return paginated(items, page=page, size=size, total=total)
+    return paginated(
+        items,
+        page=pagination.page,
+        size=pagination.size,
+        total=total,
+    )
 
 
 @router.post(

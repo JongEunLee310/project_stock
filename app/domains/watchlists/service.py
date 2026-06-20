@@ -13,7 +13,6 @@ from app.domains.watchlists.schema import (
     WatchlistCreate,
     WatchlistItemCreate,
     WatchlistItemResponse,
-    WatchlistItemSort,
     WatchlistResponse,
 )
 
@@ -87,7 +86,7 @@ class WatchlistService:
         user_id: int,
         offset: int = 0,
         limit: int | None = None,
-        sort: WatchlistItemSort = "priority",
+        sort: str = "priority",
     ) -> list[WatchlistItemResponse]:
         watchlist = self._get_owned_watchlist(watchlist_id, user_id)
         return [

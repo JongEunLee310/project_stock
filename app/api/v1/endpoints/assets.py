@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
+from app.core.pagination import PaginationParams
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.assets.schema import AssetCreate, AssetDetailResponse, AssetResponse
@@ -41,15 +42,23 @@ def register_asset(
     description="Return paginated assets, optionally filtered by active status.",
 )
 def list_assets(
+    pagination: Annotated[PaginationParams, Depends()],
     is_active: bool | None = None,
-    page: Annotated[int, Query(ge=1)] = 1,
-    size: Annotated[int, Query(ge=1, le=100)] = 20,
     db: Session = Depends(get_db),
 ) -> ApiResponse[list[AssetResponse]]:
     service = AssetService(db)
-    items = service.list(is_active=is_active, offset=(page - 1) * size, limit=size)
+    items = service.list(
+        is_active=is_active,
+        offset=pagination.offset,
+        limit=pagination.limit,
+    )
     total = service.count(is_active=is_active)
-    return paginated(items, page=page, size=size, total=total)
+    return paginated(
+        items,
+        page=pagination.page,
+        size=pagination.size,
+        total=total,
+    )
 
 
 @router.get(

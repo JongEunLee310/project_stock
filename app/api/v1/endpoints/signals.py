@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
+from app.core.pagination import PaginationParams
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.signals.schema import SignalCreate, SignalResponse
@@ -36,9 +37,8 @@ def create_signal(
 )
 def list_signals(
     asset_id: int,
+    pagination: Annotated[PaginationParams, Depends()],
     include_expired: bool = False,
-    page: Annotated[int, Query(ge=1)] = 1,
-    size: Annotated[int, Query(ge=1, le=100)] = 20,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[list[SignalResponse]]:
@@ -48,12 +48,17 @@ def list_signals(
         for signal in service.list_signals(
             asset_id,
             include_expired,
-            offset=(page - 1) * size,
-            limit=size,
+            offset=pagination.offset,
+            limit=pagination.limit,
         )
     ]
     total = service.count_signals(asset_id, include_expired)
-    return paginated(items, page=page, size=size, total=total)
+    return paginated(
+        items,
+        page=pagination.page,
+        size=pagination.size,
+        total=total,
+    )
 
 
 @router.get(

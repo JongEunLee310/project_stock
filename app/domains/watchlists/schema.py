@@ -1,6 +1,4 @@
 from datetime import datetime
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 
@@ -23,9 +21,6 @@ class WatchlistItemCreate(BaseModel):
     reason: str | None = None
     tags: list[str] = Field(default_factory=list)
     memo: str | None = None
-
-
-WatchlistItemSort = Literal["priority", "-priority", "created_at", "-created_at"]
 
 
 class WatchlistItemResponse(BaseModel):

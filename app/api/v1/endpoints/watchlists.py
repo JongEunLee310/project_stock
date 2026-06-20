@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
+from app.core.pagination import PaginationParams, SortParams, sort_param
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.users.model import User
@@ -11,12 +12,15 @@ from app.domains.watchlists.schema import (
     WatchlistCreate,
     WatchlistItemCreate,
     WatchlistItemResponse,
-    WatchlistItemSort,
     WatchlistResponse,
 )
 from app.domains.watchlists.service import WatchlistService
 
 router = APIRouter()
+watchlist_item_sort = sort_param(
+    allowed_fields={"priority", "created_at"},
+    default="priority",
+)
 
 
 @router.post(
@@ -41,19 +45,23 @@ def create_watchlist(
     description="Return paginated watchlists for the authenticated user.",
 )
 def list_watchlists(
-    page: Annotated[int, Query(ge=1)] = 1,
-    size: Annotated[int, Query(ge=1, le=100)] = 20,
+    pagination: Annotated[PaginationParams, Depends()],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[list[WatchlistResponse]]:
     service = WatchlistService(db)
     items = service.list_watchlists(
         current_user.id,
-        offset=(page - 1) * size,
-        limit=size,
+        offset=pagination.offset,
+        limit=pagination.limit,
     )
     total = service.count_watchlists(current_user.id)
-    return paginated(items, page=page, size=size, total=total)
+    return paginated(
+        items,
+        page=pagination.page,
+        size=pagination.size,
+        total=total,
+    )
 
 
 @router.get(
@@ -64,9 +72,8 @@ def list_watchlists(
 )
 def list_watchlist_items(
     watchlist_id: int,
-    page: Annotated[int, Query(ge=1)] = 1,
-    size: Annotated[int, Query(ge=1, le=100)] = 20,
-    sort: WatchlistItemSort = "priority",
+    pagination: Annotated[PaginationParams, Depends()],
+    sort: Annotated[SortParams, Depends(watchlist_item_sort)],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[list[WatchlistItemResponse]]:
@@ -74,12 +81,17 @@ def list_watchlist_items(
     items = service.list_items(
         watchlist_id,
         current_user.id,
-        offset=(page - 1) * size,
-        limit=size,
-        sort=sort,
+        offset=pagination.offset,
+        limit=pagination.limit,
+        sort=sort.value,
     )
     total = service.count_items(watchlist_id, current_user.id)
-    return paginated(items, page=page, size=size, total=total)
+    return paginated(
+        items,
+        page=pagination.page,
+        size=pagination.size,
+        total=total,
+    )
 
 
 @router.post(

@@ -23,6 +23,7 @@ class AlertCandidateService:
         status: str | None = None,
         offset: int = 0,
         limit: int | None = None,
+        sort: str = "-created_at",
     ) -> list[AlertCandidate]:
         return self.repo.list_by_user(
             user_id,
@@ -31,6 +32,7 @@ class AlertCandidateService:
             status=status,
             offset=offset,
             limit=limit,
+            sort=sort,
         )
 
     def count_candidates(

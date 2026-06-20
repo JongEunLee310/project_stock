@@ -10,7 +10,13 @@ from app.domains.alert_candidates.types import (
     AlertCandidateType,
     AlertImportance,
 )
-from tests.conftest import TestingSessionLocal, api_data, api_meta, set_current_user
+from tests.conftest import (
+    TestingSessionLocal,
+    api_data,
+    api_error,
+    api_meta,
+    set_current_user,
+)
 
 
 def create_alert_candidate_for_user(
@@ -97,6 +103,33 @@ def test_list_alert_candidates_uses_page_and_size(client: TestClient) -> None:
     data = cast(list[dict[str, Any]], api_data(response))
     assert [item["id"] for item in data] == [second_candidate["id"]]
     assert api_meta(response) == {"page": 1, "size": 1, "total": 2}
+
+
+def test_list_alert_candidates_supports_sort_values(client: TestClient) -> None:
+    first_candidate = create_alert_candidate_for_user(1, title="First candidate")
+    second_candidate = create_alert_candidate_for_user(1, title="Second candidate")
+    set_current_user(1)
+
+    response = client.get("/api/v1/alert-candidates", params={"sort": "id"})
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert [item["id"] for item in data] == [
+        first_candidate["id"],
+        second_candidate["id"],
+    ]
+
+
+def test_list_alert_candidates_rejects_invalid_sort(client: TestClient) -> None:
+    set_current_user(1)
+
+    response = client.get(
+        "/api/v1/alert-candidates",
+        params={"sort": "importance"},
+    )
+
+    assert response.status_code == 422
+    assert api_error(response)["code"] == "VALIDATION_ERROR"
 
 
 def test_list_alert_candidates_filters_by_type_importance_and_status(
