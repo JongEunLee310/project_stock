@@ -209,3 +209,7 @@ def test_alert_candidate_updates_return_404_for_other_user_or_missing_candidate(
 
     assert other_user_response.status_code == 404
     assert missing_response.status_code == 404
+    assert api_error(missing_response) == {
+        "code": "ALERT_CANDIDATE_NOT_FOUND",
+        "message": "알림 후보를 찾을 수 없습니다.",
+    }

@@ -3,7 +3,7 @@ from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import api_data, api_meta, set_current_user
+from tests.conftest import api_data, api_error, api_meta, set_current_user
 
 
 def assert_decimal_close(
@@ -502,6 +502,10 @@ def test_summary_ownership_and_missing_paths(client: TestClient) -> None:
 
     assert forbidden_response.status_code == 403
     assert missing_response.status_code == 404
+    assert api_error(missing_response) == {
+        "code": "PORTFOLIO_NOT_FOUND",
+        "message": "포트폴리오를 찾을 수 없습니다.",
+    }
 
 
 def test_check_ownership_and_missing_paths(client: TestClient) -> None:
