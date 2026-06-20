@@ -35,9 +35,10 @@ class AlertCandidateRepository:
         status: str | None = None,
         offset: int = 0,
         limit: int | None = None,
+        sort: str = "-created_at",
     ) -> list[AlertCandidate]:
         stmt = self._filtered_query(user_id, candidate_type, importance, status)
-        stmt = stmt.order_by(AlertCandidate.created_at.desc(), AlertCandidate.id.desc())
+        stmt = self._apply_sort(stmt, sort)
         stmt = stmt.offset(offset)
         if limit is not None:
             stmt = stmt.limit(limit)
@@ -89,3 +90,16 @@ class AlertCandidateRepository:
         if status is not None:
             stmt = stmt.where(AlertCandidate.status == status)
         return stmt
+
+    def _apply_sort(
+        self,
+        stmt: Select[tuple[AlertCandidate]],
+        sort: str,
+    ) -> Select[tuple[AlertCandidate]]:
+        if sort == "created_at":
+            return stmt.order_by(AlertCandidate.created_at, AlertCandidate.id)
+        if sort == "id":
+            return stmt.order_by(AlertCandidate.id)
+        if sort == "-id":
+            return stmt.order_by(AlertCandidate.id.desc())
+        return stmt.order_by(AlertCandidate.created_at.desc(), AlertCandidate.id.desc())

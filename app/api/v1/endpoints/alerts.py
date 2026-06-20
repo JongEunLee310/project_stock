@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
+from app.core.pagination import PaginationParams
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.alerts.schema import AlertResponse
@@ -21,9 +22,8 @@ router = APIRouter()
     description="Return paginated alerts for the authenticated user, optionally filtered by status.",
 )
 def list_alerts(
+    pagination: Annotated[PaginationParams, Depends()],
     status: AlertStatus | None = None,
-    page: Annotated[int, Query(ge=1)] = 1,
-    size: Annotated[int, Query(ge=1, le=100)] = 20,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[list[AlertResponse]]:
@@ -34,12 +34,17 @@ def list_alerts(
         for alert in service.list_alerts(
             current_user.id,
             status_value,
-            offset=(page - 1) * size,
-            limit=size,
+            offset=pagination.offset,
+            limit=pagination.limit,
         )
     ]
     total = service.count_alerts(current_user.id, status_value)
-    return paginated(items, page=page, size=size, total=total)
+    return paginated(
+        items,
+        page=pagination.page,
+        size=pagination.size,
+        total=total,
+    )
 
 
 @router.post(

@@ -14,6 +14,16 @@
 
 목록 응답은 `meta`에 `{ "page": 1, "size": 20, "total": 1 }`을 포함한다. 실패 응답은 `data: null`, `meta: null`이며 `error.code`에는 `ErrorCode` 문자열이 들어간다. `/health`와 `/api/v1/health`는 모니터링 호환을 위해 envelope를 사용하지 않는다.
 
+## Common List Query Rules
+
+목록 API는 공통 페이지네이션 query를 사용한다. `page`는 `1` 이상이고 기본값은
+`1`, `size`는 `1..100`이고 기본값은 `20`이다. 목록 응답의 `meta`는 항상
+요청된 `page`/`size`와 전체 건수 `total`을 포함한다.
+
+정렬을 지원하는 목록은 `sort`에 단일 필드를 받는다. `field`는 오름차순,
+`-field`는 내림차순이며, 허용되지 않은 필드는 `422 VALIDATION_ERROR`로 거부된다.
+필터는 리소스별 typed query parameter를 사용한다.
+
 ## Auth
 
 인증 필요 API는 `Authorization: Bearer <access_token>` 헤더가 필요하다.
@@ -66,7 +76,7 @@
 | 관심종목 목록 | `GET` | `/api/v1/watchlists?page=1&size=20` | Required | 사용자 관심종목 그룹 목록. |
 | 관심종목 항목 | `GET` | `/api/v1/watchlists/{watchlist_id}/items?page=1&size=20&sort=priority` | Required | 항목별 사유/태그/메모 표시. |
 | 알림 목록 | `GET` | `/api/v1/alerts?status=UNREAD&page=1&size=20` | Required | unread 카드/배지 표시. |
-| 알림 후보 | `GET` | `/api/v1/alert-candidates?status=UNREAD&page=1&size=20` | Required | 발송 전 후보 검토. |
+| 알림 후보 | `GET` | `/api/v1/alert-candidates?status=UNREAD&page=1&size=20&sort=-created_at` | Required | 발송 전 후보 검토. |
 
 ### 관심종목
 
@@ -104,7 +114,7 @@
 
 | Purpose | Method | Path | Auth |
 | --- | --- | --- | --- |
-| 알림 후보 목록 | `GET` | `/api/v1/alert-candidates?status=UNREAD&page=1&size=20` | Required |
+| 알림 후보 목록 | `GET` | `/api/v1/alert-candidates?status=UNREAD&page=1&size=20&sort=-created_at` | Required |
 | 알림 후보 읽음 | `POST` | `/api/v1/alert-candidates/{candidate_id}/read` | Required |
 | 알림 후보 확인 | `POST` | `/api/v1/alert-candidates/{candidate_id}/confirm` | Required |
 | 시그널 목록 | `GET` | `/api/v1/signals?asset_id={asset_id}&include_expired=false&page=1&size=20` | Required |
@@ -670,7 +680,7 @@
 #### `GET /api/v1/alert-candidates`
 
 - Auth: Required
-- Query: `candidate_type?: NEWS_SURGE | PRICE_MOVEMENT | DISCLOSURE | PORTFOLIO_CONCENTRATION | BUY_CHECKLIST_REQUIRED`, `importance?: LOW | MEDIUM | HIGH`, `status?: UNREAD | READ | CONFIRMED`, `page: int = 1`, `size: int = 20`
+- Query: `candidate_type?: NEWS_SURGE | PRICE_MOVEMENT | DISCLOSURE | PORTFOLIO_CONCENTRATION | BUY_CHECKLIST_REQUIRED`, `importance?: LOW | MEDIUM | HIGH`, `status?: UNREAD | READ | CONFIRMED`, `page: int = 1`, `size: int = 20`, `sort: created_at | -created_at | id | -id = -created_at`
 - Success `200`:
 
 ```json

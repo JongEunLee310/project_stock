@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
+from app.core.pagination import PaginationParams
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.portfolios.schema import (
@@ -43,19 +44,23 @@ def create_portfolio(
     description="Return paginated portfolios for the authenticated user.",
 )
 def list_portfolios(
-    page: Annotated[int, Query(ge=1)] = 1,
-    size: Annotated[int, Query(ge=1, le=100)] = 20,
+    pagination: Annotated[PaginationParams, Depends()],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[list[PortfolioResponse]]:
     service = PortfolioService(db)
     items = service.list_portfolios(
         current_user.id,
-        offset=(page - 1) * size,
-        limit=size,
+        offset=pagination.offset,
+        limit=pagination.limit,
     )
     total = service.count_portfolios(current_user.id)
-    return paginated(items, page=page, size=size, total=total)
+    return paginated(
+        items,
+        page=pagination.page,
+        size=pagination.size,
+        total=total,
+    )
 
 
 @router.get(
