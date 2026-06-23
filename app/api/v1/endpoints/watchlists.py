@@ -1,6 +1,6 @@
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
@@ -11,6 +11,7 @@ from app.domains.users.model import User
 from app.domains.watchlists.schema import (
     WatchlistCreate,
     WatchlistItemCreate,
+    WatchlistItemExpandedResponse,
     WatchlistItemResponse,
     WatchlistResponse,
 )
@@ -66,19 +67,43 @@ def list_watchlists(
 
 @router.get(
     "/{watchlist_id}/items",
-    response_model=ApiResponse[list[WatchlistItemResponse]],
+    response_model=ApiResponse[list[Any]],
     summary="List watchlist items",
-    description="Return paginated items for a watchlist owned by the authenticated user.",
+    description=(
+        "Return paginated items for a watchlist owned by the authenticated user. "
+        "Pass expand=asset to include asset quote information in each item."
+    ),
 )
 def list_watchlist_items(
     watchlist_id: int,
     pagination: Annotated[PaginationParams, Depends()],
     sort: Annotated[SortParams, Depends(watchlist_item_sort)],
+    expand: str | None = Query(
+        default=None,
+        description="Comma-separated expand fields. Supported: asset",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ApiResponse[list[WatchlistItemResponse]]:
+) -> Any:
     service = WatchlistService(db)
-    items = service.list_items(
+    expanded_items: list[WatchlistItemExpandedResponse]
+    plain_items: list[WatchlistItemResponse]
+    if expand is not None and "asset" in [e.strip() for e in expand.split(",")]:
+        expanded_items = service.list_items_expanded(
+            watchlist_id,
+            current_user.id,
+            offset=pagination.offset,
+            limit=pagination.limit,
+            sort=sort.value,
+        )
+        total = service.count_items(watchlist_id, current_user.id)
+        return paginated(
+            expanded_items,
+            page=pagination.page,
+            size=pagination.size,
+            total=total,
+        )
+    plain_items = service.list_items(
         watchlist_id,
         current_user.id,
         offset=pagination.offset,
@@ -87,7 +112,7 @@ def list_watchlist_items(
     )
     total = service.count_items(watchlist_id, current_user.id)
     return paginated(
-        items,
+        plain_items,
         page=pagination.page,
         size=pagination.size,
         total=total,
