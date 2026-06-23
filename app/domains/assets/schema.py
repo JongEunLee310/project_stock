@@ -37,3 +37,9 @@ class AssetDetailResponse(BaseModel):
     industry: str | None = None
     description: str | None = None
     as_of: UtcDatetime
+    per: str | None = None
+    peg: str | None = None
+    fifty_two_week_low: str | None = None
+    fifty_two_week_high: str | None = None
+    target_price: str | None = None
+    target_upside_percent: str | None = None

@@ -39,20 +39,22 @@ def register_asset(
     "",
     response_model=ApiResponse[list[AssetResponse]],
     summary="List assets",
-    description="Return paginated assets, optionally filtered by active status.",
+    description="Return paginated assets, optionally filtered by active status and/or symbol.",
 )
 def list_assets(
     pagination: Annotated[PaginationParams, Depends()],
     is_active: bool | None = None,
+    symbol: str | None = None,
     db: Session = Depends(get_db),
 ) -> ApiResponse[list[AssetResponse]]:
     service = AssetService(db)
     items = service.list(
         is_active=is_active,
+        symbol=symbol,
         offset=pagination.offset,
         limit=pagination.limit,
     )
-    total = service.count(is_active=is_active)
+    total = service.count(is_active=is_active, symbol=symbol)
     return paginated(
         items,
         page=pagination.page,
