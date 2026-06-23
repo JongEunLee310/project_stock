@@ -14,6 +14,12 @@ class QuoteResult:
     change_percent: Decimal
     currency: str
     as_of: datetime
+    per: Decimal | None = None
+    peg: Decimal | None = None
+    fifty_two_week_low: Decimal | None = None
+    fifty_two_week_high: Decimal | None = None
+    target_price: Decimal | None = None
+    target_upside_percent: Decimal | None = None
 
 
 class MarketDataProvider(ABC):

@@ -19,21 +19,26 @@ class AssetRepository:
     def list_all(
         self,
         is_active: bool | None = None,
+        symbol: str | None = None,
         offset: int = 0,
         limit: int | None = None,
     ) -> list[Asset]:
         stmt = select(Asset).order_by(Asset.id)
         if is_active is not None:
             stmt = stmt.where(Asset.is_active == is_active)
+        if symbol is not None:
+            stmt = stmt.where(Asset.symbol == symbol)
         stmt = stmt.offset(offset)
         if limit is not None:
             stmt = stmt.limit(limit)
         return list(self.db.scalars(stmt).all())
 
-    def count_all(self, is_active: bool | None = None) -> int:
+    def count_all(self, is_active: bool | None = None, symbol: str | None = None) -> int:
         stmt = select(func.count()).select_from(Asset)
         if is_active is not None:
             stmt = stmt.where(Asset.is_active == is_active)
+        if symbol is not None:
+            stmt = stmt.where(Asset.symbol == symbol)
         return int(self.db.scalar(stmt) or 0)
 
     def create(
