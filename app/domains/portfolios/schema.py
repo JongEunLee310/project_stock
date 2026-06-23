@@ -1,8 +1,9 @@
-from datetime import datetime
 from decimal import Decimal
 from typing import Self
 
 from pydantic import BaseModel, Field, model_validator
+
+from app.core.schema import UtcDatetime
 
 from app.domains.signals.schema import SignalResponse
 
@@ -25,7 +26,7 @@ class PortfolioResponse(BaseModel):
     name: str
     concentration_threshold: Decimal
     cash_balance: Decimal
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class PositionCreate(BaseModel):
@@ -53,7 +54,7 @@ class PositionResponse(BaseModel):
     asset_id: int
     quantity: Decimal
     avg_buy_price: Decimal
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class PositionWeight(BaseModel):

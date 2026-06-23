@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel
+
+from app.core.schema import UtcDatetime
 
 
 class AlertCreate(BaseModel):
@@ -16,4 +16,4 @@ class AlertResponse(BaseModel):
     user_id: int
     signal_id: int
     status: str
-    created_at: datetime
+    created_at: UtcDatetime

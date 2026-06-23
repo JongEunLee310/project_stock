@@ -1,8 +1,9 @@
 import json
-from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
+from app.core.schema import UtcDatetime
 
 
 class ResearchReportCreate(BaseModel):
@@ -30,7 +31,7 @@ class ResearchReportResponse(BaseModel):
     thesis_conflict_status: str | None
     conflict_reason: str | None
     news_item_ids: list[int] | None
-    created_at: datetime
+    created_at: UtcDatetime
 
     @field_validator(
         "positive_factors",

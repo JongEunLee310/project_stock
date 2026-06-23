@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.schema import UtcDatetime
+
 from app.domains.signals.time import is_expired_at
 from app.domains.signals.types import SignalType
 
@@ -32,9 +34,9 @@ class SignalResponse(BaseModel):
     risk_level: str | None
     reason: str
     evidence: dict[str, Any] | None
-    expires_at: datetime | None
+    expires_at: UtcDatetime | None
     is_expired: bool = False
-    created_at: datetime
+    created_at: UtcDatetime
 
     @field_validator("evidence", mode="before")
     @classmethod

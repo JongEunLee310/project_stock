@@ -1,8 +1,8 @@
-from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel
 
+from app.core.schema import UtcDatetime
 from app.domains.alert_candidates.types import (
     AlertCandidateType,
     AlertImportance,
@@ -31,4 +31,4 @@ class AlertCandidateResponse(BaseModel):
     message: str | None
     asset_id: int | None
     evidence: dict[str, Any] | None
-    created_at: datetime
+    created_at: UtcDatetime

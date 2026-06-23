@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel, Field
+
+from app.core.schema import UtcDatetime
 
 
 class AssetCreate(BaseModel):
@@ -20,7 +20,7 @@ class AssetResponse(BaseModel):
     name: str
     market: str
     is_active: bool
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class AssetDetailResponse(BaseModel):
@@ -36,4 +36,4 @@ class AssetDetailResponse(BaseModel):
     sector: str | None = None
     industry: str | None = None
     description: str | None = None
-    as_of: datetime
+    as_of: UtcDatetime

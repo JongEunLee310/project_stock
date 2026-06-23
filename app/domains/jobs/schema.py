@@ -1,7 +1,8 @@
-from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+from app.core.schema import UtcDatetime
 
 
 class JobRunCreate(BaseModel):
@@ -15,7 +16,7 @@ class JobRunResponse(BaseModel):
     id: int
     job_type: str
     status: str
-    started_at: datetime | None
-    finished_at: datetime | None
+    started_at: UtcDatetime | None
+    finished_at: UtcDatetime | None
     error_message: str | None
-    created_at: datetime
+    created_at: UtcDatetime

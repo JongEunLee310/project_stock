@@ -1,9 +1,12 @@
 from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
+from app.core.schema import UtcDatetime
 from app.domains.alert_candidates.schema import AlertCandidateCreate
 from app.domains.alert_candidates.service import AlertCandidateService
 from app.domains.alert_candidates.types import AlertCandidateType, AlertImportance
@@ -297,3 +300,49 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "AlertCandidateResponse",
     }
     assert expected_components <= set(schemas)
+
+
+# --- UtcDatetime 직렬화 단언 ---
+
+
+class _Model(BaseModel):
+    ts: UtcDatetime
+
+
+def test_utcdatetime_naive_serialized_as_utc_z() -> None:
+    """naive datetime은 UTC로 간주하여 Z로 직렬화된다."""
+    naive = datetime(2026, 6, 19, 12, 0, 0)
+    m = _Model(ts=naive)
+    dumped = m.model_dump(mode="json")
+    assert isinstance(dumped["ts"], str)
+    assert dumped["ts"].endswith("Z"), f"expected Z suffix, got {dumped['ts']}"
+    assert dumped["ts"] == "2026-06-19T12:00:00Z"
+
+
+def test_utcdatetime_aware_utc_serialized_as_z() -> None:
+    """UTC aware datetime은 그대로 Z로 직렬화된다."""
+    aware_utc = datetime(2026, 6, 19, 12, 0, 0, tzinfo=UTC)
+    m = _Model(ts=aware_utc)
+    dumped = m.model_dump(mode="json")
+    assert isinstance(dumped["ts"], str)
+    assert dumped["ts"].endswith("Z"), f"expected Z suffix, got {dumped['ts']}"
+    assert dumped["ts"] == "2026-06-19T12:00:00Z"
+
+
+def test_utcdatetime_aware_kst_converted_to_utc_z() -> None:
+    """+09:00 aware datetime은 UTC로 변환되어 Z로 직렬화된다."""
+    kst = timezone(offset=timedelta(hours=9))
+    aware_kst = datetime(2026, 6, 19, 21, 0, 0, tzinfo=kst)
+    m = _Model(ts=aware_kst)
+    dumped = m.model_dump(mode="json")
+    assert isinstance(dumped["ts"], str)
+    assert dumped["ts"].endswith("Z"), f"expected Z suffix, got {dumped['ts']}"
+    assert dumped["ts"] == "2026-06-19T12:00:00Z"
+
+
+def test_utcdatetime_python_dump_preserves_datetime() -> None:
+    """model_dump(mode='python')은 datetime 객체를 유지한다."""
+    naive = datetime(2026, 6, 19, 12, 0, 0)
+    m = _Model(ts=naive)
+    dumped = m.model_dump(mode="python")
+    assert isinstance(dumped["ts"], datetime)
