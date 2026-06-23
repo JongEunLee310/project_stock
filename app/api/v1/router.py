@@ -5,6 +5,7 @@ from app.api.v1.endpoints import (
     alerts,
     assets,
     auth,
+    dashboard,
     health,
     job_runs,
     portfolios,
@@ -32,3 +33,4 @@ api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 api_router.include_router(signals.router, prefix="/signals", tags=["signals"])
 api_router.include_router(job_runs.router, prefix="/job-runs", tags=["job-runs"])
 api_router.include_router(worker.router, prefix="/worker", tags=["worker"])
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
