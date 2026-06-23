@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel, HttpUrl
+
+from app.core.schema import UtcDatetime
 
 
 class ResearchSummarySource(BaseModel):
@@ -15,4 +15,4 @@ class ResearchSummaryResponse(BaseModel):
     negative_factors: list[str]
     items_to_verify: list[str]
     sources: list[ResearchSummarySource]
-    updated_at: datetime
+    updated_at: UtcDatetime

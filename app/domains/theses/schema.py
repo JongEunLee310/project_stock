@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel, field_validator
+
+from app.core.schema import UtcDatetime
 
 
 class ThesisCreate(BaseModel):
@@ -33,4 +33,4 @@ class ThesisResponse(BaseModel):
     risk_factors: str | None
     invalidation_conditions: str | None
     is_active: bool
-    created_at: datetime
+    created_at: UtcDatetime

@@ -14,6 +14,10 @@
 
 목록 응답은 `meta`에 `{ "page": 1, "size": 20, "total": 1 }`을 포함한다. 실패 응답은 `data: null`, `meta: null`이며 `error.code`에는 `ErrorCode` 문자열이 들어간다. `/health`, `/api/v1/health`, `/api/v1/health/readiness`는 모니터링 호환을 위해 envelope를 사용하지 않는다.
 
+## Datetime 규약
+
+모든 API 응답의 datetime 필드는 UTC, ISO 8601 `Z` 표기로 직렬화된다(예: `"2026-06-19T00:00:00Z"`). DB에서 timezone 정보 없이 반환되는 naive datetime은 UTC로 간주하여 처리한다. FE는 표시 시 필요에 따라 KST(UTC+9)로 변환한다.
+
 ## Common List Query Rules
 
 목록 API는 공통 페이지네이션 query를 사용한다. `page`는 `1` 이상이고 기본값은

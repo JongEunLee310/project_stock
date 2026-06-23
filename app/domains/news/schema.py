@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.schema import UtcDatetime
+
 
 class NewsSummaryResult(BaseModel):
     summary: str
@@ -35,10 +37,10 @@ class NewsItemResponse(BaseModel):
     title: str
     url: str
     source: str
-    published_at: datetime | None
+    published_at: UtcDatetime | None
     summary: str | None
     sentiment: str | None
     impact_level: str | None
     positive_factors: str | None
     negative_factors: str | None
-    created_at: datetime
+    created_at: UtcDatetime

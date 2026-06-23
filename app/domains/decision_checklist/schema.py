@@ -1,7 +1,8 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from app.core.schema import UtcDatetime
 
 ChecklistItemKey = Literal[
     "valuation",
@@ -30,4 +31,4 @@ class BuyChecklistResponse(BaseModel):
     memo: str | None
     checked_item_keys: list[ChecklistItemKey]
     is_complete: bool
-    decided_at: datetime | None = None
+    decided_at: UtcDatetime | None = None

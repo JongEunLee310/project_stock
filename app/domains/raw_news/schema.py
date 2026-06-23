@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.core.schema import UtcDatetime
+
 
 class RawNewsEventCreate(BaseModel):
     title: str = Field(max_length=500)
@@ -21,6 +23,6 @@ class RawNewsEventResponse(BaseModel):
     title: str
     url: str
     source: str
-    published_at: datetime | None
-    collected_at: datetime
-    created_at: datetime
+    published_at: UtcDatetime | None
+    collected_at: UtcDatetime
+    created_at: UtcDatetime

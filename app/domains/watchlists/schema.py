@@ -1,5 +1,6 @@
-from datetime import datetime
 from pydantic import BaseModel, Field
+
+from app.core.schema import UtcDatetime
 
 
 class WatchlistCreate(BaseModel):
@@ -12,7 +13,7 @@ class WatchlistResponse(BaseModel):
     id: int
     user_id: int
     name: str
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class WatchlistItemCreate(BaseModel):
@@ -33,4 +34,4 @@ class WatchlistItemResponse(BaseModel):
     reason: str | None = None
     tags: list[str] = Field(default_factory=list)
     memo: str | None = None
-    created_at: datetime
+    created_at: UtcDatetime
