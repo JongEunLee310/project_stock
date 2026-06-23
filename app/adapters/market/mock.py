@@ -14,6 +14,12 @@ _SAMPLE_QUOTES: dict[str, QuoteResult] = {
         change_percent=Decimal("1.26"),
         currency="USD",
         as_of=_AS_OF,
+        per=Decimal("31.20"),
+        peg=Decimal("2.45"),
+        fifty_two_week_low=Decimal("164.08"),
+        fifty_two_week_high=Decimal("237.49"),
+        target_price=Decimal("220.00"),
+        target_upside_percent=Decimal("12.45"),
     ),
     "TSLA": QuoteResult(
         symbol="TSLA",

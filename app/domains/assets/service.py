@@ -59,6 +59,12 @@ class AssetService:
             industry=asset.industry,
             description=asset.description,
             as_of=quote.as_of,
+            per=str(quote.per) if quote.per is not None else None,
+            peg=str(quote.peg) if quote.peg is not None else None,
+            fifty_two_week_low=str(quote.fifty_two_week_low) if quote.fifty_two_week_low is not None else None,
+            fifty_two_week_high=str(quote.fifty_two_week_high) if quote.fifty_two_week_high is not None else None,
+            target_price=str(quote.target_price) if quote.target_price is not None else None,
+            target_upside_percent=str(quote.target_upside_percent) if quote.target_upside_percent is not None else None,
         )
 
     def get(self, asset_id: int) -> AssetResponse:
@@ -74,6 +80,7 @@ class AssetService:
     def list(
         self,
         is_active: bool | None = None,
+        symbol: str | None = None,
         offset: int = 0,
         limit: int | None = None,
     ) -> list[AssetResponse]:
@@ -81,10 +88,11 @@ class AssetService:
             AssetResponse.model_validate(asset)
             for asset in self.repo.list_all(
                 is_active=is_active,
+                symbol=symbol,
                 offset=offset,
                 limit=limit,
             )
         ]
 
-    def count(self, is_active: bool | None = None) -> int:
-        return self.repo.count_all(is_active=is_active)
+    def count(self, is_active: bool | None = None, symbol: str | None = None) -> int:
+        return self.repo.count_all(is_active=is_active, symbol=symbol)
