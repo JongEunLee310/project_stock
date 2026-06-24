@@ -205,14 +205,43 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": { "access_token": "jwt-token", "token_type": "bearer" }, "message": null, "error": null, "meta": null }
+{ "data": { "access_token": "jwt-access-token", "token_type": "bearer", "refresh_token": "jwt-refresh-token", "expires_in": 900 }, "message": null, "error": null, "meta": null }
 ```
+
+  - `expires_in`: access 토큰 만료까지 초 (`ACCESS_TOKEN_EXPIRE_MINUTES * 60`, 기본 900).
+  - `refresh_token`: JWT, 기본 2일 유효. `/auth/refresh`에 제시해 access 갱신.
 
 - Representative error `401 AUTH_INVALID_CREDENTIALS`:
 
 ```json
 { "data": null, "message": "이메일 또는 비밀번호가 올바르지 않습니다.", "error": { "code": "AUTH_INVALID_CREDENTIALS" }, "meta": null }
 ```
+
+#### `POST /api/v1/auth/refresh`
+
+- Auth: Not required
+- Request:
+
+```json
+{ "refresh_token": "jwt-refresh-token" }
+```
+
+- Success `200`:
+
+```json
+{ "data": { "access_token": "new-jwt-access-token", "token_type": "bearer", "refresh_token": "", "expires_in": 900 }, "message": null, "error": null, "meta": null }
+```
+
+  - 비회전 정책(MVP): `refresh_token`은 빈 문자열. FE는 기존 refresh 토큰 유지.
+  - `expires_in`: 새 access 토큰 만료까지 초.
+
+- Representative error `401 AUTH_INVALID_TOKEN`:
+
+```json
+{ "data": null, "message": "유효하지 않은 토큰입니다.", "error": { "code": "AUTH_INVALID_TOKEN" }, "meta": null }
+```
+
+  만료·변조·access 토큰 제시·미존재 사용자 모두 401 반환.
 
 #### `GET /api/v1/auth/me`
 
@@ -889,6 +918,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 
 - [x] `POST /api/v1/auth/register`
 - [x] `POST /api/v1/auth/login`
+- [x] `POST /api/v1/auth/refresh`
 - [x] `GET /api/v1/auth/me`
 - [x] `POST /api/v1/assets`
 - [x] `GET /api/v1/assets`

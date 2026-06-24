@@ -26,7 +26,8 @@ def test_settings_use_defaults_without_env_file(monkeypatch: pytest.MonkeyPatch)
     assert settings.REDIS_URL == "redis://localhost:6379/0"
     assert settings.SECRET_KEY == "change-me-in-production"
     assert settings.ALGORITHM == "HS256"
-    assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 30
+    assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 15
+    assert settings.REFRESH_TOKEN_EXPIRE_MINUTES == 2880
     assert settings.OPENAI_API_KEY is None
     assert settings.LLM_TIMEOUT_SECONDS == 30
     assert settings.MARKET_PROVIDER == "mock"

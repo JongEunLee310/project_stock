@@ -1,8 +1,11 @@
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from jose import jwt
 
+from app.core.config import settings
 from tests.conftest import api_data, api_error
 
 
@@ -82,6 +85,9 @@ def test_login_user_success(client: TestClient) -> None:
 
     assert data["access_token"]
     assert data["token_type"] == "bearer"
+    assert data["refresh_token"]
+    assert isinstance(data["expires_in"], int)
+    assert data["expires_in"] == settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
 
 def test_login_user_rejects_wrong_password(client: TestClient) -> None:
@@ -149,3 +155,123 @@ def test_get_me_rejects_tampered_token(client: TestClient) -> None:
         "message": "유효하지 않은 토큰입니다.",
     }
     assert response.headers["www-authenticate"] == "Bearer"
+
+
+# --- refresh 토큰 테스트 ---
+
+
+def test_refresh_returns_new_access_token(client: TestClient) -> None:
+    register_user(client)
+    tokens = login_user(client)
+    refresh_token = tokens["refresh_token"]
+
+    response = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": refresh_token},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["access_token"]
+    assert data["token_type"] == "bearer"
+    assert isinstance(data["expires_in"], int)
+    assert data["expires_in"] == settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    # 비회전 정책: refresh 응답의 refresh_token은 빈 문자열(갱신 없음)
+    assert not data.get("refresh_token")
+
+
+def test_refresh_rejects_tampered_token(client: TestClient) -> None:
+    register_user(client)
+    tokens = login_user(client)
+
+    response = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": tokens["refresh_token"] + "tampered"},
+    )
+
+    assert response.status_code == 401
+    assert api_error(response) == {
+        "code": "AUTH_INVALID_TOKEN",
+        "message": "유효하지 않은 토큰입니다.",
+    }
+
+
+def test_refresh_rejects_expired_token(client: TestClient) -> None:
+    register_user(client)
+
+    # 이미 만료된 토큰을 직접 생성
+    expired_payload = {
+        "sub": "1",
+        "type": "refresh",
+        "exp": datetime.now(UTC) - timedelta(seconds=1),
+    }
+    expired_token = jwt.encode(expired_payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+    response = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": expired_token},
+    )
+
+    assert response.status_code == 401
+    assert api_error(response)["code"] == "AUTH_INVALID_TOKEN"
+
+
+def test_refresh_rejects_access_token(client: TestClient) -> None:
+    """access 토큰을 refresh 엔드포인트에 제시하면 401"""
+    register_user(client)
+    tokens = login_user(client)
+
+    response = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": tokens["access_token"]},
+    )
+
+    assert response.status_code == 401
+    assert api_error(response)["code"] == "AUTH_INVALID_TOKEN"
+
+
+def test_refresh_rejects_nonexistent_user(client: TestClient) -> None:
+    """존재하지 않는 사용자 ID의 refresh 토큰 → 401"""
+    nonexistent_payload = {
+        "sub": "999999",
+        "type": "refresh",
+        "exp": datetime.now(UTC) + timedelta(days=1),
+    }
+    token = jwt.encode(nonexistent_payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+    response = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": token},
+    )
+
+    assert response.status_code == 401
+    assert api_error(response)["code"] == "AUTH_INVALID_TOKEN"
+
+
+def test_get_me_rejects_refresh_token(client: TestClient) -> None:
+    """refresh 토큰으로 보호 API(/auth/me) 접근 시 401"""
+    register_user(client)
+    tokens = login_user(client)
+    refresh_token = tokens["refresh_token"]
+
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {refresh_token}"},
+    )
+
+    assert response.status_code == 401
+    assert api_error(response)["code"] == "AUTH_INVALID_TOKEN"
+
+
+def test_get_me_accepts_access_token(client: TestClient) -> None:
+    """access 토큰으로 보호 API는 정상 접근"""
+    register_user(client)
+    tokens = login_user(client)
+    access_token = tokens["access_token"]
+
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
