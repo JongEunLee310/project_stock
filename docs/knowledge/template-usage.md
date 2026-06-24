@@ -38,7 +38,7 @@ Claude Code reads the issue and relevant docs, then writes a handoff task using 
 
 ## 9. Codex Implements
 
-Codex implements only the handoff scope, updates tests, and runs local verification commands before opening a PR.
+Claude Code triggers Codex by invoking `codex exec` automatically under the default sandbox (`read-only` / `workspace-write`), using its handoff document as the brief; Codex runs in its own session, model, and sandbox. Elevated-access flags (`--dangerously-bypass-approvals-and-sandbox`, `-s danger-full-access`) are never used to automate this step — if the default sandbox cannot run a task, Claude Code falls back to manual execution or asks the human. See `docs/decisions/ADR-005-allow-claude-code-to-invoke-codex-exec.md` (which supersedes ADR-004). Codex implements only the handoff scope, updates tests, and runs local verification commands before opening a PR.
 
 ## 10. CI Feedback Is Handled
 

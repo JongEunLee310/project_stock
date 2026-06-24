@@ -10,7 +10,7 @@ The main Claude Code session is the orchestrator. It does not need a dedicated "
 - Classifies task difficulty (see Dispatch Table below).
 - Selects and invokes the relevant subagent(s).
 - Integrates subagent results.
-- Reviews the final Codex task packet before it is handed to the human operator.
+- Reviews the final Codex task packet before triggering implementation via `codex exec`.
 - Decides whether a human gate condition applies (`docs/harness/human-gate-policy.md`).
 - Writes the final report to the user.
 
@@ -20,7 +20,7 @@ The main Claude Code session is the orchestrator. It does not need a dedicated "
 |---|---|---|
 | Trivial edit | Typo fix, single-line doc change, obvious one-file fix | None — main session handles it directly |
 | Scope/impact analysis needed | Unclear affected files, design decision needed before implementation | `architect-planner` |
-| Implementation work | Feature, bug fix, test addition, refactor | `architect-planner` → `codex-task-writer` → (human runs Codex manually) → `implementation-guardian` → `code-reviewer` |
+| Implementation work | Feature, bug fix, test addition, refactor | `architect-planner` → `codex-task-writer` → (main session runs `codex exec`, manual fallback) → `implementation-guardian` → `code-reviewer` |
 | Failure analysis | Test, lint, typecheck, build, or CI failure | `test-debugger` |
 | High/Critical risk task | Auth, payments, infra, DB migration, deployment | Human gate first per `docs/harness/human-gate-policy.md`; no subagent proceeds without it |
 
@@ -33,7 +33,7 @@ The main Claude Code session is the orchestrator. It does not need a dedicated "
 
 ## Codex Integration
 
-No subagent invokes Codex CLI. `codex-task-writer` only produces the handoff document. The human operator runs Codex manually in a separate session, per `docs/harness/handoff-policy.md` and `docs/decisions/ADR-002-use-manual-codex-execution-instead-of-nested-codex-exec.md`.
+Subagents do not invoke Codex CLI; `codex-task-writer` only produces the handoff document. The main Claude Code session triggers implementation by invoking `codex exec` automatically **under the default sandbox** (`read-only` / `workspace-write`), using that handoff as the brief. Bypass/danger sandbox flags are never used — if the default sandbox cannot run a task, Claude Code stops and asks the human, or falls back to manual execution. See `docs/harness/handoff-policy.md` and `docs/decisions/ADR-005-allow-claude-code-to-invoke-codex-exec.md` (which supersedes ADR-004).
 
 ## Prohibited for Main Session and All Subagents
 

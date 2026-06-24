@@ -24,7 +24,7 @@ Add `GET /version`.
 ## What Failed
 
 - Claude Code first tried to fully automate the pipeline by calling `codex exec` directly from its own Bash tool. This crashed with sandbox exit code 133 under both `read-only` and `workspace-write` modes; the only workaround required `--dangerously-bypass-approvals-and-sandbox` / `-s danger-full-access`, which the harness's auto-mode classifier correctly blocked as unapproved nested-agent spawning.
-- This forced a switch to manual Codex execution by the human operator. See `FAILURE-001-nested-codex-exec-sandbox-conflict.md` and `ADR-002-use-manual-codex-execution-instead-of-nested-codex-exec.md` (landed on `main`).
+- This forced a switch to manual Codex execution at the time. See `FAILURE-001-nested-codex-exec-sandbox-conflict.md` and `ADR-004-use-manual-codex-execution-instead-of-nested-codex-exec.md` (since superseded by `ADR-005-allow-claude-code-to-invoke-codex-exec.md`).
 
 ## Template Improvements Needed
 

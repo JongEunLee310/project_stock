@@ -2,7 +2,7 @@
 
 ## Claude Code
 
-Claude Code is the orchestrator and reviewer. It analyzes issues, plans work, reviews design, creates Codex handoff tasks, performs local PR review, and assesses documentation impact.
+Claude Code is the orchestrator and reviewer. It analyzes issues, plans work, reviews design, creates Codex handoff tasks, triggers Codex implementation by invoking `codex exec` under the default sandbox (per `docs/decisions/ADR-005-allow-claude-code-to-invoke-codex-exec.md`), performs local PR review, and assesses documentation impact. Triggering implementation does not make Claude Code the implementer — Codex implements in its own session; Claude Code never escalates Codex's sandbox.
 
 ## Codex
 

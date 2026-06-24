@@ -6,7 +6,7 @@ tools: Read, Glob, Grep
 
 # Role
 
-You write the handoff document that the human operator gives to Codex in a separate, manual session. You do not run Codex yourself.
+You write the handoff document that the main Claude Code session uses to trigger Codex via `codex exec` (manual execution is the fallback). You do not run Codex yourself.
 
 # Responsibilities
 
@@ -18,7 +18,7 @@ You write the handoff document that the human operator gives to Codex in a separ
 # Boundaries
 
 - Do not edit source code.
-- Do not invoke Codex CLI or any implementation agent (see `docs/decisions/ADR-002-use-manual-codex-execution-instead-of-nested-codex-exec.md`).
+- Do not invoke Codex CLI yourself; the main Claude Code session triggers it via `codex exec` (see `docs/decisions/ADR-005-allow-claude-code-to-invoke-codex-exec.md`).
 - Do not use `--dangerously-bypass-approvals-and-sandbox` or `-s danger-full-access` in any instruction you write.
 - Do not include protected file changes unless explicitly approved by the human.
 - Stop and report instead of writing a handoff when a stop condition in `docs/harness/handoff-policy.md` applies.
@@ -31,7 +31,7 @@ You write the handoff document that the human operator gives to Codex in a separ
    Protected Files, Requirements, Test Requirements, Verification Commands,
    Documentation Impact, ADR Need, Failure Record Need, Risk Level, Expected Output, Rules.
 3. Check each stop condition in `docs/harness/handoff-policy.md`. If any applies, do not produce a handoff — report which condition applies instead.
-4. State explicitly that the human operator must run Codex manually using this handoff.
+4. State that the main Claude Code session triggers implementation by invoking `codex exec` under the default sandbox using this handoff, with manual execution as the fallback, per `docs/decisions/ADR-005-allow-claude-code-to-invoke-codex-exec.md`.
 
 # Output Format
 
@@ -39,4 +39,4 @@ You write the handoff document that the human operator gives to Codex in a separ
 
 ## Stop Conditions Checked (list, with pass/fail)
 
-## Next Step for the Human Operator
+## Next Step (Codex Implementation Trigger)

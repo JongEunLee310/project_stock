@@ -20,3 +20,12 @@ Codex subagents spend more tokens than a single session (separate model/tool cal
 1. Run `codex --version` and check the changelog/docs for the fields above.
 2. Start a Codex session in this repo and confirm `.codex/agents/*.toml` files are picked up as custom agents (e.g., they are offered when explicitly requested).
 3. Update this file with the confirmed/unconfirmed status once checked, rather than deleting it.
+
+## Prerequisites for automated `codex exec` (ADR-005)
+
+`docs/decisions/ADR-005-allow-claude-code-to-invoke-codex-exec.md` lets Claude Code invoke `codex exec` automatically. Before relying on that, confirm all of the following — otherwise fall back to manual execution (ADR-004):
+
+- **Pin the CLI.** Codex CLI must be a crash-free version. Version 0.140.0 was verified working on this machine; some later versions (e.g. 0.141.0) carried a SIGTRAP regression on Intel macOS x86_64 that crashes even trivial read-only runs. Pin via npm and re-check on upgrade.
+- **Default sandbox only.** Invoke under `read-only` / `workspace-write`. `--dangerously-bypass-approvals-and-sandbox` and `-s danger-full-access` are forbidden in automated workflows (ADR-005 point 2). If the default sandbox cannot run a task, stop and ask the human — never escalate.
+- **Dry run first.** Verify one `workspace-write` `codex exec` call completes (exit 0) on a trivial task before enabling automated invocation for real work.
+- **Bounded delegation.** Confirm `max_depth = 1` is honored (see the verification note above) so a Codex subagent cannot spawn further subagents.
