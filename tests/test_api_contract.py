@@ -174,6 +174,51 @@ ALERT_CANDIDATE_CONTRACT: Contract = {
     "created_at": str,
 }
 
+LOGIN_TOKEN_CONTRACT: Contract = {
+    "access_token": str,
+    "token_type": str,
+    "refresh_token": str,
+    "expires_in": int,
+}
+
+REFRESH_TOKEN_CONTRACT: Contract = {
+    "access_token": str,
+    "token_type": str,
+    "expires_in": int,
+}
+
+
+@pytest.mark.usefixtures("stable_password_hashing")
+def test_login_response_contract(client: TestClient) -> None:
+    client.post("/api/v1/auth/register", json={"email": "t@example.com", "password": "pw"})
+    response = client.post("/api/v1/auth/login", json={"email": "t@example.com", "password": "pw"})
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, LOGIN_TOKEN_CONTRACT)
+    assert data["token_type"] == "bearer"
+    assert data["refresh_token"]
+    assert data["expires_in"] > 0
+
+
+@pytest.mark.usefixtures("stable_password_hashing")
+def test_refresh_response_contract(client: TestClient) -> None:
+    client.post("/api/v1/auth/register", json={"email": "t@example.com", "password": "pw"})
+    login_resp = client.post(
+        "/api/v1/auth/login", json={"email": "t@example.com", "password": "pw"}
+    )
+    refresh_token = cast(dict[str, Any], api_data(login_resp))["refresh_token"]
+
+    response = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, REFRESH_TOKEN_CONTRACT)
+    assert data["access_token"]
+    assert data["expires_in"] > 0
+
 
 def test_watchlist_response_contract(client: TestClient) -> None:
     set_current_user(1)

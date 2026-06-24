@@ -22,3 +22,9 @@ class UserResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str = ""
+    expires_in: int = 0
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str

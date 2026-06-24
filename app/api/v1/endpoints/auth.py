@@ -5,7 +5,7 @@ from app.api.v1.deps import get_current_user
 from app.core.response import ApiResponse, success
 from app.db.session import get_db
 from app.domains.users.model import User
-from app.domains.users.schema import Token, UserCreate, UserLogin, UserResponse
+from app.domains.users.schema import RefreshRequest, Token, UserCreate, UserLogin, UserResponse
 from app.domains.users.service import UserService
 
 router = APIRouter()
@@ -26,10 +26,20 @@ def register(data: UserCreate, db: Session = Depends(get_db)) -> ApiResponse[Use
     "/login",
     response_model=ApiResponse[Token],
     summary="Login user",
-    description="Validate credentials and return a bearer access token.",
+    description="Validate credentials and return access and refresh tokens.",
 )
 def login(data: UserLogin, db: Session = Depends(get_db)) -> ApiResponse[Token]:
     return success(UserService(db).login(data))
+
+
+@router.post(
+    "/refresh",
+    response_model=ApiResponse[Token],
+    summary="Refresh access token",
+    description="Exchange a valid refresh token for a new access token.",
+)
+def refresh(data: RefreshRequest, db: Session = Depends(get_db)) -> ApiResponse[Token]:
+    return success(UserService(db).refresh(data.refresh_token))
 
 
 @router.get(
