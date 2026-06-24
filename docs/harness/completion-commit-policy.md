@@ -26,7 +26,7 @@ If a single unit of work mixes unrelated commit types (e.g., a doc update bundle
 
 ## Step 3: Push and Open a PR
 
-- `main`, `fastapi`, and `spring-boot` are protected: direct push is rejected by repository rules. Push to a feature branch (e.g., `docs/<topic>`, `feat/<topic>`, `fix/<topic>`) and open a PR with `gh pr create` targeting the correct base branch.
+- `main` is protected: direct push is rejected by repository rules. Push to a feature branch (e.g., `docs/<topic>`, `feat/<topic>`, `fix/<topic>`) and open a PR with `gh pr create` targeting `main`.
 - **Labels are required.** Attach labels at creation with `gh pr create --label`. Inherit the labels of the issue(s) the PR resolves; if there is no source issue, label by area and change type (at minimum the commit type, e.g., `docs`).
 - PR body must include a closing keyword (`Closes #N`) for every related issue so that GitHub automatically closes the issue on merge. If the PR addresses multiple issues, list each on a separate line (e.g., `Closes #8`, `Closes #9`, `Closes #12`). The `.github/pull_request_template.md` already contains a `Closes #` placeholder — always fill in the issue number before creating the PR.
 - PR body Summary section: group bullets by issue, not by individual bullet. If the PR covers a single issue, list all bullets together without per-bullet issue annotations (the PR title already carries the issue number). If the PR covers multiple issues, introduce each group with a bold issue header (e.g., `**Issue #10 — 제목**`) so reviewers can tell at a glance which change addresses which issue.
