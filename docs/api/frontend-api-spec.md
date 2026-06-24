@@ -226,6 +226,23 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 
 - Representative error `401 AUTH_INVALID_TOKEN`: see Auth section.
 
+### Dashboard
+
+#### `GET /api/v1/dashboard/summary`
+
+- Auth: Required
+- Request: none (인증 사용자 기준 집계)
+- Success `200`:
+
+```json
+{ "data": { "risk_alert_count": 2, "important_news_count": 5, "review_signal_count": 3, "cash_weight": "0.18", "risk_alert_delta": null, "important_news_delta": null, "review_signal_delta": null, "cash_weight_delta": null }, "message": null, "error": null, "meta": null }
+```
+
+- 카드 집계 의미: `risk_alert_count`=미확인 위험 알림 수, `important_news_count`=중요 뉴스 수, `review_signal_count`=검토 대기 시그널 수, `cash_weight`=현금 비중(문자열 Decimal, 0~1). 데이터가 없으면 카운트는 `0`, `cash_weight`는 `null`.
+- `cash_weight`는 **원가 기준·사용자의 첫 포트폴리오** 기준이다(MVP). 시세 연동 시 시장가 기준으로 재정의 예정.
+- `*_delta` 4필드는 직전 스냅샷 대비 증감이며 **히스토리 스냅샷 도입 전까지 항상 `null`**(후속). FE는 `null`이면 증감 배지를 숨긴다.
+- Representative error `401 AUTH_INVALID_TOKEN`: see Auth section.
+
 ### Assets
 
 #### `POST /api/v1/assets`
@@ -252,13 +269,14 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 #### `GET /api/v1/assets`
 
 - Auth: Not required
-- Query: `is_active?: bool`, `page: int = 1`, `size: int = 20`
+- Query: `is_active?: bool`, `symbol?: string` (정확 일치 필터), `page: int = 1`, `size: int = 20`
 - Success `200`:
 
 ```json
 { "data": [{ "id": 1, "symbol": "AAPL", "name": "Apple Inc.", "market": "NASDAQ", "is_active": true, "created_at": "2026-06-19T00:00:00" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
 ```
 
+- `symbol` 지정 시 해당 심볼만 반환(0 또는 1건). `is_active`와 조합 가능. FE는 `symbol` 단일키 라우팅 보조에 사용한다(C4).
 - Representative error `422 VALIDATION_ERROR`: see Auth section.
 
 #### `GET /api/v1/assets/{asset_id}`
@@ -279,9 +297,10 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": { "id": 1, "symbol": "AAPL", "name": "Apple Inc.", "market": "NASDAQ", "price": "195.64", "previous_close": "193.20", "change": "2.44", "change_percent": "1.26", "currency": "USD", "sector": "Technology", "industry": "Consumer Electronics", "description": "Makes devices and services.", "as_of": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
+{ "data": { "id": 1, "symbol": "AAPL", "name": "Apple Inc.", "market": "NASDAQ", "price": "195.64", "previous_close": "193.20", "change": "2.44", "change_percent": "1.26", "currency": "USD", "sector": "Technology", "industry": "Consumer Electronics", "description": "Makes devices and services.", "as_of": "2026-06-19T00:00:00Z", "per": "31.2", "peg": "2.1", "fifty_two_week_low": "164.08", "fifty_two_week_high": "237.49", "target_price": "210.00", "target_upside_percent": "7.34" }, "message": null, "error": null, "meta": null }
 ```
 
+- 펀더멘털 6필드(`per`, `peg`, `fifty_two_week_low`, `fifty_two_week_high`, `target_price`, `target_upside_percent`)는 모두 **nullable 문자열 Decimal**이다(C5). provider가 값을 제공하지 않으면 `null`. 현재 mock provider는 AAPL에만 값을 채우고 그 외 심볼은 6필드 모두 `null`이다. FE 어댑터는 `null` 표시 fallback(예: "—")을 둔다.
 - Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
 
 #### `GET /api/v1/assets/{asset_id}/research-summary`
@@ -377,11 +396,17 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 #### `GET /api/v1/watchlists/{watchlist_id}/items`
 
 - Auth: Required
-- Query: `page: int = 1`, `size: int = 20`, `sort: priority | -priority | created_at | -created_at = priority`
+- Query: `page: int = 1`, `size: int = 20`, `sort: priority | -priority | created_at | -created_at = priority`, `expand?: string` (콤마 구분, 지원값 `asset`)
 - Success `200`:
 
 ```json
 { "data": [{ "id": 1, "watchlist_id": 1, "asset_id": 1, "priority": 10, "reason": "Core AI exposure", "tags": ["ai", "large-cap"], "memo": "Watch earnings.", "created_at": "2026-06-19T00:00:00" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
+```
+
+- `expand=asset` 지정 시 각 item에 `asset` 객체가 추가된다(하위호환: 미지정/타값이면 `asset` 키 없음). `asset`은 `{ symbol, name, price, change_percent, sector? }`로 `price`·`change_percent`는 문자열 Decimal(C5)이며 `get_market_provider()` 시세를 합친 값이다.
+
+```json
+{ "data": [{ "id": 1, "watchlist_id": 1, "asset_id": 1, "priority": 10, "reason": "Core AI exposure", "tags": ["ai", "large-cap"], "memo": "Watch earnings.", "created_at": "2026-06-19T00:00:00", "asset": { "symbol": "AAPL", "name": "Apple Inc.", "price": "195.64", "change_percent": "1.26", "sector": "Technology" } }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
 ```
 
 - Representative error `403 WATCHLIST_FORBIDDEN`:
@@ -857,8 +882,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 
 | Screen | Candidate |
 | --- | --- |
-| 대시보드 | 전체 자산/전체 포트폴리오를 합산한 대시보드 집계 API |
-| 관심종목 | 관심목록 상세과 포함 항목 목록을 한 번에 반환하는 API |
+| 관심종목 | 관심목록 상세와 포함 항목 목록을 한 번에 반환하는 API (현재는 items에 `expand=asset`로 시세만 합침) |
 | 설정 | 알림 설정 조회/수정 API |
 
 ## Route Checklist
@@ -903,3 +927,4 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - [x] `GET /health`
 - [x] `GET /api/v1/health`
 - [x] `GET /api/v1/health/readiness`
+- [x] `GET /api/v1/dashboard/summary`
