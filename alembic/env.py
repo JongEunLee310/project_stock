@@ -13,6 +13,7 @@ import app.domains.decision_checklist.model  # noqa: F401 — registers checklis
 import app.domains.jobs.model  # noqa: F401 — registers JobRun model for autogenerate
 import app.domains.news.model  # noqa: F401 — registers NewsItem model for autogenerate
 import app.domains.portfolios.model  # noqa: F401 — registers Portfolio models for autogenerate
+import app.domains.prices.model  # noqa: F401 — registers price bar model
 import app.domains.raw_news.model  # noqa: F401 — registers RawNewsEvent model for autogenerate
 import app.domains.reports.model  # noqa: F401 — registers ResearchReport model for autogenerate
 import app.domains.signals.model  # noqa: F401 — registers Signal model for autogenerate
