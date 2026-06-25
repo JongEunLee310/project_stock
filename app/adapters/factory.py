@@ -1,7 +1,7 @@
 from app.adapters.disclosure.base import DisclosureProvider
 from app.adapters.disclosure.mock import MockDisclosureProvider
-from app.adapters.market.base import MarketDataProvider
-from app.adapters.market.mock import MockMarketDataProvider
+from app.adapters.market.base import MarketDataProvider, PriceSeriesProvider
+from app.adapters.market.mock import MockMarketDataProvider, MockPriceSeriesProvider
 from app.adapters.news.base import NewsAdapter
 from app.adapters.news.mock import MockNewsAdapter
 from app.adapters.portfolio.base import PortfolioProvider
@@ -12,6 +12,12 @@ from app.core.config import settings
 def get_market_provider() -> MarketDataProvider:
     if settings.MARKET_PROVIDER == "mock":
         return MockMarketDataProvider()
+    raise NotImplementedError("market real provider 미구현")
+
+
+def get_price_series_provider() -> PriceSeriesProvider:
+    if settings.MARKET_PROVIDER == "mock":
+        return MockPriceSeriesProvider()
     raise NotImplementedError("market real provider 미구현")
 
 

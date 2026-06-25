@@ -1,9 +1,22 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from hashlib import sha256
 
-from app.adapters.market.base import MarketDataProvider, QuoteResult
+from app.adapters.market.base import (
+    MarketDataProvider,
+    PriceBarResult,
+    PriceSeriesProvider,
+    QuoteResult,
+)
 
 _AS_OF = datetime(2026, 6, 19, 0, 0, tzinfo=timezone.utc)
+_PRICE_SERIES_END_DATE = date(2026, 6, 25)
+_RANGE_COUNTS = {
+    "1M": 22,
+    "3M": 66,
+    "6M": 132,
+    "1Y": 252,
+}
 _SAMPLE_QUOTES: dict[str, QuoteResult] = {
     "AAPL": QuoteResult(
         symbol="AAPL",
@@ -42,6 +55,65 @@ class MockMarketDataProvider(MarketDataProvider):
         ]
 
 
+class MockPriceSeriesProvider(PriceSeriesProvider):
+    def get_daily_bars(
+        self,
+        symbol: str,
+        market: str,
+        range_value: str,
+        adjusted: bool,
+    ) -> list[PriceBarResult]:
+        normalized_symbol = symbol.upper()
+        normalized_market = market.upper()
+        count = _RANGE_COUNTS.get(range_value, _RANGE_COUNTS["3M"])
+        seed = _stable_seed(f"{normalized_symbol}:{normalized_market}")
+        base_price = Decimal(seed % 50000 + 5000)
+        dates = _business_days_ending_on(_PRICE_SERIES_END_DATE, count)
+
+        bars: list[PriceBarResult] = []
+        previous_close = base_price
+        for index, trading_date in enumerate(dates):
+            drift = Decimal(((seed + index * 17) % 900) - 450) / Decimal("100")
+            open_price = _money(previous_close + drift)
+            close_move = Decimal(((seed // 7 + index * 13) % 700) - 350) / Decimal(
+                "100"
+            )
+            close_price = _money(max(open_price + close_move, Decimal("1.00")))
+            spread = Decimal(((seed // 13 + index * 5) % 300) + 50) / Decimal("100")
+            high_price = _money(max(open_price, close_price) + spread)
+            low_price = _money(
+                max(min(open_price, close_price) - spread, Decimal("0.01"))
+            )
+            adjusted_close_price = close_price
+            if adjusted:
+                factor_bps = Decimal(10000 - ((seed + index) % 35)) / Decimal("10000")
+                adjusted_close_price = _money(close_price * factor_bps)
+            volume = int((seed % 1_000_000) + 100_000 + index * 997)
+            timestamp = datetime.combine(
+                trading_date,
+                time.min,
+                tzinfo=timezone.utc,
+            )
+            bars.append(
+                PriceBarResult(
+                    symbol=normalized_symbol,
+                    market=normalized_market,
+                    interval="1d",
+                    timestamp=timestamp,
+                    open_price=open_price,
+                    high_price=high_price,
+                    low_price=low_price,
+                    close_price=close_price,
+                    adjusted_close_price=adjusted_close_price,
+                    volume=volume,
+                    currency=_currency_for_market(normalized_market),
+                    source="mock",
+                )
+            )
+            previous_close = close_price
+        return bars
+
+
 def _fallback_quote(symbol: str) -> QuoteResult:
     normalized_symbol = symbol.upper()
     seed = sum(ord(character) for character in normalized_symbol)
@@ -57,3 +129,27 @@ def _fallback_quote(symbol: str) -> QuoteResult:
         currency="USD",
         as_of=_AS_OF,
     )
+
+
+def _business_days_ending_on(end_date: date, count: int) -> list[date]:
+    days: list[date] = []
+    current = end_date
+    while len(days) < count:
+        if current.weekday() < 5:
+            days.append(current)
+        current -= timedelta(days=1)
+    return list(reversed(days))
+
+
+def _stable_seed(value: str) -> int:
+    return int(sha256(value.encode("utf-8")).hexdigest()[:12], 16)
+
+
+def _money(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"))
+
+
+def _currency_for_market(market: str) -> str:
+    if market == "KRX":
+        return "KRW"
+    return "USD"
