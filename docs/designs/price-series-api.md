@@ -155,3 +155,106 @@ MVP에서는 실제 외부 API 연동보다 Mock Provider를 먼저 구현해 FE
 - **응답 필드 표기**: 위 스키마는 camelCase로 적었으나 최종 와이어 표기(snake_case)·금액 문자열
   Decimal(C5)은 contract 확정 시 맞춘다.
 - **시간 표기**: `timestamp`/`lastUpdatedAt`은 C6에 따라 **와이어 UTC**, FE에서 KST 표시.
+
+---
+
+## 계약 확정 (Frozen Contract) — 2026-06-25, Opus
+
+이 섹션이 **확정 계약**이다. FE#47은 이 표기를 기준으로 병렬 착수한다. 와이어 표기는 기존 BE 컨벤션(snake_case 필드, Decimal=문자열, `UtcDatetime`=`...Z`, `ApiResponse` 엔벨로프)에 정렬했다 — `app/domains/assets/schema.py`·`app/core/response.py`·`app/core/schema.py` 확인 기준.
+
+### 엔드포인트
+```
+GET /api/v1/stocks/{symbol}/prices
+```
+
+### 쿼리 파라미터 (확정)
+| 파라미터 | 필수 | 기본 | 허용값 | 위반 시 |
+|----------|------|------|--------|---------|
+| `market` | 필수 | — | `KRX` `NASDAQ` `NYSE` | VALIDATION_ERROR (422) |
+| `range` | 선택 | `3M` | `1M` `3M` `6M` `1Y` | INVALID_PRICE_RANGE (400) |
+| `interval` | 선택 | `1d` | `1d` (MVP 한정) | INVALID_PRICE_INTERVAL (400) |
+| `adjusted` | 선택 | `true` | bool | — |
+
+- `symbol`+`market` 복합키. `market` 필수(거래소 간 symbol 중복 방지).
+- `adjusted=false`면 mock은 `adjusted_close == close`로 응답. 두 필드는 항상 포함.
+- **soft validate 안 함(MVP)**: 미등록 symbol도 조회 가능. 데이터 없으면 PRICE_SERIES_NOT_FOUND(404).
+
+### 응답 (성공) — `ApiResponse[PriceSeriesResponse]`
+```jsonc
+{
+  "data": {
+    "symbol": "005930",
+    "market": "KRX",
+    "currency": "KRW",
+    "interval": "1d",
+    "range": "3M",
+    "source": "mock",
+    "last_updated_at": "2026-06-25T06:00:00Z",   // UtcDatetime, ...Z
+    "bars": [
+      {
+        "date": "2026-06-24",        // 거래일 캘린더 날짜 (YYYY-MM-DD, 타임존 없음)
+        "open": "71000",             // Decimal 문자열
+        "high": "72500",
+        "low": "70800",
+        "close": "72000",
+        "adjusted_close": "72000",
+        "volume": 12345678            // 정수(JSON number)
+      }
+      // ... range에 해당하는 일봉 오름차순
+    ]
+  },
+  "message": null,
+  "error": null,
+  "meta": null
+}
+```
+
+- **필드 표기 snake_case**: `adjusted_close`, `last_updated_at`. FE 어댑터(#45)가 도메인 camelCase로 매핑.
+- **OHLC + adjusted_close = Decimal 문자열**(C5). `volume` = 정수.
+- **`bars`는 페이지네이션 없음** — `range` 전체를 한 번에 반환, `meta=null`. 일봉이라 양 제한적.
+
+### 시간 표기 결정 (타임존 주의 — 오프바이원 방지)
+- **`bars[].date`는 캘린더 날짜 문자열 `YYYY-MM-DD`, 타임존 없음.** 일봉은 "순간(instant)"이 아니라 거래일 집계이므로 UTC instant로 인코딩하지 않는다. UTC instant로 주면 FE가 KST 변환 시 하루 밀리는 버그(오프바이원)가 난다. FE는 `date`를 **타임존 변환 없이** 캘린더 날짜로 그대로 표시한다.
+- **`last_updated_at`은 실제 instant이므로 `UtcDatetime`(`...Z`)**, FE에서 KST 표시.
+- 검증: 날짜 경계 테스트는 `TZ=UTC`로 수행, mock 생성 날짜와 응답 `date` 1:1 단언. [[verify-timezone-tz-utc]]
+
+### 에러 코드 (확정) — `app/core/error_codes.py` 추가
+| 코드 | HTTP | 상황 |
+|------|------|------|
+| `INVALID_PRICE_RANGE` | 400 | 미지원 range |
+| `INVALID_PRICE_INTERVAL` | 400 | 미지원 interval(MVP는 1d 외 전부) |
+| `PRICE_SERIES_NOT_FOUND` | 404 | symbol+market 데이터 없음 |
+| `MARKET_DATA_PROVIDER_ERROR` | 502 | provider 오류 |
+
+- `STOCK_NOT_FOUND`는 **추가 안 함** — soft validate를 안 하므로 미등록/무데이터는 PRICE_SERIES_NOT_FOUND로 흡수. (`market`/필수 누락은 기존 VALIDATION_ERROR.)
+
+### Provider 구조
+- `app/adapters/market/`에 `PriceSeriesProvider`(ABC) + `MockPriceSeriesProvider` 추가. 기존 `MarketDataProvider`(quote)와 병렬.
+- 선택은 기존 `MARKET_PROVIDER`(`app/core/config.py`, mock/real) 스위치 재사용. 별도 env 추가 안 함.
+- `MockPriceSeriesProvider`는 symbol 시드 기반 **결정론적** 합성 OHLCV 생성(테스트 재현성). range→봉 개수 매핑(1M≈22, 3M≈66, 6M≈132, 1Y≈252 영업일 근사).
+
+### 저장 테이블 `stock_price_bars` (확정 — 이슈대로 생성)
+사용자 결정(2026-06-25): 이슈대로 테이블 생성. **DB 스키마 변경이므로 human-gate 선행**(ADR-005 #6).
+
+**read 경로 = 테이블 경유(확정)**: MockPriceSeriesProvider가 결정론적 OHLCV 생성 → 서비스가 `stock_price_bars`에 **유니크키 기준 idempotent upsert**(lazy seed) → range 필터·`timestamp` 오름차순으로 **DB에서 조회해 응답**. 테이블이 실제로 사용되도록(빈 테이블 방지) 한다.
+
+| 컬럼 | 타입 | 비고 |
+|------|------|------|
+| `id` | PK int | |
+| `symbol` | String(20) | |
+| `market` | String(20) | |
+| `interval` | String(10) | MVP `1d` |
+| `timestamp` | DateTime(timezone=True) | 일봉은 거래일 **00:00:00+00**(UTC 자정)으로 저장. 와이어 `date`=이 값의 UTC 날짜부분 |
+| `open_price` | Numeric(20,4) | |
+| `high_price` | Numeric(20,4) | |
+| `low_price` | Numeric(20,4) | |
+| `close_price` | Numeric(20,4) | |
+| `adjusted_close_price` | Numeric(20,4) | |
+| `volume` | BigInteger | |
+| `currency` | String(10) | |
+| `source` | String(30) | mock 등 |
+| (TimestampMixin) | created_at/updated_at | ingest 추적 |
+
+- `UniqueConstraint(symbol, market, interval, timestamp)` 이름 `uq_price_bars_symbol_market_interval_ts`.
+- Alembic 마이그레이션 신규(리비전 체인 `c3d4e5f60055...` 다음). down_revision 최신 head 확인 필수.
+- **와이어 `date` 도출**: `timestamp`를 UTC 자정에 저장하므로 `date` = `timestamp`의 UTC 날짜부분. KST 변환 없음 → 오프바이원 차단. [[verify-timezone-tz-utc]]
