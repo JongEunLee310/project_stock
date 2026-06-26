@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     assets,
     auth,
     dashboard,
+    decision_logs,
     health,
     job_runs,
     portfolios,
@@ -29,6 +30,11 @@ api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
 api_router.include_router(assets.router, prefix="/assets", tags=["assets"])
 api_router.include_router(prices.router, prefix="/stocks", tags=["prices"])
 api_router.include_router(watchlists.router, prefix="/watchlists", tags=["watchlists"])
+api_router.include_router(
+    decision_logs.router,
+    prefix="/decision-logs",
+    tags=["decision-logs"],
+)
 api_router.include_router(portfolios.router, prefix="/portfolios", tags=["portfolios"])
 api_router.include_router(theses.router, prefix="/theses", tags=["theses"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
