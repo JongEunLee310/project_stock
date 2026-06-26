@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any, cast
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.adapters.market.base import QuoteResult
 from app.domains.assets.model import Asset
 from app.domains.news.model import NewsItem
 from app.domains.signals.repository import SignalRepository
@@ -162,6 +165,88 @@ def test_list_signals_uses_page_and_size(client: TestClient) -> None:
     assert response.status_code == 200
     assert api_data(response) == [first]
     assert api_meta(response) == {"page": 2, "size": 1, "total": 2}
+
+
+def test_list_signals_without_expand_excludes_asset_field(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+    create_signal(client, asset["id"], SignalType.WATCH.value)
+
+    response = client.get("/api/v1/signals", params={"asset_id": asset["id"]})
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 1
+    assert "asset" not in data[0]
+
+
+def test_list_signals_expand_asset_includes_asset_object(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_current_user(1)
+    asset = create_asset(client, "AAPL")
+    create_signal(client, asset["id"], SignalType.WATCH.value)
+    create_signal(client, asset["id"], SignalType.BUY_CANDIDATE.value)
+    calls: list[list[str]] = []
+
+    class RecordingMarketProvider:
+        def get_quote(self, symbols: list[str]) -> list[QuoteResult]:
+            calls.append(symbols)
+            return [
+                QuoteResult(
+                    symbol="AAPL",
+                    name="Apple Inc.",
+                    price=Decimal("195.64"),
+                    previous_close=Decimal("193.20"),
+                    change=Decimal("2.44"),
+                    change_percent=Decimal("1.26"),
+                    currency="USD",
+                    as_of=datetime(2026, 6, 19, tzinfo=timezone.utc),
+                )
+            ]
+
+    monkeypatch.setattr(
+        "app.domains.signals.service.get_market_provider",
+        lambda: RecordingMarketProvider(),
+    )
+
+    response = client.get(
+        "/api/v1/signals",
+        params={"asset_id": asset["id"], "expand": "metadata, asset"},
+    )
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 2
+    assert calls == [["AAPL"]]
+    for item in data:
+        brief = item["asset"]
+        assert brief["symbol"] == "AAPL"
+        assert brief["name"] == "AAPL Inc."
+        assert brief["price"] == "195.64"
+        assert brief["change_percent"] == "1.26"
+        assert isinstance(brief["price"], str)
+        assert isinstance(brief["change_percent"], str)
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 2}
+
+
+def test_list_signals_expand_asset_returns_null_for_missing_asset(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    missing_asset_id = 999
+    create_signal(client, missing_asset_id, SignalType.WATCH.value)
+
+    response = client.get(
+        "/api/v1/signals",
+        params={"asset_id": missing_asset_id, "expand": "asset"},
+    )
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 1
+    assert data[0]["asset"] is None
 
 
 def test_is_expired_for_past_future_and_null_expires_at(client: TestClient) -> None:

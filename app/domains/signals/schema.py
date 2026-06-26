@@ -8,6 +8,7 @@ from app.core.schema import UtcDatetime
 
 from app.domains.signals.time import is_expired_at
 from app.domains.signals.types import SignalType
+from app.domains.watchlists.schema import AssetBriefResponse
 
 
 class SignalCreate(BaseModel):
@@ -51,3 +52,7 @@ class SignalResponse(BaseModel):
     def calculate_is_expired(self) -> "SignalResponse":
         self.is_expired = is_expired_at(self.expires_at)
         return self
+
+
+class SignalExpandedResponse(SignalResponse):
+    asset: AssetBriefResponse | None = None
