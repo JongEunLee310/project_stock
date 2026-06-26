@@ -89,7 +89,7 @@ FE 도메인 모델은 백엔드 계약과 **독립적으로** 설계되어, 필
 | G6 | symbol→asset_id 해소 | Research 라우팅이 `:symbol` 기반 → `GET /assets?symbol=` 필터 신설 | **BE 확장** |
 | G7 | asset 펀더멘털 부족 | detail에 per/peg/52주/목표가 nullable 확장(Q4 확정). catalysts는 후속 | **BE 확장(nullable)** |
 | G8 | Alerts 개념 충돌 | **BE 인박스 모델에 맞춰 FE 재정의**(Q3 확정). FE 규칙 빌더/채널 폐기, BE 규칙 API 신설 안 함 | **FE 재정의** |
-| G9 | Signal 모델 상이 | **BE 리스크/가설충돌 모델로 통일**(Q5 확정). 단 FE 모멘텀 시각화는 G4 가격 시계열로 재구성해 유지 | **FE 재정의(+G4 선행)** |
+| G9 | Signal 모델 상이 | **BE 리스크/가설충돌 모델로 통일**(Q5 확정). 단 FE 모멘텀 시각화는 G4 가격 시계열로 재구성해 유지. **후속(BE#112 완료)**: 목록에 `?expand=asset` 추가로 symbol 표시 지원 | **FE 재정의(+G4 선행)** |
 | G10 | DecisionLog 백엔드 부재 | **BE에 decision-log 도메인 신규 추가**(Q7 확정). 작업지도 → `docs/designs/decision-log-domain.md`. 추가 전까지 FE 로컬 임시 | **BE 신규** |
 | G11 | 알림 설정(Settings) | Q3로 Alerts가 인박스로 재정의됨 → 규칙/채널 설정 API 불요. Settings는 `auth/me`만 | **폐기(불요)** |
 
@@ -101,7 +101,7 @@ FE 도메인 모델은 백엔드 계약과 **독립적으로** 설계되어, 필
 | --- | --- | --- |
 | Dashboard | `GET /dashboard/summary`(G3 신규) | 집계는 BE 소유 |
 | Watchlist | `GET /watchlists`, `GET /watchlists/{id}/items`(+asset expand G5) | 단일평면 → 다중그룹 모델 수용 |
-| Signals | `GET /signals?asset_id=`, `GET /signals/{id}`, `GET /stocks/{symbol}/prices`(G4) | FE Signal을 BE 모델로 교체, 모멘텀 스파크라인은 가격 시계열로 재구성(G9). G4 선행(N4) |
+| Signals | `GET /signals?asset_id=`(+asset expand G9후속), `GET /signals/{id}`, `GET /stocks/{symbol}/prices`(G4) | FE Signal을 BE 모델로 교체, 모멘텀 스파크라인은 가격 시계열로 재구성(G9). symbol 표시는 `?expand=asset`(BE#112). G4 선행(N4) |
 | Research | `GET /assets/{id}/detail`·`/research-summary`·`/buy-checklist`, `GET /reports?asset_id=`, `GET /theses/latest`, `GET /stocks/{symbol}/prices`(G4) | symbol→id 해소(G6), 펀더멘털(G7) |
 | Portfolio | `GET /portfolios`, `GET /portfolios/{id}/summary` | sector_weights 직접 사용, dayChange·briefing은 BE 부재 |
 | Alerts | `GET /alerts`(+read/dismiss), `GET /alert-candidates`(+read/confirm) | 인박스로 재정의(G8), 규칙/채널 폐기 |
@@ -119,6 +119,7 @@ FE 도메인 모델은 백엔드 계약과 **독립적으로** 설계되어, 필
 | G3 | `GET /api/v1/dashboard/summary` | 사용자 전체 집계 카드 | `risk_alert_count`, `important_news_count`, `review_signal_count`, `cash_weight`, 각 delta | Required |
 | G4 | `GET /api/v1/stocks/{symbol}/prices?market=&range=&interval=1d&adjusted=` | 가격 시계열(차트 + Signal 모멘텀 공급) | item `date/open/high/low/close/adjustedClose/volume`, meta `symbol/market/currency/source/lastUpdatedAt` | Not required(제안) |
 | G5 | `GET /api/v1/watchlists/{id}/items?expand=asset` | 항목+자산 시세 조인 | 기존 item + `asset: { symbol, name, price, change_percent, sector }` | Required |
+| G9후속 | `GET /api/v1/signals?asset_id=&expand=asset` | 신호+자산 시세 조인(BE#112 완료) | 기존 signal + `asset: { symbol, name, price, change_percent, sector }`. 미지정 시 하위호환 | Required |
 | G6 | `GET /api/v1/assets?symbol={symbol}` | symbol→asset 해소(필터) | 기존 asset list(필터만 추가) | Not required |
 | G7 | `GET /api/v1/assets/{id}/detail` 확장 | 펀더멘털 추가 | 기존 + `per?`, `peg?`, `fifty_two_week_low?`, `fifty_two_week_high?`, `target_price?`, `target_upside_percent?` (모두 nullable) | Not required |
 | G10 | `GET·POST /api/v1/decision-logs` (필요 시 `PATCH /{id}`) | 의사결정 저널 영속화 | 전체 컬럼·enum은 `docs/designs/decision-log-domain.md` 참조 | Required |
