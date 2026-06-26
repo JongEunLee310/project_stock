@@ -763,11 +763,17 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 #### `GET /api/v1/signals?asset_id={asset_id}`
 
 - Auth: Required
-- Query: `asset_id: int`, `include_expired: bool = false`, `page: int = 1`, `size: int = 20`
+- Query: `asset_id: int`, `include_expired: bool = false`, `page: int = 1`, `size: int = 20`, `expand?: string` (콤마 구분, 지원값 `asset`)
 - Success `200`:
 
 ```json
 { "data": [{ "id": 1, "asset_id": 1, "thesis_id": 1, "news_item_id": 10, "signal_type": "RISK_ALERT", "score": 80, "risk_level": "HIGH", "reason": "Thesis conflict detected", "evidence": { "report_id": 1 }, "expires_at": "2026-06-26T00:00:00", "is_expired": false, "created_at": "2026-06-19T00:00:00" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
+```
+
+- `expand=asset` 지정 시 각 signal에 `asset` 객체가 추가된다(하위호환: 미지정/타값이면 `asset` 키 없음). `asset`은 `{ symbol, name, price, change_percent, sector? }`로 `price`·`change_percent`는 문자열 Decimal(C5)이며 `get_market_provider()` 시세를 합친 값이다. asset 미존재 시 `asset`은 `null`이다.
+
+```json
+{ "data": [{ "id": 1, "asset_id": 1, "thesis_id": 1, "news_item_id": 10, "signal_type": "RISK_ALERT", "score": 80, "risk_level": "HIGH", "reason": "Thesis conflict detected", "evidence": { "report_id": 1 }, "expires_at": "2026-06-26T00:00:00", "is_expired": false, "created_at": "2026-06-19T00:00:00", "asset": { "symbol": "AAPL", "name": "Apple Inc.", "price": "195.64", "change_percent": "1.26", "sector": "Technology" } }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
 ```
 
 - Representative error `401 AUTH_INVALID_TOKEN`: see Auth section.

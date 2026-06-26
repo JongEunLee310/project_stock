@@ -109,6 +109,23 @@ def create_decision_log(client: TestClient) -> dict[str, Any]:
     return cast(dict[str, Any], api_data(response))
 
 
+def create_signal(client: TestClient, asset_id: int) -> dict[str, Any]:
+    response = client.post(
+        "/api/v1/signals",
+        json={
+            "asset_id": asset_id,
+            "signal_type": "RISK_ALERT",
+            "score": 80,
+            "risk_level": "HIGH",
+            "reason": "Thesis conflict detected",
+            "evidence": {"report_id": 1},
+            "expires_at": "2026-12-31T00:00:00Z",
+        },
+    )
+    assert response.status_code == 201
+    return cast(dict[str, Any], api_data(response))
+
+
 WATCHLIST_CONTRACT: Contract = {
     "id": int,
     "user_id": int,
@@ -125,6 +142,14 @@ WATCHLIST_ITEM_CONTRACT: Contract = {
     "tags": list,
     "memo": (str, type(None)),
     "created_at": str,
+}
+
+ASSET_BRIEF_CONTRACT: Contract = {
+    "symbol": str,
+    "name": str,
+    "price": str,
+    "change_percent": str,
+    "sector": (str, type(None)),
 }
 
 ASSET_DETAIL_CONTRACT: Contract = {
@@ -198,6 +223,21 @@ ALERT_CANDIDATE_CONTRACT: Contract = {
     "message": (str, type(None)),
     "asset_id": (int, type(None)),
     "evidence": (dict, type(None)),
+    "created_at": str,
+}
+
+SIGNAL_CONTRACT: Contract = {
+    "id": int,
+    "asset_id": int,
+    "thesis_id": (int, type(None)),
+    "news_item_id": (int, type(None)),
+    "signal_type": str,
+    "score": int,
+    "risk_level": (str, type(None)),
+    "reason": str,
+    "evidence": (dict, type(None)),
+    "expires_at": (str, type(None)),
+    "is_expired": bool,
     "created_at": str,
 }
 
@@ -314,6 +354,26 @@ def test_watchlist_response_contract(client: TestClient) -> None:
     assert isinstance(items[0]["tags"][0], str)
 
 
+def test_signal_expand_asset_response_contract(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+    create_signal(client, asset["id"])
+
+    response = client.get(
+        "/api/v1/signals",
+        params={"asset_id": asset["id"], "expand": "asset"},
+    )
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=True)
+    signals = cast(list[dict[str, Any]], api_data(response))
+    assert_contract(signals[0], {**SIGNAL_CONTRACT, "asset": (dict, type(None))})
+    assert_contract(signals[0]["asset"], ASSET_BRIEF_CONTRACT)
+    assert isinstance(signals[0]["asset"]["price"], str)
+    assert isinstance(signals[0]["asset"]["change_percent"], str)
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
+
+
 def test_stock_detail_response_contract(client: TestClient) -> None:
     asset = create_asset(client)
 
@@ -405,6 +465,8 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
     expected_paths = {
         "/api/v1/watchlists",
         "/api/v1/watchlists/{watchlist_id}/items",
+        "/api/v1/signals",
+        "/api/v1/signals/{signal_id}",
         "/api/v1/assets/{asset_id}/detail",
         "/api/v1/assets/{asset_id}/research-summary",
         "/api/v1/portfolios/{portfolio_id}/summary",
@@ -419,6 +481,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "PageMeta",
         "WatchlistResponse",
         "WatchlistItemResponse",
+        "SignalResponse",
         "AssetDetailResponse",
         "ResearchSummaryResponse",
         "ResearchSummarySource",
