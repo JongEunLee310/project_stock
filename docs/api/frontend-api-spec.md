@@ -103,6 +103,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 | 포트폴리오 요약 | `GET` | `/api/v1/portfolios/{portfolio_id}/summary` | Required | 집중도/비중 표시. |
 | 관심종목 목록 | `GET` | `/api/v1/watchlists?page=1&size=20` | Required | 사용자 관심종목 그룹 목록. |
 | 관심종목 항목 | `GET` | `/api/v1/watchlists/{watchlist_id}/items?page=1&size=20&sort=priority` | Required | 항목별 사유/태그/메모 표시. |
+| 의사결정 저널 | `GET` | `/api/v1/decision-logs?page=1&size=20&sort=-decided_at` | Required | 판단 기록 목록. |
 | 알림 목록 | `GET` | `/api/v1/alerts?status=UNREAD&page=1&size=20` | Required | unread 카드/배지 표시. |
 | 알림 후보 | `GET` | `/api/v1/alert-candidates?status=UNREAD&page=1&size=20&sort=-created_at` | Required | 발송 전 후보 검토. |
 
@@ -115,6 +116,15 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 | 관심종목 항목 조회 | `GET` | `/api/v1/watchlists/{watchlist_id}/items?page=1&size=20&sort=priority` | Required |
 | 관심종목 추가 | `POST` | `/api/v1/watchlists/{watchlist_id}/items` | Required |
 | 관심종목 제거 | `DELETE` | `/api/v1/watchlists/{watchlist_id}/items/{item_id}` | Required |
+
+### 의사결정저널
+
+| Purpose | Method | Path | Auth |
+| --- | --- | --- | --- |
+| 목록 조회 | `GET` | `/api/v1/decision-logs?page=1&size=20&sort=-decided_at` | Required |
+| 기록 생성 | `POST` | `/api/v1/decision-logs` | Required |
+| 단건 조회 | `GET` | `/api/v1/decision-logs/{decision_log_id}` | Required |
+| 기록 갱신 | `PATCH` | `/api/v1/decision-logs/{decision_log_id}` | Required |
 
 ### 종목상세
 
@@ -459,6 +469,64 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 ```json
 { "data": null, "message": "관심 목록 종목을 찾을 수 없습니다.", "error": { "code": "WATCHLIST_ITEM_NOT_FOUND" }, "meta": null }
 ```
+
+### Decision Logs
+
+#### `POST /api/v1/decision-logs`
+
+- Auth: Required
+- Request:
+
+```json
+{ "ticker": "AAPL", "company_name": "Apple Inc.", "decision_type": "BUY_CONSIDER", "summary": "Earnings setup is attractive.", "reason": "Services margin and buybacks support the thesis.", "risk_note": "Valuation remains elevated.", "action_plan": "Review after earnings.", "confidence_score": 72, "target_price": "220.0000", "stop_loss_price": "180.0000", "valuation_snapshot": { "pe": 28 }, "news_snapshot": { "headline_count": 3 }, "portfolio_snapshot": { "weight": "0.12" }, "ai_analysis_snapshot": { "rating": "positive" }, "cognitive_risks": ["confirmation_bias"], "created_by": "USER", "decided_at": "2026-06-26T00:00:00Z" }
+```
+
+- Success `201`:
+
+```json
+{ "data": { "id": 1, "user_id": 1, "ticker": "AAPL", "company_name": "Apple Inc.", "decision_type": "BUY_CONSIDER", "decision_status": "OPEN", "summary": "Earnings setup is attractive.", "reason": "Services margin and buybacks support the thesis.", "risk_note": "Valuation remains elevated.", "action_plan": "Review after earnings.", "confidence_score": 72, "target_price": "220.0000", "stop_loss_price": "180.0000", "valuation_snapshot": { "pe": 28 }, "news_snapshot": { "headline_count": 3 }, "portfolio_snapshot": { "weight": "0.12" }, "ai_analysis_snapshot": { "rating": "positive" }, "cognitive_risks": ["confirmation_bias"], "created_by": "USER", "decided_at": "2026-06-26T00:00:00Z", "reviewed_at": null, "closed_at": null, "created_at": "2026-06-26T00:00:00Z", "updated_at": "2026-06-26T00:00:00Z" }, "message": null, "error": null, "meta": null }
+```
+
+- Defaults: `decision_status=OPEN`, `created_by=USER`, `cognitive_risks=[]`, `decided_at=server now`.
+- Representative error `422 VALIDATION_ERROR`: invalid enum or `confidence_score` outside `0..100`.
+
+#### `GET /api/v1/decision-logs`
+
+- Auth: Required
+- Query: `page: int = 1`, `size: int = 20`, `sort: decided_at | -decided_at | created_at | -created_at = -decided_at`
+- Success `200`:
+
+```json
+{ "data": [{ "id": 1, "user_id": 1, "ticker": "AAPL", "company_name": "Apple Inc.", "decision_type": "BUY_CONSIDER", "decision_status": "OPEN", "summary": "Earnings setup is attractive.", "reason": "Services margin and buybacks support the thesis.", "risk_note": "Valuation remains elevated.", "action_plan": "Review after earnings.", "confidence_score": 72, "target_price": "220.0000", "stop_loss_price": "180.0000", "valuation_snapshot": { "pe": 28 }, "news_snapshot": { "headline_count": 3 }, "portfolio_snapshot": { "weight": "0.12" }, "ai_analysis_snapshot": { "rating": "positive" }, "cognitive_risks": ["confirmation_bias"], "created_by": "USER", "decided_at": "2026-06-26T00:00:00Z", "reviewed_at": null, "closed_at": null, "created_at": "2026-06-26T00:00:00Z", "updated_at": "2026-06-26T00:00:00Z" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
+```
+
+#### `GET /api/v1/decision-logs/{decision_log_id}`
+
+- Auth: Required
+- Success `200`: same `DecisionLogResponse` envelope as create.
+- Representative error `404 DECISION_LOG_NOT_FOUND`:
+
+```json
+{ "data": null, "message": "의사결정 기록을 찾을 수 없습니다.", "error": { "code": "DECISION_LOG_NOT_FOUND" }, "meta": null }
+```
+
+- Representative error `403 DECISION_LOG_FORBIDDEN`:
+
+```json
+{ "data": null, "message": "의사결정 기록 접근 권한이 없습니다.", "error": { "code": "DECISION_LOG_FORBIDDEN" }, "meta": null }
+```
+
+#### `PATCH /api/v1/decision-logs/{decision_log_id}`
+
+- Auth: Required
+- Request: any mutable field from create plus `reviewed_at`/`closed_at`.
+
+```json
+{ "decision_status": "REVIEWED", "reviewed_at": "2026-06-27T00:00:00Z", "summary": "Reviewed after earnings." }
+```
+
+- Success `200`: same `DecisionLogResponse` envelope as create.
+- Lifecycle stamping: changing to `REVIEWED` stamps `reviewed_at` when missing and currently null; changing to `CLOSED` stamps `closed_at` when missing and currently null. Explicit timestamps take precedence.
 
 ### Portfolios
 
@@ -927,6 +995,10 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - [x] `GET /api/v1/watchlists`
 - [x] `POST /api/v1/watchlists/{watchlist_id}/items`
 - [x] `DELETE /api/v1/watchlists/{watchlist_id}/items/{item_id}`
+- [x] `GET /api/v1/decision-logs`
+- [x] `POST /api/v1/decision-logs`
+- [x] `GET /api/v1/decision-logs/{decision_log_id}`
+- [x] `PATCH /api/v1/decision-logs/{decision_log_id}`
 - [x] `POST /api/v1/portfolios`
 - [x] `GET /api/v1/portfolios`
 - [x] `GET /api/v1/portfolios/{portfolio_id}/summary`

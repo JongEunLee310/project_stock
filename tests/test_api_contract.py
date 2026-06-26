@@ -82,6 +82,33 @@ def create_alert_candidate(user_id: int) -> None:
         db.close()
 
 
+def create_decision_log(client: TestClient) -> dict[str, Any]:
+    response = client.post(
+        "/api/v1/decision-logs",
+        json={
+            "ticker": "AAPL",
+            "company_name": "Apple Inc.",
+            "decision_type": "BUY_CONSIDER",
+            "summary": "Earnings setup is attractive.",
+            "reason": "Services margin and buybacks support the thesis.",
+            "risk_note": "Valuation remains elevated.",
+            "action_plan": "Review after earnings.",
+            "confidence_score": 72,
+            "target_price": "220.0000",
+            "stop_loss_price": "180.0000",
+            "valuation_snapshot": {"pe": 28},
+            "news_snapshot": {"headline_count": 3},
+            "portfolio_snapshot": {"weight": "0.12"},
+            "ai_analysis_snapshot": {"rating": "positive"},
+            "cognitive_risks": ["confirmation_bias"],
+            "created_by": "USER",
+            "decided_at": "2026-06-26T00:00:00Z",
+        },
+    )
+    assert response.status_code == 201
+    return cast(dict[str, Any], api_data(response))
+
+
 WATCHLIST_CONTRACT: Contract = {
     "id": int,
     "user_id": int,
@@ -174,6 +201,33 @@ ALERT_CANDIDATE_CONTRACT: Contract = {
     "created_at": str,
 }
 
+DECISION_LOG_CONTRACT: Contract = {
+    "id": int,
+    "user_id": int,
+    "ticker": str,
+    "company_name": (str, type(None)),
+    "decision_type": str,
+    "decision_status": str,
+    "summary": (str, type(None)),
+    "reason": (str, type(None)),
+    "risk_note": (str, type(None)),
+    "action_plan": (str, type(None)),
+    "confidence_score": (int, type(None)),
+    "target_price": (str, type(None)),
+    "stop_loss_price": (str, type(None)),
+    "valuation_snapshot": (dict, type(None)),
+    "news_snapshot": (dict, type(None)),
+    "portfolio_snapshot": (dict, type(None)),
+    "ai_analysis_snapshot": (dict, type(None)),
+    "cognitive_risks": list,
+    "created_by": str,
+    "decided_at": str,
+    "reviewed_at": (str, type(None)),
+    "closed_at": (str, type(None)),
+    "created_at": str,
+    "updated_at": str,
+}
+
 LOGIN_TOKEN_CONTRACT: Contract = {
     "access_token": str,
     "token_type": str,
@@ -190,8 +244,12 @@ REFRESH_TOKEN_CONTRACT: Contract = {
 
 @pytest.mark.usefixtures("stable_password_hashing")
 def test_login_response_contract(client: TestClient) -> None:
-    client.post("/api/v1/auth/register", json={"email": "t@example.com", "password": "pw"})
-    response = client.post("/api/v1/auth/login", json={"email": "t@example.com", "password": "pw"})
+    client.post(
+        "/api/v1/auth/register", json={"email": "t@example.com", "password": "pw"}
+    )
+    response = client.post(
+        "/api/v1/auth/login", json={"email": "t@example.com", "password": "pw"}
+    )
 
     assert response.status_code == 200
     assert_envelope(response.json(), has_meta=False)
@@ -204,13 +262,17 @@ def test_login_response_contract(client: TestClient) -> None:
 
 @pytest.mark.usefixtures("stable_password_hashing")
 def test_refresh_response_contract(client: TestClient) -> None:
-    client.post("/api/v1/auth/register", json={"email": "t@example.com", "password": "pw"})
+    client.post(
+        "/api/v1/auth/register", json={"email": "t@example.com", "password": "pw"}
+    )
     login_resp = client.post(
         "/api/v1/auth/login", json={"email": "t@example.com", "password": "pw"}
     )
     refresh_token = cast(dict[str, Any], api_data(login_resp))["refresh_token"]
 
-    response = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    response = client.post(
+        "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
+    )
 
     assert response.status_code == 200
     assert_envelope(response.json(), has_meta=False)
@@ -311,6 +373,25 @@ def test_alert_candidate_list_response_contract(client: TestClient) -> None:
     assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
 
 
+def test_decision_log_response_contract(client: TestClient) -> None:
+    set_current_user(1)
+    created = create_decision_log(client)
+
+    list_response = client.get("/api/v1/decision-logs")
+    get_response = client.get(f"/api/v1/decision-logs/{created['id']}")
+
+    assert list_response.status_code == 200
+    assert_envelope(list_response.json(), has_meta=True)
+    decision_logs = cast(list[dict[str, Any]], api_data(list_response))
+    assert_contract(decision_logs[0], DECISION_LOG_CONTRACT)
+    assert isinstance(decision_logs[0]["cognitive_risks"][0], str)
+    assert api_meta(list_response) == {"page": 1, "size": 20, "total": 1}
+
+    assert get_response.status_code == 200
+    assert_envelope(get_response.json(), has_meta=False)
+    assert_contract(api_data(get_response), DECISION_LOG_CONTRACT)
+
+
 def test_contract_helper_detects_missing_required_field() -> None:
     payload = {"id": 1, "name": "Core", "created_at": "2026-06-19T00:00:00"}
 
@@ -328,6 +409,8 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/assets/{asset_id}/research-summary",
         "/api/v1/portfolios/{portfolio_id}/summary",
         "/api/v1/alert-candidates",
+        "/api/v1/decision-logs",
+        "/api/v1/decision-logs/{decision_log_id}",
     }
     assert expected_paths <= set(schema["paths"])
 
@@ -343,6 +426,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "PositionWeight",
         "SectorWeight",
         "AlertCandidateResponse",
+        "DecisionLogResponse",
     }
     assert expected_components <= set(schemas)
 
