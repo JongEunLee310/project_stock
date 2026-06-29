@@ -79,3 +79,21 @@ class DecisionLogResponse(BaseModel):
     closed_at: UtcDatetime | None = None
     created_at: UtcDatetime
     updated_at: UtcDatetime
+
+
+class ReviewedDecisionItem(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    ticker: str
+    company_name: str | None = None
+    decision_type: str
+    reason: str | None = None
+    risk_note: str | None = None
+    reviewed_at: UtcDatetime
+
+
+class DecisionLogStatsResponse(BaseModel):
+    decision_type_counts: dict[str, int]
+    total: int
+    recent_reviewed: list[ReviewedDecisionItem]

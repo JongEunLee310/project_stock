@@ -148,6 +148,137 @@ def test_list_decision_logs_rejects_invalid_sort(client: TestClient) -> None:
     assert api_error(response)["code"] == "VALIDATION_ERROR"
 
 
+def test_get_decision_log_stats_counts_types_and_total(client: TestClient) -> None:
+    set_current_user(1)
+    create_decision_log(client, ticker="AAPL", decision_type="BUY_CONSIDER")
+    create_decision_log(client, ticker="MSFT", decision_type="BUY_CONSIDER")
+    create_decision_log(client, ticker="NVDA", decision_type="WATCH")
+    create_decision_log(client, ticker="TSLA", decision_type="SELL_CONSIDER")
+
+    response = client.get("/api/v1/decision-logs/stats")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["decision_type_counts"] == {
+        "BUY_CONSIDER": 2,
+        "WATCH": 1,
+        "SELL_CONSIDER": 1,
+    }
+    assert data["total"] == 4
+
+
+def test_get_decision_log_stats_returns_empty_for_user_without_logs(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+
+    response = client.get("/api/v1/decision-logs/stats")
+
+    assert response.status_code == 200
+    assert api_data(response) == {
+        "decision_type_counts": {},
+        "total": 0,
+        "recent_reviewed": [],
+    }
+
+
+def test_get_decision_log_stats_recent_reviewed_filters_sorts_and_limits(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    create_decision_log(client, ticker="OPEN")
+    for index in range(6):
+        decision_log = create_decision_log(client, ticker=f"RVW{index}")
+        response = client.patch(
+            f"/api/v1/decision-logs/{decision_log['id']}",
+            json={
+                "decision_status": "REVIEWED",
+                "reviewed_at": f"2026-06-2{index}T00:00:00Z",
+            },
+        )
+        assert response.status_code == 200
+
+    response = client.get("/api/v1/decision-logs/stats")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    recent_reviewed = cast(list[dict[str, Any]], data["recent_reviewed"])
+    assert [item["ticker"] for item in recent_reviewed] == [
+        "RVW5",
+        "RVW4",
+        "RVW3",
+        "RVW2",
+        "RVW1",
+    ]
+    assert [item["reviewed_at"] for item in recent_reviewed] == [
+        "2026-06-25T00:00:00Z",
+        "2026-06-24T00:00:00Z",
+        "2026-06-23T00:00:00Z",
+        "2026-06-22T00:00:00Z",
+        "2026-06-21T00:00:00Z",
+    ]
+    assert all(item["reviewed_at"] is not None for item in recent_reviewed)
+    assert {item["ticker"] for item in recent_reviewed}.isdisjoint({"OPEN", "RVW0"})
+
+
+def test_get_decision_log_stats_is_scoped_to_current_user(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    owner_reviewed = create_decision_log(
+        client,
+        ticker="AAPL",
+        decision_type="WATCH",
+        reason="Owner reason",
+        risk_note="Owner risk",
+    )
+    patch_response = client.patch(
+        f"/api/v1/decision-logs/{owner_reviewed['id']}",
+        json={
+            "decision_status": "REVIEWED",
+            "reviewed_at": "2026-06-27T00:00:00Z",
+        },
+    )
+    assert patch_response.status_code == 200
+    create_decision_log(client, ticker="MSFT", decision_type="BUY")
+
+    set_current_user(2, "other@example.com")
+    other_reviewed = create_decision_log(
+        client,
+        ticker="TSLA",
+        decision_type="SELL",
+        reason="Other reason",
+        risk_note="Other risk",
+    )
+    other_patch_response = client.patch(
+        f"/api/v1/decision-logs/{other_reviewed['id']}",
+        json={
+            "decision_status": "REVIEWED",
+            "reviewed_at": "2026-06-28T00:00:00Z",
+        },
+    )
+    assert other_patch_response.status_code == 200
+
+    set_current_user(1)
+    response = client.get("/api/v1/decision-logs/stats")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["decision_type_counts"] == {"WATCH": 1, "BUY": 1}
+    assert data["total"] == 2
+    assert data["recent_reviewed"] == [
+        {
+            "id": owner_reviewed["id"],
+            "ticker": "AAPL",
+            "company_name": "Apple Inc.",
+            "decision_type": "WATCH",
+            "reason": "Owner reason",
+            "risk_note": "Owner risk",
+            "reviewed_at": "2026-06-27T00:00:00Z",
+        }
+    ]
+
+
 def test_patch_decision_log_stamps_reviewed_and_closed_at(
     client: TestClient,
 ) -> None:

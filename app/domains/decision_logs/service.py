@@ -9,9 +9,13 @@ from app.domains.decision_logs.repository import DecisionLogRepository
 from app.domains.decision_logs.schema import (
     DecisionLogCreate,
     DecisionLogResponse,
+    DecisionLogStatsResponse,
     DecisionLogUpdate,
+    ReviewedDecisionItem,
 )
 from app.domains.decision_logs.types import DecisionStatus
+
+RECENT_REVIEWED_LIMIT = 5
 
 
 class DecisionLogService:
@@ -47,6 +51,21 @@ class DecisionLogService:
 
     def count_decision_logs(self, user_id: int) -> int:
         return self.repo.count_by_user(user_id)
+
+    def get_stats(self, user_id: int) -> DecisionLogStatsResponse:
+        decision_type_counts = self.repo.count_by_decision_type(user_id)
+        recent_reviewed = [
+            ReviewedDecisionItem.model_validate(decision_log)
+            for decision_log in self.repo.list_recent_reviewed(
+                user_id,
+                limit=RECENT_REVIEWED_LIMIT,
+            )
+        ]
+        return DecisionLogStatsResponse(
+            decision_type_counts=decision_type_counts,
+            total=sum(decision_type_counts.values()),
+            recent_reviewed=recent_reviewed,
+        )
 
     def get_decision_log(
         self,

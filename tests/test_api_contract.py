@@ -472,6 +472,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/portfolios/{portfolio_id}/summary",
         "/api/v1/alert-candidates",
         "/api/v1/decision-logs",
+        "/api/v1/decision-logs/stats",
         "/api/v1/decision-logs/{decision_log_id}",
     }
     assert expected_paths <= set(schema["paths"])
@@ -490,6 +491,8 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "SectorWeight",
         "AlertCandidateResponse",
         "DecisionLogResponse",
+        "DecisionLogStatsResponse",
+        "ReviewedDecisionItem",
     }
     assert expected_components <= set(schemas)
 
