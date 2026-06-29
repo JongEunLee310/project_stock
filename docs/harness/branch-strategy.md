@@ -2,46 +2,26 @@
 
 ## Purpose
 
-This template is distributed as three branches instead of three repositories. This document explains why, and what is allowed to differ between them.
+This project develops on a single long-lived branch (`main`) plus short-lived feature branches derived from it. This document explains the branch roles and the rules for deriving work branches.
 
 ## Branches
 
-- `main` — common Harness Engineering template. Framework-agnostic. Contains no application code, no runnable starter, no framework-specific CI.
-- `fastapi` — FastAPI runnable starter plus the common harness layer from `main`.
-- `spring-boot` — Spring Boot runnable starter plus the common harness layer from `main`.
+- `main` — the single source of truth. Always releasable. Protected: no direct pushes; all changes land through reviewed PRs.
+- Feature branches — short-lived branches derived from the latest `main` for a single unit of work, merged back via PR and deleted after merge.
 
-## What Belongs Where
+## Feature Branch Naming
 
-### Common harness layer (all branches)
+Use a `type/topic` prefix matching the commit type of the work:
 
-- `AGENTS.md`, `CLAUDE.md`, `.codex/`
-- `.github/pull_request_template.md`
-- `.claude/commands/`, `.claude/hooks/`
-- `docs/harness/`, `docs/knowledge/` (workflow and policy content), `docs/decisions/`, `docs/failures/`, `docs/feedback/`, `docs/archive/`
+- `feat/<topic>` — new functionality
+- `fix/<topic>` — bug fix
+- `docs/<topic>` — documentation
+- `refactor/<topic>`, `test/<topic>`, `chore/<topic>` — as appropriate
 
-This layer should read the same across branches except for framework-specific wording in README files.
+## Rules
 
-### Framework-specific layer (`fastapi`, `spring-boot` only)
-
-- Runnable starter application code.
-- Framework-specific test suite.
-- Framework-specific CI workflow (lint, typecheck, build, test commands).
-- Framework-specific sections of the branch README.
-
-## Synchronization Rule
-
-Common policy changes (harness docs, PR template, hooks, commands, `.codex/` instructions) should be made on one branch and then ported to the other two branches so the harness layer does not drift between branches.
-
-Framework-specific changes (starter code, framework CI, framework README sections) belong only in their own branch and should not be ported to `main` or to the other framework branch.
-
-## Drift Rules Are Out of Scope for `main`
-
-Code drift and structure drift rules (linting conventions, directory layout rules, architecture checks) are project- and framework-specific. They must not be added to `main`. Each framework branch — and each project created from a framework branch — defines its own drift rules.
-
-## Choosing a Branch for a New Project
-
-- Starting a new FastAPI service: branch from `fastapi`.
-- Starting a new Spring Boot service: branch from `spring-boot`.
-- Starting a project in a framework not yet represented, or building a new framework branch: branch from `main` and add the framework-specific layer.
-
-See `docs/knowledge/template-usage.md` for the full new-project setup flow.
+- Always branch from the latest `main`. Before handing work off, confirm the feature branch is up to date with `main`; pull or rebase if it is behind.
+- One feature branch per unit of work. Keep branches narrow and short-lived.
+- Direct pushes to `main` are forbidden. Integrate only through PRs.
+- When review feedback arrives, push fixes to the same feature branch (updating the existing PR) rather than opening a new PR. See `docs/harness/local-review-policy.md`.
+- Delete feature branches after merge to avoid stale-branch drift.

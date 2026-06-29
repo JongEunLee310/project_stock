@@ -4,8 +4,8 @@ These instructions apply to all AI coding agents working in this repository.
 
 ## Working Rules
 
-- Before starting any task, pull the latest `main` and create a dedicated feature branch (`feat/<topic>`). Never work directly on `main`.
 - Read the relevant documentation before starting work.
+- Before starting work, pull the latest `main` and create a dedicated feature branch (`feat/<topic>`, or `fix/`/`docs/`/`chore/` by change type). Never commit work directly on `main`.
 - Stay within the issue scope and the explicit handoff scope.
 - Distinguish facts, assumptions, and open questions.
 - Do not weaken tests, CI, lint, typecheck, build checks, or verification rules.
@@ -60,40 +60,3 @@ A Codex task is done only when all of the following are reported, not just impli
 - Any verification that could not be run is named, with the reason and residual risk.
 - Remaining risks are stated.
 - Whether documentation, an ADR, or a failure record needs updating is stated.
-
-# Agent Skill Usage Rules
-
-## Skill Usage Principle
-
-Skills may be installed in this repository, but agents must treat them as optional references.
-Do not activate a skill's autonomous workflow unless it is explicitly allowed by `docs/agent/skill-policy.md`.
-
-## Allowed Default Workflow
-
-For normal development tasks, use only this loop:
-
-1. Read task scope
-2. Create implementation plan
-3. Modify only relevant files
-4. Add or update tests
-5. Run verification commands
-6. Fix failures within the original scope
-7. Summarize changes
-
-## Forbidden Actions
-
-Agents must not:
-
-- Push directly to main
-- Merge pull requests
-- Deploy to production
-- Modify secrets or credentials
-- Run unbounded loops
-- Create scheduled background jobs
-- Expand scope without updating the task document
-- Modify architecture without ADR approval
-
-## Skill Selection Rule
-
-Default to sequential loop.
-Use continuous-pr, rfc-dag, or harness automation only when the task document explicitly says so.

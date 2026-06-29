@@ -2,6 +2,12 @@
 
 Claude Code hands implementation work to Codex using `.codex/task-template.md`.
 
+When the change introduces a new domain, table, external dependency, or architectural decision, a design record must exist before handoff, per `design-record-policy.md`. Reference it from the handoff task.
+
+## Output Location
+
+Completed handoffs are written to `.codex/tasks/task-<NNN>-<slug>.md`, using `.codex/task-template.md` as the section template. `<NNN>` is a zero-padded sequence number and `<slug>` is a short kebab-case summary. One file per handoff.
+
 ## Required Fields
 
 - Source Issue
@@ -27,6 +33,7 @@ Claude Code should stop instead of handing off when:
 
 - The issue goal is unclear.
 - Required decisions are architectural and unresolved.
+- A design record is required per `design-record-policy.md` but has not been written.
 - Protected file changes are needed but not approved.
 - Verification expectations are missing.
 - Risk is high and human approval is needed.
