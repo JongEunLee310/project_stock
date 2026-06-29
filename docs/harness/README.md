@@ -11,6 +11,7 @@ This directory defines the AI-assisted engineering harness used by this template
 - `agent-role-policy.md`
 - `completion-commit-policy.md`
 - `handoff-policy.md`
+- `design-record-policy.md`
 - `local-review-policy.md`
 - `feedback-loop-policy.md`
 - `skill-usage-policy.md`
@@ -20,6 +21,7 @@ This directory defines the AI-assisted engineering harness used by this template
 - `human-gate-policy.md`
 - `autonomy-levels.md`
 - `orchestration-state-policy.md`
+- `cross-repo-sync-policy.md`
 
 ## Writing Rules
 
