@@ -42,6 +42,8 @@ Use the fixed headers even when a section is empty (state "None").
 
 Write the section bodies in Korean. The section headers stay as the fixed labels above; only the prose inside each section is Korean. This matches the global preference (responses in Korean) and keeps BE/FE review records consistent.
 
+Keep the tone polite and plain — use the `~합니다` register and explain what changed and why in natural sentences. Avoid both stiff declarative endings (`~한다`/`~됨`) and overly casual or figurative phrasing (`~어요`, 비유). Preserve technical identifiers and information density; soften the register, not the substance. The same tone applies to PR descriptions, not only review records.
+
 ## Handling Review Feedback
 
 When the posted review comment contains a **Blocking** finding or any change the review says must be made, Claude Code does **not** stop and wait for the human. It drives the fix loop:
