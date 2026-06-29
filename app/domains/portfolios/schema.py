@@ -85,6 +85,8 @@ class PortfolioSummaryResponse(BaseModel):
     has_sector_concentration: bool
     positions: list[PositionWeight]
     sector_weights: list[SectorWeight]
+    day_change_value: Decimal
+    day_change_percent: Decimal
 
 
 class PortfolioCheckResponse(BaseModel):

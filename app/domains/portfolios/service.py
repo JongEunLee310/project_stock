@@ -4,6 +4,7 @@ from typing import Iterable
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.adapters.market.base import QuoteResult
 from app.adapters.factory import get_market_provider
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
@@ -190,6 +191,8 @@ class PortfolioService:
             total_value,
             position_weights,
             sector_weights,
+            day_change_value,
+            day_change_percent,
         ) = self._calculate_weights(
             positions,
             assets_by_id,
@@ -208,6 +211,8 @@ class PortfolioService:
             ),
             positions=position_weights,
             sector_weights=sector_weights,
+            day_change_value=day_change_value,
+            day_change_percent=day_change_percent,
         )
 
     def _get_assets_by_position(self, positions: list[Position]) -> dict[int, Asset]:
@@ -225,28 +230,50 @@ class PortfolioService:
         assets_by_id: dict[int, Asset],
         cash_balance: Decimal,
         threshold: Decimal,
-    ) -> tuple[Decimal, Decimal, list[PositionWeight], list[SectorWeight]]:
+    ) -> tuple[
+        Decimal,
+        Decimal,
+        list[PositionWeight],
+        list[SectorWeight],
+        Decimal,
+        Decimal,
+    ]:
         costs = [position.quantity * position.avg_buy_price for position in positions]
         total_cost_value = sum(costs, Decimal("0"))
         quotes_by_symbol = self._get_quotes_by_symbol(assets_by_id.values())
         market_values: list[Decimal] = []
+        day_change_values: list[Decimal] = []
         sector_market_values: dict[str, Decimal] = {}
 
         for position in positions:
             asset = assets_by_id.get(position.asset_id)
             price = Decimal("0")
+            change_percent = Decimal("0")
             sector = "UNKNOWN"
             if asset is not None:
-                price = quotes_by_symbol.get(asset.symbol.upper(), Decimal("0"))
+                quote = quotes_by_symbol.get(asset.symbol.upper())
+                if quote is not None:
+                    price = quote.price
+                    change_percent = quote.change_percent
                 sector = asset.sector or "UNKNOWN"
             market_value = position.quantity * price
             market_values.append(market_value)
+            day_change_values.append(
+                self._calculate_position_day_change(market_value, price, change_percent)
+            )
             sector_market_values[sector] = (
                 sector_market_values.get(sector, Decimal("0")) + market_value
             )
 
         total_market_value = sum(market_values, Decimal("0"))
         total_value = total_market_value + cash_balance
+        day_change_value = sum(day_change_values, Decimal("0"))
+        prev_total_value = total_value - day_change_value
+        day_change_percent = (
+            Decimal("0")
+            if prev_total_value == 0
+            else (day_change_value / prev_total_value) * Decimal("100")
+        )
         weights: list[PositionWeight] = []
 
         for position, cost_value, market_value in zip(
@@ -281,16 +308,35 @@ class PortfolioService:
                 )
             )
 
-        return total_cost_value, total_value, weights, sector_weights
+        return (
+            total_cost_value,
+            total_value,
+            weights,
+            sector_weights,
+            day_change_value,
+            day_change_percent,
+        )
 
-    def _get_quotes_by_symbol(self, assets: Iterable[Asset]) -> dict[str, Decimal]:
+    def _get_quotes_by_symbol(self, assets: Iterable[Asset]) -> dict[str, QuoteResult]:
         symbols = sorted({asset.symbol.upper() for asset in assets})
         if not symbols:
             return {}
         return {
-            quote.symbol.upper(): quote.price
+            quote.symbol.upper(): quote
             for quote in get_market_provider().get_quote(symbols)
         }
+
+    def _calculate_position_day_change(
+        self,
+        market_value: Decimal,
+        price: Decimal,
+        change_percent: Decimal,
+    ) -> Decimal:
+        denominator = Decimal("1") + change_percent / Decimal("100")
+        if price == 0 or denominator == 0:
+            return Decimal("0")
+        prev_value = market_value / denominator
+        return market_value - prev_value
 
     def _calculate_weight(self, value: Decimal, total_value: Decimal) -> Decimal:
         if total_value == 0:
