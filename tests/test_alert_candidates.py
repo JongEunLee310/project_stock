@@ -1,8 +1,12 @@
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, cast
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.adapters.market.base import QuoteResult
 from app.domains.alert_candidates.schema import AlertCandidateCreate
 from app.domains.alert_candidates.service import AlertCandidateService
 from app.domains.alert_candidates.types import (
@@ -17,6 +21,15 @@ from tests.conftest import (
     api_meta,
     set_current_user,
 )
+
+
+def create_asset(client: TestClient, symbol: str = "AAPL") -> dict[str, Any]:
+    response = client.post(
+        "/api/v1/assets",
+        json={"symbol": symbol, "name": f"{symbol} Inc.", "market": "NASDAQ"},
+    )
+    assert response.status_code == 201
+    return cast(dict[str, Any], api_data(response))
 
 
 def create_alert_candidate_for_user(
@@ -90,6 +103,106 @@ def test_list_alert_candidates_returns_only_current_users_candidates(
     assert data[0]["message"] == "Review before sending a notification."
     assert data[0]["evidence"] == {"source": "test"}
     assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
+
+
+def test_list_alert_candidates_without_expand_excludes_asset_field(
+    client: TestClient,
+) -> None:
+    asset = create_asset(client)
+    create_alert_candidate_for_user(1, title="Owner candidate", asset_id=asset["id"])
+    set_current_user(1)
+
+    response = client.get("/api/v1/alert-candidates")
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 1
+    assert "asset" not in data[0]
+
+
+def test_list_alert_candidates_expand_asset_includes_asset_object(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asset = create_asset(client, "AAPL")
+    create_alert_candidate_for_user(1, title="First candidate", asset_id=asset["id"])
+    create_alert_candidate_for_user(1, title="Second candidate", asset_id=asset["id"])
+    set_current_user(1)
+    calls: list[list[str]] = []
+
+    class RecordingMarketProvider:
+        def get_quote(self, symbols: list[str]) -> list[QuoteResult]:
+            calls.append(symbols)
+            return [
+                QuoteResult(
+                    symbol="AAPL",
+                    name="Apple Inc.",
+                    price=Decimal("195.64"),
+                    previous_close=Decimal("193.20"),
+                    change=Decimal("2.44"),
+                    change_percent=Decimal("1.26"),
+                    currency="USD",
+                    as_of=datetime(2026, 6, 19, tzinfo=timezone.utc),
+                )
+            ]
+
+    monkeypatch.setattr(
+        "app.domains.alert_candidates.service.get_market_provider",
+        lambda: RecordingMarketProvider(),
+    )
+
+    response = client.get(
+        "/api/v1/alert-candidates",
+        params={"expand": "metadata, asset"},
+    )
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 2
+    assert calls == [["AAPL"]]
+    for item in data:
+        brief = item["asset"]
+        assert brief["symbol"] == "AAPL"
+        assert brief["name"] == "AAPL Inc."
+        assert brief["price"] == "195.64"
+        assert brief["change_percent"] == "1.26"
+        assert isinstance(brief["price"], str)
+        assert isinstance(brief["change_percent"], str)
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 2}
+
+
+def test_list_alert_candidates_expand_asset_returns_null_for_missing_asset(
+    client: TestClient,
+) -> None:
+    create_alert_candidate_for_user(1, title="Missing asset", asset_id=999)
+    set_current_user(1)
+
+    response = client.get(
+        "/api/v1/alert-candidates",
+        params={"expand": "asset"},
+    )
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 1
+    assert data[0]["asset"] is None
+
+
+def test_list_alert_candidates_expand_asset_returns_null_for_null_asset_id(
+    client: TestClient,
+) -> None:
+    create_alert_candidate_for_user(1, title="Market-wide candidate")
+    set_current_user(1)
+
+    response = client.get(
+        "/api/v1/alert-candidates",
+        params={"expand": "asset"},
+    )
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 1
+    assert data[0]["asset"] is None
 
 
 def test_list_alert_candidates_uses_page_and_size(client: TestClient) -> None:
