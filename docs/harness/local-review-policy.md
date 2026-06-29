@@ -54,6 +54,14 @@ This loop is bounded by the review converging. If the same finding recurs withou
 
 A review with no Blocking finding and no required change goes straight to the wait step; there is nothing to hand to Codex.
 
+## Comment Wording
+
+When publishing the review comment, the closing line about merge authority must read:
+
+> 최종 머지 권한은 개발자에게 있습니다.
+
+Do not use phrasing that frames it as a robot addressing a person (e.g. "머지는 인간 소유", "머지 권한: 사람"). The intent is unchanged — Claude Code never merges — but the wording stays developer-centric and natural.
+
 ## Approval
 
 Claude Code must not approve PRs automatically. Human reviewers own final approval.
