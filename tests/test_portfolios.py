@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, cast
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.adapters.market.base import MarketDataProvider, QuoteResult
@@ -375,7 +376,7 @@ def test_get_portfolio_summary_calculates_market_weights_and_threshold(
 
 def test_get_portfolio_summary_calculates_day_change_from_single_quote_call(
     client: TestClient,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = RecordingMarketProvider(
         {
