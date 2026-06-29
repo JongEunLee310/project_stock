@@ -7,6 +7,7 @@ from app.domains.alert_candidates.types import (
     AlertCandidateType,
     AlertImportance,
 )
+from app.domains.watchlists.schema import AssetBriefResponse
 
 
 class AlertCandidateCreate(BaseModel):
@@ -32,3 +33,7 @@ class AlertCandidateResponse(BaseModel):
     asset_id: int | None
     evidence: dict[str, Any] | None
     created_at: UtcDatetime
+
+
+class AlertCandidateExpandedResponse(AlertCandidateResponse):
+    asset: AssetBriefResponse | None = None

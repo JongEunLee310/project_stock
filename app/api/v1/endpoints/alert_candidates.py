@@ -1,13 +1,16 @@
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
 from app.core.pagination import PaginationParams, SortParams, sort_param
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
-from app.domains.alert_candidates.schema import AlertCandidateResponse
+from app.domains.alert_candidates.schema import (
+    AlertCandidateExpandedResponse,
+    AlertCandidateResponse,
+)
 from app.domains.alert_candidates.service import AlertCandidateService
 from app.domains.alert_candidates.types import (
     AlertCandidateStatus,
@@ -25,11 +28,11 @@ alert_candidate_sort = sort_param(
 
 @router.get(
     "",
-    response_model=ApiResponse[list[AlertCandidateResponse]],
+    response_model=ApiResponse[list[Any]],
     summary="List alert candidates",
     description=(
         "Return paginated alert candidates for the authenticated user with optional "
-        "filters."
+        "filters. Pass expand=asset to include asset quote information in each item."
     ),
 )
 def list_alert_candidates(
@@ -38,15 +41,43 @@ def list_alert_candidates(
     candidate_type: AlertCandidateType | None = None,
     importance: AlertImportance | None = None,
     status: AlertCandidateStatus | None = None,
+    expand: str | None = Query(
+        default=None,
+        description="Comma-separated expand fields. Supported: asset",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ApiResponse[list[AlertCandidateResponse]]:
+) -> Any:
     candidate_type_value = (
         candidate_type.value if candidate_type is not None else None
     )
     importance_value = importance.value if importance is not None else None
     status_value = status.value if status is not None else None
     service = AlertCandidateService(db)
+    expanded_items: list[AlertCandidateExpandedResponse]
+    plain_items: list[AlertCandidateResponse]
+    if expand is not None and "asset" in [e.strip() for e in expand.split(",")]:
+        expanded_items = service.list_candidates_expanded(
+            current_user.id,
+            candidate_type=candidate_type_value,
+            importance=importance_value,
+            status=status_value,
+            offset=pagination.offset,
+            limit=pagination.limit,
+            sort=sort.value,
+        )
+        total = service.count_candidates(
+            current_user.id,
+            candidate_type=candidate_type_value,
+            importance=importance_value,
+            status=status_value,
+        )
+        return paginated(
+            expanded_items,
+            page=pagination.page,
+            size=pagination.size,
+            total=total,
+        )
     items = [
         AlertCandidateResponse.model_validate(candidate)
         for candidate in service.list_candidates(
@@ -59,6 +90,7 @@ def list_alert_candidates(
             sort=sort.value,
         )
     ]
+    plain_items = items
     total = service.count_candidates(
         current_user.id,
         candidate_type=candidate_type_value,
@@ -66,7 +98,7 @@ def list_alert_candidates(
         status=status_value,
     )
     return paginated(
-        items,
+        plain_items,
         page=pagination.page,
         size=pagination.size,
         total=total,
