@@ -1,8 +1,11 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, cast
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.adapters.market.base import MarketDataProvider, QuoteResult
 from tests.conftest import api_data, api_error, api_meta, set_current_user
 
 
@@ -67,6 +70,40 @@ def add_position(
     )
     assert response.status_code == 201
     return cast(dict[str, Any], api_data(response))
+
+
+def make_quote(
+    symbol: str,
+    price: str,
+    change_percent: str,
+) -> QuoteResult:
+    price_value = Decimal(price)
+    change_percent_value = Decimal(change_percent)
+    previous_close = price_value / (Decimal("1") + change_percent_value / Decimal("100"))
+    return QuoteResult(
+        symbol=symbol,
+        name=f"{symbol} Inc.",
+        price=price_value,
+        previous_close=previous_close,
+        change=price_value - previous_close,
+        change_percent=change_percent_value,
+        currency="USD",
+        as_of=datetime(2026, 6, 29, tzinfo=timezone.utc),
+    )
+
+
+class RecordingMarketProvider(MarketDataProvider):
+    def __init__(self, quotes: dict[str, QuoteResult]) -> None:
+        self.quotes = quotes
+        self.calls: list[list[str]] = []
+
+    def get_quote(self, symbols: list[str]) -> list[QuoteResult]:
+        self.calls.append(symbols)
+        return [
+            quote
+            for symbol in symbols
+            if (quote := self.quotes.get(symbol.upper())) is not None
+        ]
 
 
 def test_create_portfolio_success(client: TestClient) -> None:
@@ -337,6 +374,57 @@ def test_get_portfolio_summary_calculates_market_weights_and_threshold(
     assert unknown_sector["exceeds_threshold"] is True
 
 
+def test_get_portfolio_summary_calculates_day_change_from_single_quote_call(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = RecordingMarketProvider(
+        {
+            "GAIN": make_quote("GAIN", "110", "10"),
+            "LOSS": make_quote("LOSS", "90", "-10"),
+        }
+    )
+    monkeypatch.setattr(
+        "app.domains.portfolios.service.get_market_provider",
+        lambda: provider,
+    )
+    set_current_user(1)
+    portfolio = create_portfolio(client, cash_balance="100")
+    gain = create_asset(client, "GAIN", sector="Technology")
+    loss = create_asset(client, "LOSS", sector="Financials")
+    missing = create_asset(client, "MISS", sector="Healthcare")
+    add_position(client, portfolio["id"], gain["id"], quantity="2", avg_buy_price="50")
+    add_position(client, portfolio["id"], loss["id"], quantity="3", avg_buy_price="50")
+    add_position(
+        client,
+        portfolio["id"],
+        missing["id"],
+        quantity="5",
+        avg_buy_price="50",
+    )
+
+    response = client.get(f"/api/v1/portfolios/{portfolio['id']}/summary")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    gain_day_change = Decimal("220") - Decimal("220") / Decimal("1.1")
+    loss_day_change = Decimal("270") - Decimal("270") / Decimal("0.9")
+    expected_day_change_value = gain_day_change + loss_day_change
+    expected_day_change_percent = (
+        expected_day_change_value
+        / (Decimal(data["total_value"]) - expected_day_change_value)
+        * Decimal("100")
+    )
+    assert_decimal_close(data["day_change_value"], expected_day_change_value)
+    assert_decimal_close(data["day_change_percent"], expected_day_change_percent)
+    assert Decimal(data["total_value"]) == Decimal("590.000000000000")
+    positions_by_asset_id = {position["asset_id"]: position for position in data["positions"]}
+    assert Decimal(positions_by_asset_id[missing["id"]]["market_value"]) == Decimal(
+        "0E-12"
+    )
+    assert provider.calls == [["GAIN", "LOSS", "MISS"]]
+
+
 def test_get_portfolio_summary_includes_sectors_unknown_and_cash_weight(
     client: TestClient,
 ) -> None:
@@ -404,6 +492,8 @@ def test_get_portfolio_summary_returns_zero_weights_without_positions(
     assert Decimal(data["total_cost_value"]) == Decimal("0")
     assert Decimal(data["total_value"]) == Decimal("0.0000")
     assert Decimal(data["cash_weight"]) == Decimal("0")
+    assert Decimal(data["day_change_value"]) == Decimal("0")
+    assert Decimal(data["day_change_percent"]) == Decimal("0")
     assert data["positions"] == []
     assert data["sector_weights"] == []
 
