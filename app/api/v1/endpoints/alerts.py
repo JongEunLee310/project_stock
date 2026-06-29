@@ -29,15 +29,12 @@ def list_alerts(
 ) -> ApiResponse[list[AlertResponse]]:
     status_value = status.value if status is not None else None
     service = AlertService(db)
-    items = [
-        AlertResponse.model_validate(alert)
-        for alert in service.list_alerts(
-            current_user.id,
-            status_value,
-            offset=pagination.offset,
-            limit=pagination.limit,
-        )
-    ]
+    items = service.list_alert_responses(
+        current_user.id,
+        status_value,
+        offset=pagination.offset,
+        limit=pagination.limit,
+    )
     total = service.count_alerts(current_user.id, status_value)
     return paginated(
         items,
@@ -58,11 +55,7 @@ def mark_alert_read(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[AlertResponse]:
-    return success(
-        AlertResponse.model_validate(
-            AlertService(db).mark_read(alert_id, current_user.id)
-        )
-    )
+    return success(AlertService(db).mark_read_response(alert_id, current_user.id))
 
 
 @router.post(
@@ -76,8 +69,4 @@ def dismiss_alert(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[AlertResponse]:
-    return success(
-        AlertResponse.model_validate(
-            AlertService(db).dismiss(alert_id, current_user.id)
-        )
-    )
+    return success(AlertService(db).dismiss_response(alert_id, current_user.id))

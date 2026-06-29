@@ -17,3 +17,7 @@ class AlertResponse(BaseModel):
     signal_id: int
     status: str
     created_at: UtcDatetime
+    asset_id: int | None = None
+    symbol: str | None = None
+    alert_type: str | None = None
+    message: str | None = None

@@ -44,6 +44,7 @@ def create_signal(
     asset_id: int,
     news_item_id: int | None,
     signal_type: SignalType = SignalType.RISK_ALERT,
+    reason: str = "Negative guidance conflicts with the current thesis.",
 ) -> Signal:
     return SignalRepository(db).create(
         SignalCreate(
@@ -52,7 +53,7 @@ def create_signal(
             signal_type=signal_type,
             score=82,
             risk_level="HIGH",
-            reason="Negative guidance conflicts with the current thesis.",
+            reason=reason,
             evidence={"news_item_id": news_item_id},
         )
     )
@@ -70,12 +71,19 @@ def create_alert_for_user(
     user_id: int,
     signal_type: SignalType = SignalType.RISK_ALERT,
     title: str = "Guidance cut",
+    reason: str = "Negative guidance conflicts with the current thesis.",
 ) -> dict[str, Any]:
     db = TestingSessionLocal()
     try:
         asset = create_asset(db, symbol=f"AAPL{user_id}{len(title)}")
         news = create_news_item(db, asset.id, title=title)
-        signal = create_signal(db, asset.id, news.id, signal_type=signal_type)
+        signal = create_signal(
+            db,
+            asset.id,
+            news.id,
+            signal_type=signal_type,
+            reason=reason,
+        )
         alert = AlertService(db).create_alert(user_id, signal)
         assert alert is not None
         return {
@@ -83,6 +91,10 @@ def create_alert_for_user(
             "user_id": alert.user_id,
             "signal_id": alert.signal_id,
             "status": alert.status,
+            "asset_id": asset.id,
+            "symbol": asset.symbol,
+            "alert_type": signal.signal_type,
+            "message": signal.reason,
         }
     finally:
         db.close()
@@ -117,6 +129,58 @@ def test_list_alerts_returns_only_current_users_alerts(client: TestClient) -> No
     assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
 
 
+def test_list_alerts_includes_signal_context(client: TestClient) -> None:
+    alert = create_alert_for_user(
+        1,
+        signal_type=SignalType.THESIS_BROKEN,
+        title="Thesis break",
+        reason="Margin collapse invalidates the thesis.",
+    )
+    set_current_user(1)
+
+    response = client.get("/api/v1/alerts")
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert data[0]["asset_id"] == alert["asset_id"]
+    assert data[0]["symbol"] == alert["symbol"]
+    assert data[0]["alert_type"] == SignalType.THESIS_BROKEN.value
+    assert data[0]["message"] == "Margin collapse invalidates the thesis."
+
+
+def test_list_alerts_keeps_context_for_mixed_assets(client: TestClient) -> None:
+    first = create_alert_for_user(
+        1,
+        signal_type=SignalType.WATCH,
+        title="First mixed asset",
+        reason="Watch revenue acceleration.",
+    )
+    second = create_alert_for_user(
+        1,
+        signal_type=SignalType.SELL_REVIEW,
+        title="Second mixed asset",
+        reason="Review position after margin pressure.",
+    )
+    set_current_user(1)
+
+    response = client.get("/api/v1/alerts")
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    context_by_id = {item["id"]: item for item in data}
+    assert context_by_id[first["id"]]["asset_id"] == first["asset_id"]
+    assert context_by_id[first["id"]]["symbol"] == first["symbol"]
+    assert context_by_id[first["id"]]["alert_type"] == SignalType.WATCH.value
+    assert context_by_id[first["id"]]["message"] == "Watch revenue acceleration."
+    assert context_by_id[second["id"]]["asset_id"] == second["asset_id"]
+    assert context_by_id[second["id"]]["symbol"] == second["symbol"]
+    assert context_by_id[second["id"]]["alert_type"] == SignalType.SELL_REVIEW.value
+    assert (
+        context_by_id[second["id"]]["message"]
+        == "Review position after margin pressure."
+    )
+
+
 def test_list_alerts_uses_page_and_size(client: TestClient) -> None:
     create_alert_for_user(1, title="First alert")
     second_alert = create_alert_for_user(1, title="Second alert")
@@ -147,7 +211,7 @@ def test_list_alerts_filters_by_status(client: TestClient) -> None:
 
 
 def test_mark_alert_read_updates_status(client: TestClient) -> None:
-    alert = create_alert_for_user(1)
+    alert = create_alert_for_user(1, signal_type=SignalType.BUY_CANDIDATE)
     set_current_user(1)
 
     response = client.post(f"/api/v1/alerts/{alert['id']}/read")
@@ -155,10 +219,14 @@ def test_mark_alert_read_updates_status(client: TestClient) -> None:
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
     assert data["status"] == AlertStatus.READ.value
+    assert data["asset_id"] == alert["asset_id"]
+    assert data["symbol"] == alert["symbol"]
+    assert data["alert_type"] == SignalType.BUY_CANDIDATE.value
+    assert data["message"] == alert["message"]
 
 
 def test_dismiss_alert_updates_status(client: TestClient) -> None:
-    alert = create_alert_for_user(1)
+    alert = create_alert_for_user(1, signal_type=SignalType.OVERHEATED)
     set_current_user(1)
 
     response = client.post(f"/api/v1/alerts/{alert['id']}/dismiss")
@@ -166,6 +234,10 @@ def test_dismiss_alert_updates_status(client: TestClient) -> None:
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
     assert data["status"] == AlertStatus.DISMISSED.value
+    assert data["asset_id"] == alert["asset_id"]
+    assert data["symbol"] == alert["symbol"]
+    assert data["alert_type"] == SignalType.OVERHEATED.value
+    assert data["message"] == alert["message"]
 
 
 def test_mark_alert_read_returns_404_for_other_user_or_missing_alert(
