@@ -22,10 +22,16 @@ from app.domains.portfolios.schema import (
     PositionResponse,
     PositionUpdate,
     SectorWeight,
+    RiskExposure,
 )
 from app.domains.signals.repository import SignalRepository
 from app.domains.signals.schema import SignalCreate, SignalResponse
 from app.domains.signals.types import SignalType
+
+
+RISK_LEVEL_HIGH_MULTIPLIER = Decimal("1.5")
+CASH_FLOOR_HIGH = Decimal("0.05")
+CASH_FLOOR_MEDIUM = Decimal("0.15")
 
 
 class PortfolioService:
@@ -199,13 +205,22 @@ class PortfolioService:
             portfolio.cash_balance,
             portfolio.concentration_threshold,
         )
+        cash_weight = self._calculate_weight(portfolio.cash_balance, total_value)
+        risk_exposures = self._calculate_risk_exposures(
+            sector_weights=sector_weights,
+            position_weights=position_weights,
+            assets_by_id=assets_by_id,
+            cash_weight=cash_weight,
+            total_value=total_value,
+            concentration_threshold=portfolio.concentration_threshold,
+        )
         return PortfolioSummaryResponse(
             portfolio_id=portfolio.id,
             concentration_threshold=portfolio.concentration_threshold,
             total_cost_value=total_cost_value,
             total_value=total_value,
             cash_balance=portfolio.cash_balance,
-            cash_weight=self._calculate_weight(portfolio.cash_balance, total_value),
+            cash_weight=cash_weight,
             has_sector_concentration=any(
                 sector_weight.exceeds_threshold for sector_weight in sector_weights
             ),
@@ -213,6 +228,7 @@ class PortfolioService:
             sector_weights=sector_weights,
             day_change_value=day_change_value,
             day_change_percent=day_change_percent,
+            risk_exposures=risk_exposures,
         )
 
     def _get_assets_by_position(self, positions: list[Position]) -> dict[int, Asset]:
@@ -342,6 +358,97 @@ class PortfolioService:
         if total_value == 0:
             return Decimal("0")
         return value / total_value
+
+    def _calculate_risk_exposures(
+        self,
+        *,
+        sector_weights: list[SectorWeight],
+        position_weights: list[PositionWeight],
+        assets_by_id: dict[int, Asset],
+        cash_weight: Decimal,
+        total_value: Decimal,
+        concentration_threshold: Decimal,
+    ) -> list[RiskExposure]:
+        high_threshold = concentration_threshold * RISK_LEVEL_HIGH_MULTIPLIER
+        risk_exposures: list[RiskExposure] = []
+
+        concentrated_sectors = sorted(
+            (
+                sector_weight
+                for sector_weight in sector_weights
+                if sector_weight.exceeds_threshold
+                and sector_weight.sector != "UNKNOWN"
+            ),
+            key=lambda sector_weight: (
+                -sector_weight.weight,
+                sector_weight.sector,
+            ),
+        )
+        for sector_weight in concentrated_sectors:
+            risk_exposures.append(
+                RiskExposure(
+                    code=f"SECTOR_CONCENTRATION:{sector_weight.sector}",
+                    label=f"{sector_weight.sector} 섹터 쏠림",
+                    level=self._risk_level(sector_weight.weight, high_threshold),
+                    description=(
+                        f"{sector_weight.sector} 섹터 비중이 "
+                        f"{sector_weight.weight:.2%}로 임계값 "
+                        f"{concentration_threshold:.2%}을 초과합니다."
+                    ),
+                )
+            )
+
+        concentrated_positions = sorted(
+            (
+                (position_weight, assets_by_id.get(position_weight.asset_id))
+                for position_weight in position_weights
+                if position_weight.exceeds_threshold
+            ),
+            key=lambda item: (
+                -item[0].weight,
+                item[1].symbol if item[1] is not None else str(item[0].asset_id),
+            ),
+        )
+        for position_weight, asset in concentrated_positions:
+            symbol = asset.symbol if asset is not None else str(position_weight.asset_id)
+            risk_exposures.append(
+                RiskExposure(
+                    code=f"SINGLE_NAME_CONCENTRATION:{symbol}",
+                    label=f"{symbol} 단일 종목 쏠림",
+                    level=self._risk_level(position_weight.weight, high_threshold),
+                    description=(
+                        f"{symbol} 비중이 {position_weight.weight:.2%}로 임계값 "
+                        f"{concentration_threshold:.2%}을 초과합니다."
+                    ),
+                )
+            )
+
+        if total_value != 0:
+            cash_level: str | None = None
+            if cash_weight < CASH_FLOOR_HIGH:
+                cash_level = "HIGH"
+            elif cash_weight < CASH_FLOOR_MEDIUM:
+                cash_level = "MEDIUM"
+
+            if cash_level is not None:
+                risk_exposures.append(
+                    RiskExposure(
+                        code="CASH_SHORTAGE",
+                        label="현금 비중 부족",
+                        level=cash_level,
+                        description=(
+                            f"현금 비중이 {cash_weight:.2%}로 낮아 "
+                            "변동성 대응 여력이 제한될 수 있습니다."
+                        ),
+                    )
+                )
+
+        return risk_exposures
+
+    def _risk_level(self, weight: Decimal, high_threshold: Decimal) -> str:
+        if weight >= high_threshold:
+            return "HIGH"
+        return "MEDIUM"
 
     def _score_from_weight(self, weight: Decimal) -> int:
         return max(0, min(100, int(weight * Decimal("100"))))

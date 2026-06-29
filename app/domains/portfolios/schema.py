@@ -75,6 +75,13 @@ class SectorWeight(BaseModel):
     exceeds_threshold: bool
 
 
+class RiskExposure(BaseModel):
+    code: str
+    label: str
+    level: str
+    description: str
+
+
 class PortfolioSummaryResponse(BaseModel):
     portfolio_id: int
     concentration_threshold: Decimal
@@ -87,6 +94,7 @@ class PortfolioSummaryResponse(BaseModel):
     sector_weights: list[SectorWeight]
     day_change_value: Decimal
     day_change_percent: Decimal
+    risk_exposures: list[RiskExposure]
 
 
 class PortfolioCheckResponse(BaseModel):
