@@ -38,6 +38,7 @@ The human decides whether to:
 - Proceed past a gate condition without documented human approval.
 - Self-approve a gated change by declaring it low-risk without justification.
 - Merge or push to main without human action.
+- Spawn another agent (e.g., Codex CLI) as a nested process with elevated sandbox or approval-bypass flags to work around a tool failure.
 
 ## Related
 
