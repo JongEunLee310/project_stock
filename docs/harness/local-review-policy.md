@@ -40,6 +40,8 @@ Every review record uses the same section order and headers:
 
 Use the fixed headers even when a section is empty (state "None").
 
+Write the section bodies in Korean. The section headers stay as the fixed labels above; only the prose inside each section is Korean. This matches the global preference (responses in Korean) and keeps BE/FE review records consistent.
+
 ## Handling Review Feedback
 
 When the posted review comment contains a **Blocking** finding or any change the review says must be made, Claude Code does **not** stop and wait for the human. It drives the fix loop:
