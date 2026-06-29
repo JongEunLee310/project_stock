@@ -425,6 +425,105 @@ def test_get_portfolio_summary_calculates_day_change_from_single_quote_call(
     assert provider.calls == [["GAIN", "LOSS", "MISS"]]
 
 
+def test_get_portfolio_summary_includes_ordered_risk_exposures_without_extra_quote_calls(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = RecordingMarketProvider(
+        {
+            "AAA": make_quote("AAA", "100", "0"),
+            "BBB": make_quote("BBB", "100", "0"),
+            "CCC": make_quote("CCC", "100", "0"),
+            "DDD": make_quote("DDD", "100", "0"),
+        }
+    )
+    monkeypatch.setattr(
+        "app.domains.portfolios.service.get_market_provider",
+        lambda: provider,
+    )
+    set_current_user(1)
+    portfolio = create_portfolio(
+        client,
+        concentration_threshold="0.2",
+        cash_balance="0",
+    )
+    aaa = create_asset(client, "AAA", sector="Technology")
+    bbb = create_asset(client, "BBB", sector="Financials")
+    ccc = create_asset(client, "CCC", sector="Technology")
+    ddd = create_asset(client, "DDD", sector="Healthcare")
+    add_position(client, portfolio["id"], aaa["id"], quantity="4", avg_buy_price="100")
+    add_position(client, portfolio["id"], bbb["id"], quantity="3", avg_buy_price="100")
+    add_position(client, portfolio["id"], ccc["id"], quantity="1", avg_buy_price="100")
+    add_position(client, portfolio["id"], ddd["id"], quantity="2", avg_buy_price="100")
+
+    response = client.get(f"/api/v1/portfolios/{portfolio['id']}/summary")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    risk_exposures = data["risk_exposures"]
+    assert [exposure["code"] for exposure in risk_exposures] == [
+        "SECTOR_CONCENTRATION:Technology",
+        "SECTOR_CONCENTRATION:Financials",
+        "SINGLE_NAME_CONCENTRATION:AAA",
+        "SINGLE_NAME_CONCENTRATION:BBB",
+        "CASH_SHORTAGE",
+    ]
+    assert risk_exposures[0]["label"] == "Technology 섹터 쏠림"
+    assert risk_exposures[0]["level"] == "HIGH"
+    assert risk_exposures[1]["level"] == "HIGH"
+    assert "30.00%" in risk_exposures[1]["description"]
+    assert "20.00%" in risk_exposures[1]["description"]
+    assert risk_exposures[2]["label"] == "AAA 단일 종목 쏠림"
+    assert risk_exposures[3]["code"] == "SINGLE_NAME_CONCENTRATION:BBB"
+    assert risk_exposures[4]["level"] == "HIGH"
+    assert provider.calls == [["AAA", "BBB", "CCC", "DDD"]]
+
+
+@pytest.mark.parametrize(
+    ("cash_balance", "expected_level"),
+    [
+        ("40", "HIGH"),
+        ("100", "MEDIUM"),
+        ("200", None),
+    ],
+)
+def test_get_portfolio_summary_cash_shortage_risk_exposure_levels(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    cash_balance: str,
+    expected_level: str | None,
+) -> None:
+    provider = RecordingMarketProvider({"CASH": make_quote("CASH", "100", "0")})
+    monkeypatch.setattr(
+        "app.domains.portfolios.service.get_market_provider",
+        lambda: provider,
+    )
+    set_current_user(1)
+    portfolio = create_portfolio(
+        client,
+        concentration_threshold="0.99",
+        cash_balance=cash_balance,
+    )
+    asset = create_asset(client, "CASH", sector="Utilities")
+    add_position(client, portfolio["id"], asset["id"], quantity="10", avg_buy_price="100")
+
+    response = client.get(f"/api/v1/portfolios/{portfolio['id']}/summary")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    cash_exposures = [
+        exposure
+        for exposure in data["risk_exposures"]
+        if exposure["code"] == "CASH_SHORTAGE"
+    ]
+    if expected_level is None:
+        assert cash_exposures == []
+    else:
+        assert len(cash_exposures) == 1
+        assert cash_exposures[0]["label"] == "현금 비중 부족"
+        assert cash_exposures[0]["level"] == expected_level
+
+
 def test_get_portfolio_summary_includes_sectors_unknown_and_cash_weight(
     client: TestClient,
 ) -> None:
@@ -496,6 +595,7 @@ def test_get_portfolio_summary_returns_zero_weights_without_positions(
     assert Decimal(data["day_change_percent"]) == Decimal("0")
     assert data["positions"] == []
     assert data["sector_weights"] == []
+    assert data["risk_exposures"] == []
 
 
 def test_check_concentration_creates_risk_alert_signal(client: TestClient) -> None:
