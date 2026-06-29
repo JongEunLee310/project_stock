@@ -37,6 +37,29 @@ class DecisionLogRepository:
         )
         return int(self.db.scalar(stmt) or 0)
 
+    def count_by_decision_type(self, user_id: int) -> dict[str, int]:
+        stmt = (
+            select(DecisionLog.decision_type, func.count())
+            .where(DecisionLog.user_id == user_id)
+            .group_by(DecisionLog.decision_type)
+        )
+        return {
+            str(decision_type): int(count)
+            for decision_type, count in self.db.execute(stmt).all()
+        }
+
+    def list_recent_reviewed(self, user_id: int, limit: int) -> list[DecisionLog]:
+        stmt = (
+            select(DecisionLog)
+            .where(
+                DecisionLog.user_id == user_id,
+                DecisionLog.reviewed_at.is_not(None),
+            )
+            .order_by(DecisionLog.reviewed_at.desc(), DecisionLog.id.desc())
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt).all())
+
     def create(self, user_id: int, data: DecisionLogCreate) -> DecisionLog:
         values = data.model_dump()
         values["decision_type"] = data.decision_type.value

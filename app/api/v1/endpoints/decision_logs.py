@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.domains.decision_logs.schema import (
     DecisionLogCreate,
     DecisionLogResponse,
+    DecisionLogStatsResponse,
     DecisionLogUpdate,
 )
 from app.domains.decision_logs.service import DecisionLogService
@@ -63,6 +64,19 @@ def create_decision_log(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[DecisionLogResponse]:
     return success(DecisionLogService(db).create_decision_log(current_user.id, data))
+
+
+@router.get(
+    "/stats",
+    response_model=ApiResponse[DecisionLogStatsResponse],
+    summary="Get decision log stats",
+    description="Return decision type counts and recent reviewed decisions.",
+)
+def get_decision_log_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[DecisionLogStatsResponse]:
+    return success(DecisionLogService(db).get_stats(current_user.id))
 
 
 @router.get(
