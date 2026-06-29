@@ -5,6 +5,8 @@ from app.adapters.factory import get_market_provider
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.assets.repository import AssetRepository
+from app.domains.signals.repository import SignalRepository
+from app.domains.signals.types import SignalType
 from app.domains.watchlists.model import Watchlist
 from app.domains.watchlists.repository import (
     WatchlistItemRepository,
@@ -12,17 +14,20 @@ from app.domains.watchlists.repository import (
 )
 from app.domains.watchlists.schema import (
     AssetBriefResponse,
+    RecentWatchlistItemResponse,
     WatchlistCreate,
     WatchlistItemCreate,
     WatchlistItemExpandedResponse,
     WatchlistItemResponse,
     WatchlistResponse,
+    WatchlistSummaryResponse,
 )
 
 
 class WatchlistService:
     def __init__(self, db: Session) -> None:
         self.asset_repo = AssetRepository(db)
+        self.signal_repo = SignalRepository(db)
         self.watchlist_repo = WatchlistRepository(db)
         self.item_repo = WatchlistItemRepository(db)
 
@@ -149,6 +154,47 @@ class WatchlistService:
     def count_items(self, watchlist_id: int, user_id: int) -> int:
         watchlist = self._get_owned_watchlist(watchlist_id, user_id)
         return self.item_repo.count_by_watchlist(watchlist.id)
+
+    def get_summary(
+        self,
+        watchlist_id: int,
+        user_id: int,
+        recent_limit: int = 5,
+    ) -> WatchlistSummaryResponse:
+        watchlist = self._get_owned_watchlist(watchlist_id, user_id)
+        total_count = self.item_repo.count_by_watchlist(watchlist.id)
+        items = self.item_repo.list_by_watchlist(watchlist.id)
+        asset_ids = [item.asset_id for item in items]
+        risk_increasing_count = self.signal_repo.count_assets_with_active_signal(
+            asset_ids,
+            SignalType.RISK_ALERT.value,
+        )
+        recent_items = self.item_repo.list_by_watchlist(
+            watchlist.id,
+            limit=recent_limit,
+            sort="-created_at",
+        )
+        recent_asset_ids = [item.asset_id for item in recent_items]
+        assets = {
+            asset.id: asset
+            for asset in [
+                self.asset_repo.get_by_id(asset_id) for asset_id in recent_asset_ids
+            ]
+            if asset is not None
+        }
+        return WatchlistSummaryResponse(
+            total_count=total_count,
+            risk_increasing_count=risk_increasing_count,
+            recent_items=[
+                RecentWatchlistItemResponse(
+                    symbol=asset.symbol,
+                    name=asset.name,
+                    created_at=item.created_at,
+                )
+                for item in recent_items
+                if (asset := assets.get(item.asset_id)) is not None
+            ],
+        )
 
     def remove_item(self, watchlist_id: int, item_id: int, user_id: int) -> None:
         watchlist = self._get_owned_watchlist(watchlist_id, user_id)

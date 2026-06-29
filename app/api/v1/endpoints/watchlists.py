@@ -14,6 +14,7 @@ from app.domains.watchlists.schema import (
     WatchlistItemExpandedResponse,
     WatchlistItemResponse,
     WatchlistResponse,
+    WatchlistSummaryResponse,
 )
 from app.domains.watchlists.service import WatchlistService
 
@@ -116,6 +117,27 @@ def list_watchlist_items(
         page=pagination.page,
         size=pagination.size,
         total=total,
+    )
+
+
+@router.get(
+    "/{watchlist_id}/summary",
+    response_model=ApiResponse[WatchlistSummaryResponse],
+    summary="Get watchlist summary",
+    description="Return calculated summary metrics for a watchlist owned by the authenticated user.",
+)
+def get_watchlist_summary(
+    watchlist_id: int,
+    recent_limit: int = Query(default=5, ge=0, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[WatchlistSummaryResponse]:
+    return success(
+        WatchlistService(db).get_summary(
+            watchlist_id,
+            current_user.id,
+            recent_limit=recent_limit,
+        )
     )
 
 

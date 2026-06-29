@@ -57,3 +57,15 @@ class WatchlistItemExpandedResponse(BaseModel):
     memo: str | None = None
     created_at: UtcDatetime
     asset: AssetBriefResponse | None = None
+
+
+class RecentWatchlistItemResponse(BaseModel):
+    symbol: str
+    name: str
+    created_at: UtcDatetime
+
+
+class WatchlistSummaryResponse(BaseModel):
+    total_count: int
+    risk_increasing_count: int
+    recent_items: list[RecentWatchlistItemResponse]
