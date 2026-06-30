@@ -5,6 +5,22 @@ from pydantic import BaseModel
 from app.adapters.llm.base import LLMClient, LLMMessage
 
 
+DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
+    "NewsSummaryResult": {
+        "summary": "Mock analysis summary.",
+        "positive_factors": ["Mock positive factor"],
+        "negative_factors": ["Mock negative factor"],
+        "impact_level": "HIGH",
+        "sentiment": "NEUTRAL",
+    },
+    "ThesisConflictResult": {
+        "status": "NEUTRAL",
+        "reason": "Mock conflict analysis is neutral.",
+        "invalidation_triggered": False,
+    },
+}
+
+
 class MockLLMClient(LLMClient):
     def __init__(self, responses: dict[str, Any] | None = None) -> None:
         self.responses = responses or {}
