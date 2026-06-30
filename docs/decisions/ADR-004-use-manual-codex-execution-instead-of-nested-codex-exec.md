@@ -4,34 +4,60 @@
 
 Superseded by [ADR-005](ADR-005-allow-claude-code-to-invoke-codex-exec.md)
 
-> ADR-005 allows Claude Code to invoke `codex exec` automatically **under the default sandbox only** (never bypass/danger flags), once the Codex CLI is pinned to a crash-free version. The role boundary and the permanent prohibition on elevated/bypass invocation below remain in force; only the "manual execution step is mandatory" decision is reversed. This document is retained for history and as the fallback model when automated invocation is unavailable.
+> ADR-005는 Codex CLI가 크래시 없는 버전으로 고정된 뒤, **기본 sandbox 하에서만**
+> (bypass/danger 플래그 절대 금지) Claude Code가 `codex exec`를 자동 호출하도록 허용한다.
+> 아래의 역할 경계와 elevated/bypass 호출의 영구 금지는 그대로 유효하며, "수동 실행
+> 단계가 필수"라는 결정만 뒤집힌다. 본 문서는 이력 보존용이자 자동 호출이 불가능할 때의
+> 폴백 모델로 남긴다.
 
 ## Context
 
-Dogfooding attempted to let Claude Code drive the full pipeline by invoking `codex exec` directly from its own Bash tool. This failed at the sandbox level (`FAILURE-001-nested-codex-exec-sandbox-conflict.md`) and, independent of the crash, raised a structural question: should Claude Code ever spawn Codex as a nested, shell-capable subprocess at all?
+Dogfooding에서 Claude Code가 자신의 Bash 도구로 `codex exec`를 직접 호출해 전체
+파이프라인을 구동하려 시도했다. 이는 sandbox 레벨에서 실패했고
+(`FAILURE-001-nested-codex-exec-sandbox-conflict.md`), 크래시와 별개로 구조적 질문을
+제기했다 — Claude Code가 Codex를 중첩된 shell 가능 서브프로세스로 띄우는 것이 애초에
+타당한가?
 
 ## Decision
 
-Claude Code does not call Codex CLI directly as a nested implementation agent, with or without elevated sandbox flags.
+Claude Code는 elevated sandbox 플래그 유무와 무관하게, Codex CLI를 중첩 구현 에이전트로
+직접 호출하지 않는다.
 
-Claude Code's role stays limited to writing the Codex handoff document (`.codex/task-template.md`). The human operator runs Codex manually — in a separate terminal session, IDE integration, or an explicitly approved isolated environment — using that handoff as the brief.
+Claude Code의 역할은 Codex 핸드오프 문서(`.codex/task-template.md`) 작성에 한정된다.
+사람 운영자가 그 핸드오프를 브리프로 삼아 — 별도 터미널 세션, IDE 통합, 또는 명시적으로
+승인된 격리 환경에서 — Codex를 수동으로 실행한다.
 
-`--dangerously-bypass-approvals-and-sandbox` and `-s danger-full-access` must not be used in any automated Claude Code workflow. If Codex's own sandbox fails and only an elevated-access run can proceed, Claude Code stops and asks the human, per `docs/harness/human-gate-policy.md`, rather than escalating privileges itself.
+`--dangerously-bypass-approvals-and-sandbox`와 `-s danger-full-access`는 어떤 자동화된
+Claude Code 워크플로에서도 사용해서는 안 된다. Codex 자체 sandbox가 실패해 elevated
+접근 실행만 진행 가능한 상황이면, Claude Code는 권한을 스스로 격상시키지 않고
+`docs/harness/human-gate-policy.md`에 따라 멈추고 사람에게 묻는다.
 
 ## Alternatives
 
-- Have Claude Code call `codex exec` with `danger-full-access` whenever the default sandbox fails. Rejected: this lets one agent grant another agent broad shell access without an independent approval step, which the harness's autonomy model is designed to prevent.
-- Fix the sandbox crash and keep automated `codex exec` invocation under `read-only`/`workspace-write`. Possible in the future (see Follow-up), but not viable now since the crash reproduces even for trivial read-only commands.
-- Run Codex inside a fully separate, pre-approved disposable container or VM that Claude Code can target without per-run human approval. Rejected for now: still a nested-agent structure, and out of scope for a template meant to run on a developer's local machine without extra infrastructure.
+- 기본 sandbox 실패 시마다 Claude Code가 `danger-full-access`로 `codex exec`를 호출.
+  기각: 한 에이전트가 독립 승인 단계 없이 다른 에이전트에 광범위한 shell 접근을
+  부여하게 되며, 이는 harness 자율성 모델이 막으려는 바다.
+- sandbox 크래시를 고치고 `read-only`/`workspace-write` 하의 자동 `codex exec` 호출 유지.
+  향후 가능(Follow-up 참조)하나, 사소한 read-only 명령에서도 크래시가 재현되어 지금은
+  실행 불가.
+- Claude Code가 per-run 사람 승인 없이 타깃할 수 있는 완전 분리된 사전 승인 일회용
+  컨테이너/VM에서 Codex 실행. 현재로선 기각: 여전히 중첩 에이전트 구조이며, 추가
+  인프라 없이 개발자 로컬에서 돌도록 의도된 템플릿의 범위를 벗어난다.
 
 ## Consequences
 
-The Claude Code → Codex → CI → human pipeline keeps a human-operated step between handoff creation and implementation, so it is slightly less automated than originally planned for dogfooding. In exchange, the role boundary (`ADR-001-separate-claude-code-and-codex-roles.md`) stays intact: Claude Code plans and reviews, Codex implements under its own session and its own approval settings, and no agent silently acquires another agent's execution authority.
+Claude Code → Codex → CI → 사람 파이프라인은 핸드오프 생성과 구현 사이에 사람이 운영하는
+단계를 유지하므로, dogfooding에서 원래 계획한 것보다 다소 덜 자동화된다. 그 대가로 역할
+경계(`ADR-001-separate-claude-code-and-codex-roles.md`)가 온전히 유지된다 — Claude
+Code는 계획·리뷰하고, Codex는 자신의 세션과 자신의 승인 설정 하에 구현하며, 어떤
+에이전트도 다른 에이전트의 실행 권한을 조용히 획득하지 않는다.
 
 ## Follow-up
 
-- If a future Codex CLI or OS update resolves the sandbox crash, re-evaluate automated `codex exec` invocation under its default (non-bypassed) sandbox modes only — never under `danger-full-access` or the bypass flag.
-- Document the manual Codex execution step in `docs/knowledge/template-usage.md` and `docs/feedback/dogfooding-plan.md`.
+- 향후 Codex CLI나 OS 업데이트가 sandbox 크래시를 해결하면, `danger-full-access`나 bypass
+  플래그가 아닌 기본(비-bypass) sandbox 모드 하에서만 자동 `codex exec` 호출을 재평가.
+- 수동 Codex 실행 단계를 `docs/knowledge/template-usage.md`와
+  `docs/feedback/dogfooding-plan.md`에 문서화.
 
 ## Related Documents
 
