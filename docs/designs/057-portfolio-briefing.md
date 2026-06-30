@@ -102,9 +102,10 @@ def to_briefing_snapshot(
 ## 4. 출력 — 브리핑 스키마
 
 FE `AiBriefing`(`headline`/`body`/`riskHeadline?`/`riskChecks?`)에 대응하는 Pydantic 스키마를
-출력 계약으로 둔다.
+출력 계약으로 둔다. 대시보드 브리핑(설계 058)과 출력 형태가 동일하므로 **공통
+`BriefingResult(BaseModel)`** 를 두 브리핑이 공유한다.
 
-`complete_json`에 넘기는 결과 스키마 `PortfolioBriefingResult(BaseModel)`:
+`complete_json`에 넘기는 결과 스키마 `BriefingResult(BaseModel)`:
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
@@ -113,7 +114,7 @@ FE `AiBriefing`(`headline`/`body`/`riskHeadline?`/`riskChecks?`)에 대응하는
 | risk_headline | str \| None | 리스크 섹션 제목 |
 | risk_checks | list[str] | 신규 매수 전 점검 권고 목록 |
 
-API 응답 스키마 `PortfolioBriefingResponse(BaseModel)`: 위 4필드 + `generated_at: UtcDatetime`
+API 응답 스키마 `PortfolioBriefingResponse(BaseModel)`: 위 `BriefingResult` 4필드 + `generated_at: UtcDatetime`
 (FE `AiBriefing`에는 없으나 research 브리핑의 `createdAt` 선례와 일관되게 둔다). 와이어는
 snake_case이며 FE adapter가 camelCase `AiBriefing`으로 변환한다(FE 별도 작업).
 
@@ -133,7 +134,7 @@ class PortfolioBriefingService:
    존재하지 않으면 `AppException`(`PORTFOLIO_NOT_FOUND`).
 2. 포지션의 `asset_id`를 `symbol`·`sector`·일간변화로 해소한다(asset repository 조회).
 3. `to_briefing_snapshot(...)`으로 CloudSafe projection을 만든다.
-4. `gateway.complete_json(LLMTaskType.PORTFOLIO_BRIEFING, snapshot, PortfolioBriefingResult,
+4. `gateway.complete_json(LLMTaskType.PORTFOLIO_BRIEFING, snapshot, BriefingResult,
    PORTFOLIO_BRIEFING_SYSTEM_PROMPT)`를 호출한다.
 5. 결과를 `PortfolioBriefingResponse`로 매핑해 반환한다(`generated_at`은 호출 시각).
 
@@ -156,7 +157,7 @@ class PortfolioBriefingService:
 신규 `app/adapters/llm/prompts/portfolio_briefing.py`:
 
 - `PORTFOLIO_BRIEFING_SYSTEM_PROMPT: str` — 역할(투자 의사결정 보조), 출력 형식
-  (`PortfolioBriefingResult` JSON), 톤(권고이지 자동매매 지시가 아님), 입력 해석 지침
+  (`BriefingResult` JSON), 톤(권고이지 자동매매 지시가 아님), 입력 해석 지침
   (비중·집중도·섹터·리스크 노출을 근거로 신규 매수 전 점검 항목 제시)을 담는다.
 
 게이트웨이가 projection을 user 메시지로 직렬화하므로, 프롬프트 모듈은 system prompt 문자열만
