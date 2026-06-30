@@ -44,6 +44,8 @@ Write the section bodies in Korean. The section headers stay as the fixed labels
 
 Keep the tone polite and plain — use the `~합니다` register and explain what changed and why in natural sentences. Avoid both stiff declarative endings (`~한다`/`~됨`) and overly casual or figurative phrasing (`~어요`, 비유). Preserve technical identifiers and information density; soften the register, not the substance. The same tone applies to PR descriptions, not only review records.
 
+Use sentence structures that read naturally in Korean. Avoid English-calque phrasing, over-compressed noun endings that drop the verb (e.g. "~ 정리.", "~ 일관."), arrow (`→`) clause joining, and piling multiple modifiers onto a single noun so the line is hard to parse in one pass. Unpack such cases into sentences with a clear subject and predicate, keeping identifiers and information density intact — fix the structure, not the substance. 상세 원칙은 `design-record-policy.md` 참조.
+
 ## Handling Review Feedback
 
 When the posted review comment contains a **Blocking** finding or any change the review says must be made, Claude Code does **not** stop and wait for the human. It drives the fix loop:
