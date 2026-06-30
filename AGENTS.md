@@ -12,6 +12,7 @@ These instructions apply to all AI coding agents working in this repository.
 - Do not remove tests to make CI pass.
 - Do not modify protected files unless the issue or handoff explicitly allows it.
 - Update documentation when project knowledge changes.
+- Write document prose (ADRs, designs, review records) in Korean; keep section headers, status labels, and code symbols (identifiers, paths, enum values) in English (`docs/harness/design-record-policy.md`).
 - Record important decisions in ADRs when they affect future work.
 - Record important failures when an attempted approach should not be repeated.
 

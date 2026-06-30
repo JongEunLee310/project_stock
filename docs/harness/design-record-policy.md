@@ -23,6 +23,14 @@ Skeleton only. No implementation code.
 
 No SQL queries, no business logic code, no full class bodies.
 
+## Document Language
+
+설계 문서(`docs/designs/`)와 ADR(`docs/decisions/`)의 본문 산문은 한국어로 작성한다.
+섹션 헤더와 Status 라벨 등 고정 라벨, 그리고 코드 기호(클래스·함수·enum 값·파일 경로·
+설정 키·식별자)는 영어로 유지한다 — 산문만 한국어로 쓰고 정보 밀도는 보존한다. 이는
+`local-review-policy.md`의 리뷰 기록 한국어 규칙과 전역 선호(응답은 한국어)를 ADR·설계
+문서로 확장한 것이다.
+
 ## When to Skip
 
 - Pure test additions.
