@@ -68,6 +68,29 @@ When publishing the review comment, the closing line about merge authority must 
 
 Do not use phrasing that frames it as a robot addressing a person (e.g. "머지는 인간 소유", "머지 권한: 사람"). The intent is unchanged — Claude Code never merges — but the wording stays developer-centric and natural.
 
+## Comment Identity
+
+리뷰 기록·리뷰 스레드 답글·PR 코멘트는 개발자 계정이 아니라 GitHub App 봇
+`claude-code-comment-bot[bot]` 명의로 게시한다. 그래야 PR 스레드가 자문자답이 아니라
+사람 ↔ AI 대화로 읽힌다. 커밋과 push는 개발자 계정 명의를 유지하며(`Co-Authored-By`
+트레일러 포함), 봇 명의로 바꾸는 것은 코멘트·리뷰 레이어뿐이다.
+
+게시는 `gh`를 직접 쓰지 않고 래퍼를 경유한다.
+
+- `scripts/claude-bot-gh.sh <gh 인자>` — 1시간짜리 GitHub App installation token을 발급해
+  그 한 번의 `gh` 호출에만 `GH_TOKEN`으로 주입한다. 예:
+  `scripts/claude-bot-gh.sh pr comment <number> --body-file docs/reviews/pr-<number>.md`.
+- `scripts/claude-bot-token.py` — 토큰 교환기. `uv run --with pyjwt --with cryptography`로
+  일회성 실행해 프로젝트 의존성을 오염시키지 않는다.
+
+자격은 repo 밖에 둔다. App ID는 `CLAUDE_BOT_APP_ID` 환경변수(비대화형 zsh는 `.zshrc`가
+아니라 `.zshenv`를 읽으므로 거기에 둔다), App private key는
+`~/.config/claude-bot/private-key.pem`(chmod 600)에 둔다. App은 Pull requests·Issues
+read/write 권한이 필요하고 대상 repo(BE·FE 모두)에 설치되어 있어야 한다.
+
+작성자 확인은 코멘트 목록 정렬이 페이지네이션 탓에 부정확하니 코멘트 id로 직접 조회한다.
+`gh api repos/<owner>/<repo>/issues/comments/<id> --jq .user.type`가 `Bot`이면 정상이다.
+
 ## Approval
 
 Claude Code must not approve PRs automatically. Human reviewers own final approval.
