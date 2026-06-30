@@ -1,6 +1,7 @@
 from app.adapters.disclosure.base import DisclosureProvider
 from app.adapters.disclosure.mock import MockDisclosureProvider
 from app.adapters.llm.base import LLMClient
+from app.adapters.llm.gateway import CLOUD, LOCAL, LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import DEFAULT_MOCK_RESPONSES, MockLLMClient
 from app.adapters.llm.openai import OpenAIClient
@@ -55,3 +56,20 @@ def get_llm_client(provider: str | None = None) -> LLMClient:
     if selected_provider == "mock":
         return MockLLMClient(DEFAULT_MOCK_RESPONSES)
     raise NotImplementedError(f"llm provider 미구현: {selected_provider}")
+
+
+def get_llm_gateway() -> LLMGateway:
+    if settings.LLM_PROVIDER == "mock":
+        mock_client = get_llm_client("mock")
+        return LLMGateway({CLOUD: mock_client, LOCAL: mock_client})
+    if settings.LLM_PROVIDER == "cloud":
+        return LLMGateway(
+            {
+                CLOUD: get_llm_client("cloud"),
+                LOCAL: get_llm_client("local"),
+            }
+        )
+    if settings.LLM_PROVIDER == "local":
+        local_client = get_llm_client("local")
+        return LLMGateway({LOCAL: local_client, CLOUD: local_client})
+    raise NotImplementedError(f"llm provider 미구현: {settings.LLM_PROVIDER}")

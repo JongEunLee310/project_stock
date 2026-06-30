@@ -5,6 +5,7 @@ from app.adapters.llm.exceptions import (
     LLMRoutingError,
     LLMTimeoutError,
 )
+from app.adapters.llm.gateway import LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import MockLLMClient
 from app.adapters.llm.openai import OpenAIClient
@@ -32,6 +33,7 @@ __all__ = [
     "CloudSafePayload",
     "LLMCallError",
     "LLMClient",
+    "LLMGateway",
     "LLMMessage",
     "LLMRequest",
     "LLMResponse",
