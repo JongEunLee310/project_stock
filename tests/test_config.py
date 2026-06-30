@@ -30,6 +30,7 @@ def test_settings_use_defaults_without_env_file(monkeypatch: pytest.MonkeyPatch)
     assert settings.REFRESH_TOKEN_EXPIRE_MINUTES == 2880
     assert settings.OPENAI_API_KEY is None
     assert settings.LLM_TIMEOUT_SECONDS == 30
+    assert settings.LLM_PROVIDER == "cloud"
     assert settings.MARKET_PROVIDER == "mock"
     assert settings.NEWS_PROVIDER == "mock"
     assert settings.DISCLOSURE_PROVIDER == "mock"
@@ -48,6 +49,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("ACCESS_TOKEN_EXPIRE_MINUTES", "45")
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "12")
+    monkeypatch.setenv("LLM_PROVIDER", "local")
     monkeypatch.setenv("MARKET_PROVIDER", "real")
     monkeypatch.setenv("NEWS_PROVIDER", "real")
     monkeypatch.setenv("DISCLOSURE_PROVIDER", "real")
@@ -65,6 +67,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 45
     assert settings.OPENAI_API_KEY == "test-openai-key"
     assert settings.LLM_TIMEOUT_SECONDS == 12
+    assert settings.LLM_PROVIDER == "local"
     assert settings.MARKET_PROVIDER == "real"
     assert settings.NEWS_PROVIDER == "real"
     assert settings.DISCLOSURE_PROVIDER == "real"

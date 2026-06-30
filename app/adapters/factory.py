@@ -1,5 +1,9 @@
 from app.adapters.disclosure.base import DisclosureProvider
 from app.adapters.disclosure.mock import MockDisclosureProvider
+from app.adapters.llm.base import LLMClient
+from app.adapters.llm.local import LocalLLMProvider
+from app.adapters.llm.mock import DEFAULT_MOCK_RESPONSES, MockLLMClient
+from app.adapters.llm.openai import OpenAIClient
 from app.adapters.market.base import MarketDataProvider, PriceSeriesProvider
 from app.adapters.market.mock import MockMarketDataProvider, MockPriceSeriesProvider
 from app.adapters.news.base import NewsAdapter
@@ -37,3 +41,17 @@ def get_portfolio_provider() -> PortfolioProvider:
     if settings.PORTFOLIO_PROVIDER == "mock":
         return MockPortfolioProvider()
     raise NotImplementedError("portfolio real provider 미구현")
+
+
+def get_llm_client(provider: str | None = None) -> LLMClient:
+    selected_provider = settings.LLM_PROVIDER if provider is None else provider
+    if selected_provider == "cloud":
+        api_key = settings.OPENAI_API_KEY
+        if api_key is None or not api_key.strip():
+            raise RuntimeError("OPENAI_API_KEY is required when LLM_PROVIDER=cloud")
+        return OpenAIClient(api_key=api_key)
+    if selected_provider == "local":
+        return LocalLLMProvider()
+    if selected_provider == "mock":
+        return MockLLMClient(DEFAULT_MOCK_RESPONSES)
+    raise NotImplementedError(f"llm provider 미구현: {selected_provider}")
