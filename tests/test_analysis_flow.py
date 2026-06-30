@@ -76,6 +76,7 @@ def db() -> Generator[Session, None, None]:
 @pytest.fixture(autouse=True)
 def patch_worker_session(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(analysis, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(analysis, "get_llm_client", lambda: llm_client())
 
 
 def llm_client(

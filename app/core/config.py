@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 2880
     OPENAI_API_KEY: str | None = None
     LLM_TIMEOUT_SECONDS: int = 30
+    LLM_PROVIDER: Literal["cloud", "local", "mock"] = "cloud"
     MARKET_PROVIDER: Literal["mock", "real"] = "mock"
     NEWS_PROVIDER: Literal["mock", "real"] = "mock"
     DISCLOSURE_PROVIDER: Literal["mock", "real"] = "mock"

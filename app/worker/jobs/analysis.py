@@ -1,7 +1,6 @@
 import logging
 
-from app.adapters.factory import get_news_adapter
-from app.adapters.llm.mock import MockLLMClient
+from app.adapters.factory import get_llm_client, get_news_adapter
 from app.db.session import SessionLocal
 from app.domains.analysis.service import WatchlistAnalysisService
 from app.domains.jobs.model import JobRun
@@ -21,22 +20,7 @@ def analyze_watchlist_job(watchlist_id: int) -> None:
         job_run_id = job_run.id
         result = WatchlistAnalysisService(
             db,
-            MockLLMClient(
-                {
-                    "NewsSummaryResult": {
-                        "summary": "Mock analysis summary.",
-                        "positive_factors": ["Mock positive factor"],
-                        "negative_factors": ["Mock negative factor"],
-                        "impact_level": "HIGH",
-                        "sentiment": "NEUTRAL",
-                    },
-                    "ThesisConflictResult": {
-                        "status": "NEUTRAL",
-                        "reason": "Mock conflict analysis is neutral.",
-                        "invalidation_triggered": False,
-                    },
-                }
-            ),
+            get_llm_client(),
             get_news_adapter(),
         ).run(watchlist_id)
         if result.failures:
