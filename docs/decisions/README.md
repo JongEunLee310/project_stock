@@ -12,6 +12,10 @@ This directory stores Architecture Decision Records.
 - `ADR-003-scheduler-approach.md`
 - `ADR-004-use-manual-codex-execution-instead-of-nested-codex-exec.md` (superseded by ADR-005)
 - `ADR-005-allow-claude-code-to-invoke-codex-exec.md`
+- `ADR-006-decision-log-domain.md`
+- `ADR-007-llm-provider-abstraction.md`
+- `ADR-008-llm-task-routing-policy.md`
+- `ADR-009-cloud-data-boundary-cloudsafe-dto.md`
 
 ## Writing Rules
 
