@@ -53,6 +53,11 @@ ADR-010 확정 후 별도**다. 본 설계는 출시 cloud 경로만 다룬다.
 `WatchlistHighlight`: `symbol: str`, `status: str`, `per: Decimal | None`,
 `peg: Decimal | None`, `daily_change_percent: Decimal`. (보유 수량·평가액 없음.)
 
+**구현 현황(2026-06-30)**: 1차 구현은 `watchlist_highlights`를 빈 배열로 둔다. 기존
+watchlist 도메인에 이 계약과 맞는 `status` 필드가 없어, 신규 도메인·테이블을 만들지 않는다는
+범위 제약 안에서 highlight를 채울 수 없기 때문이다(핸드오프 task-057의 축소 분기). 따라서 출시
+대시보드 브리핑은 집계 카운트와 현금 비중만을 근거로 생성한다. highlight 채움은 후속(§10)이다.
+
 빌더 시그니처(위치: `app/adapters/llm/privacy.py`):
 
 ```
@@ -146,6 +151,9 @@ class DashboardBriefingService:
 
 ## 10. 비범위 / 후속
 
+- `watchlist_highlights` 채움 — 1차 구현에서 생략했다(위 §3 구현 현황). 관심 종목을 브리핑이
+  구체적으로 언급하려면 watchlist 도메인에 표시용 `status`(또는 동급 상태) 계약을 추가하는
+  선행 작업이 필요하다. 그 계약이 생기면 `to_dashboard_snapshot`에 highlight를 채운다.
 - future_primary=local 전환과 위험도 escalation(#139/#140) — ADR-010 확정 후. 본 설계의
   projection·출력 계약은 그때 로컬 경로에서 그대로 재사용된다.
 - 캐시(ADR-011, #138)·검증 강화·safe template(ADR-010/012)·영속화 — 057과 공통. 포트폴리오·
