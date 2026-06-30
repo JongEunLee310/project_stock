@@ -18,6 +18,12 @@ DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
         "reason": "Mock conflict analysis is neutral.",
         "invalidation_triggered": False,
     },
+    "BriefingResult": {
+        "headline": "Mock briefing headline.",
+        "body": "Mock briefing body.",
+        "risk_headline": "Mock risk checks",
+        "risk_checks": ["Mock risk check"],
+    },
 }
 
 

@@ -16,6 +16,9 @@ This directory stores Architecture Decision Records.
 - `ADR-007-llm-provider-abstraction.md`
 - `ADR-008-llm-task-routing-policy.md`
 - `ADR-009-cloud-data-boundary-cloudsafe-projection.md`
+- `ADR-010-llm-fallback-and-escalation-policy.md` (Phase 2, deferred)
+- `ADR-011-llm-cache-policy.md` (Phase 2, deferred)
+- `ADR-012-llm-output-validation.md` (Phase 2, deferred)
 
 ## Writing Rules
 

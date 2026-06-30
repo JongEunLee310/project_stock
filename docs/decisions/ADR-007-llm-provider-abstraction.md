@@ -76,8 +76,8 @@ transport 계층은 그대로 두고, 그 위에 별도의 오케스트레이션
   transport 쪽 `LocalLLMProvider` stub.
 - #134 — `LLMRouter` + factory 및 `LLM_PROVIDER` 선택(ADR-008).
 - #136 — `LLMGateway` 조립 및 Phase 1 테스트.
-- ADR-NNN(Phase 2, #137) — 게이트웨이 내부의 폴백/escalation·캐시·출력 검증.
-  브리핑 소비처가 생길 때까지 보류.
+- ADR-010 / ADR-011 / ADR-012(Phase 2, #137) — 게이트웨이 내부의 폴백/escalation·캐시·
+  출력 검증. 브리핑 소비처가 생길 때까지 보류(deferred).
 
 ## Related Documents
 

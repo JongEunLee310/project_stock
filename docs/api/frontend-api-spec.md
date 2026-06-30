@@ -99,8 +99,10 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 | Purpose | Method | Path | Auth | Notes |
 | --- | --- | --- | --- | --- |
 | 알림 후보/시그널 요약 | `GET` | `/api/v1/signals?asset_id={asset_id}&include_expired=false&page=1&size=20` | Required | 현재 asset 단위 조회. 전체 대시보드 집계 API는 미구현 후보. |
+| 대시보드 AI 브리핑 | `GET` | `/api/v1/dashboard/briefing` | Required | 현재 사용자 집계 기준 on-demand 생성. 결과 영속화 없음. |
 | 포트폴리오 목록 | `GET` | `/api/v1/portfolios?page=1&size=20` | Required | 요약 조회 전 선택 목록. |
 | 포트폴리오 요약 | `GET` | `/api/v1/portfolios/{portfolio_id}/summary` | Required | 집중도/비중 표시. |
+| 포트폴리오 AI 브리핑 | `GET` | `/api/v1/portfolios/{portfolio_id}/briefing` | Required | 선택 포트폴리오 기준 on-demand 생성. 결과 영속화 없음. |
 | 관심종목 목록 | `GET` | `/api/v1/watchlists?page=1&size=20` | Required | 사용자 관심종목 그룹 목록. |
 | 관심종목 항목 | `GET` | `/api/v1/watchlists/{watchlist_id}/items?page=1&size=20&sort=priority` | Required | 항목별 사유/태그/메모 표시. |
 | 의사결정 저널 | `GET` | `/api/v1/decision-logs?page=1&size=20&sort=-decided_at` | Required | 판단 기록 목록. |
@@ -168,6 +170,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 | 포트폴리오 목록 | `GET` | `/api/v1/portfolios?page=1&size=20` | Required |
 | 포트폴리오 생성 | `POST` | `/api/v1/portfolios` | Required |
 | 요약 조회 | `GET` | `/api/v1/portfolios/{portfolio_id}/summary` | Required |
+| AI 브리핑 | `GET` | `/api/v1/portfolios/{portfolio_id}/briefing` | Required |
 | 집중도 점검 | `POST` | `/api/v1/portfolios/{portfolio_id}/check` | Required |
 | 포지션 추가/수정/삭제 | `POST/PATCH/DELETE` | `/api/v1/portfolios/{portfolio_id}/positions...` | Required |
 
@@ -280,6 +283,20 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - 카드 집계 의미: `risk_alert_count`=미확인 위험 알림 수, `important_news_count`=중요 뉴스 수, `review_signal_count`=검토 대기 시그널 수, `cash_weight`=현금 비중(문자열 Decimal, 0~1). 데이터가 없으면 카운트는 `0`, `cash_weight`는 `null`.
 - `cash_weight`는 **원가 기준·사용자의 첫 포트폴리오** 기준이다(MVP). 시세 연동 시 시장가 기준으로 재정의 예정.
 - `*_delta` 4필드는 직전 스냅샷 대비 증감이며 **히스토리 스냅샷 도입 전까지 항상 `null`**(후속). FE는 `null`이면 증감 배지를 숨긴다.
+- Representative error `401 AUTH_INVALID_TOKEN`: see Auth section.
+
+#### `GET /api/v1/dashboard/briefing`
+
+- Auth: Required
+- Request: none (인증 사용자 기준 on-demand 생성)
+- Success `200`:
+
+```json
+{ "data": { "headline": "Mock briefing headline.", "body": "Mock briefing body.", "risk_headline": "Mock risk checks", "risk_checks": ["Mock risk check"], "generated_at": "2026-06-30T00:00:00Z" }, "message": null, "error": null, "meta": null }
+```
+
+- 입력 projection은 집계 카운트와 `cash_weight`만 포함한다. 기존 관심종목/종목 도메인에는 브리핑 highlight 계약의 `status`를 충족하는 필드가 없어 `watchlist_highlights`는 빈 배열로 생성한다.
+- 결과는 저장하지 않고 호출 시마다 생성한다.
 - Representative error `401 AUTH_INVALID_TOKEN`: see Auth section.
 
 ### Assets
@@ -575,6 +592,24 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Null asset sectors are grouped under `UNKNOWN`.
 - Sector concentration reuses `concentration_threshold`.
 
+- Representative error `404 PORTFOLIO_NOT_FOUND`:
+
+```json
+{ "data": null, "message": "포트폴리오를 찾을 수 없습니다.", "error": { "code": "PORTFOLIO_NOT_FOUND" }, "meta": null }
+```
+
+#### `GET /api/v1/portfolios/{portfolio_id}/briefing`
+
+- Auth: Required
+- Request: path `portfolio_id`
+- Success `200`:
+
+```json
+{ "data": { "headline": "Mock briefing headline.", "body": "Mock briefing body.", "risk_headline": "Mock risk checks", "risk_checks": ["Mock risk check"], "generated_at": "2026-06-30T00:00:00Z" }, "message": null, "error": null, "meta": null }
+```
+
+- 입력 projection은 종목 `symbol`, 비중, 섹터, 일간 변화율, 섹터 비중, 현금 비중, 리스크 노출만 포함한다. 수량, 평균단가, 평가액, 원가, 절대 현금 잔액은 포함하지 않는다.
+- 결과는 저장하지 않고 호출 시마다 생성한다.
 - Representative error `404 PORTFOLIO_NOT_FOUND`:
 
 ```json
@@ -1008,6 +1043,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - [x] `POST /api/v1/portfolios`
 - [x] `GET /api/v1/portfolios`
 - [x] `GET /api/v1/portfolios/{portfolio_id}/summary`
+- [x] `GET /api/v1/portfolios/{portfolio_id}/briefing`
 - [x] `POST /api/v1/portfolios/{portfolio_id}/check`
 - [x] `POST /api/v1/portfolios/{portfolio_id}/positions`
 - [x] `PATCH /api/v1/portfolios/{portfolio_id}/positions/{position_id}`
@@ -1036,3 +1072,4 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - [x] `GET /api/v1/health`
 - [x] `GET /api/v1/health/readiness`
 - [x] `GET /api/v1/dashboard/summary`
+- [x] `GET /api/v1/dashboard/briefing`

@@ -100,3 +100,11 @@ class PortfolioSummaryResponse(BaseModel):
 class PortfolioCheckResponse(BaseModel):
     summary: PortfolioSummaryResponse
     created_signals: list[SignalResponse]
+
+
+class PortfolioBriefingResponse(BaseModel):
+    headline: str
+    body: str
+    risk_headline: str | None = None
+    risk_checks: list[str]
+    generated_at: UtcDatetime

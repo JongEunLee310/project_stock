@@ -2,6 +2,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
+from app.core.schema import UtcDatetime
+
 
 class DashboardSummaryResponse(BaseModel):
     risk_alert_count: int
@@ -14,3 +16,11 @@ class DashboardSummaryResponse(BaseModel):
     important_news_delta: Decimal | None = None
     review_signal_delta: Decimal | None = None
     cash_weight_delta: Decimal | None = None
+
+
+class DashboardBriefingResponse(BaseModel):
+    headline: str
+    body: str
+    risk_headline: str | None = None
+    risk_checks: list[str]
+    generated_at: UtcDatetime

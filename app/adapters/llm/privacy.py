@@ -1,4 +1,5 @@
 from decimal import Decimal
+from collections.abc import Mapping
 from typing import Any, ClassVar, Sequence
 
 from pydantic import BaseModel, ConfigDict
@@ -6,6 +7,8 @@ from pydantic import BaseModel, ConfigDict
 from app.adapters.llm.exceptions import CloudBoundaryViolationError
 from app.adapters.llm.types import SensitivityLevel
 from app.domains.portfolios.model import Portfolio, Position
+from app.domains.portfolios.schema import PortfolioSummaryResponse
+from app.domains.dashboard.schema import DashboardSummaryResponse
 
 
 ZERO = Decimal("0")
@@ -21,7 +24,7 @@ class CloudSafePayload(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     def as_payload(self) -> dict[str, Any]:
-        return self.model_dump()
+        return self.model_dump(mode="json")
 
 
 class PortfolioConcentrationSnapshot(CloudSafePayload):
@@ -31,6 +34,56 @@ class PortfolioConcentrationSnapshot(CloudSafePayload):
     largest_position_band: str
     cash_band: str
     is_concentrated: bool
+
+
+class PortfolioBriefingPosition(BaseModel):
+    symbol: str
+    sector: str
+    weight: Decimal
+    daily_change_percent: Decimal
+
+
+class SectorWeightView(BaseModel):
+    sector: str
+    weight: Decimal
+
+
+class RiskExposureView(BaseModel):
+    code: str
+    label: str
+    level: str
+    description: str
+
+
+class WatchlistHighlight(BaseModel):
+    symbol: str
+    status: str
+    per: Decimal | None = None
+    peg: Decimal | None = None
+    daily_change_percent: Decimal
+
+
+class PortfolioBriefingSnapshot(CloudSafePayload):
+    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
+
+    positions: list[PortfolioBriefingPosition]
+    sector_weights: list[SectorWeightView]
+    largest_position_weight: Decimal
+    is_concentrated: bool
+    concentration_threshold: Decimal
+    cash_weight: Decimal
+    day_change_percent: Decimal
+    risk_exposures: list[RiskExposureView]
+
+
+class DashboardBriefingSnapshot(CloudSafePayload):
+    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
+
+    risk_alert_count: int
+    important_news_count: int
+    review_signal_count: int
+    cash_weight: Decimal | None
+    watchlist_highlights: list[WatchlistHighlight]
 
 
 def to_concentration_snapshot(
@@ -54,6 +107,63 @@ def to_concentration_snapshot(
         largest_position_band=_share_band(largest_position_share),
         cash_band=_share_band(cash_share),
         is_concentrated=largest_position_share > portfolio.concentration_threshold,
+    )
+
+
+def to_briefing_snapshot(
+    summary: PortfolioSummaryResponse,
+    symbol_by_asset_id: Mapping[int, str],
+    sector_by_asset_id: Mapping[int, str],
+    daily_change_by_asset_id: Mapping[int, Decimal],
+) -> PortfolioBriefingSnapshot:
+    largest_position_weight = max(
+        (position.weight for position in summary.positions),
+        default=ZERO,
+    )
+    return PortfolioBriefingSnapshot(
+        positions=[
+            PortfolioBriefingPosition(
+                symbol=symbol_by_asset_id.get(position.asset_id, str(position.asset_id)),
+                sector=sector_by_asset_id.get(position.asset_id, "UNKNOWN"),
+                weight=position.weight,
+                daily_change_percent=daily_change_by_asset_id.get(
+                    position.asset_id,
+                    ZERO,
+                ),
+            )
+            for position in summary.positions
+        ],
+        sector_weights=[
+            SectorWeightView(sector=sector_weight.sector, weight=sector_weight.weight)
+            for sector_weight in summary.sector_weights
+        ],
+        largest_position_weight=largest_position_weight,
+        is_concentrated=largest_position_weight > summary.concentration_threshold,
+        concentration_threshold=summary.concentration_threshold,
+        cash_weight=summary.cash_weight,
+        day_change_percent=summary.day_change_percent,
+        risk_exposures=[
+            RiskExposureView(
+                code=risk_exposure.code,
+                label=risk_exposure.label,
+                level=risk_exposure.level,
+                description=risk_exposure.description,
+            )
+            for risk_exposure in summary.risk_exposures
+        ],
+    )
+
+
+def to_dashboard_snapshot(
+    summary: DashboardSummaryResponse,
+    highlights: Sequence[WatchlistHighlight],
+) -> DashboardBriefingSnapshot:
+    return DashboardBriefingSnapshot(
+        risk_alert_count=summary.risk_alert_count,
+        important_news_count=summary.important_news_count,
+        review_signal_count=summary.review_signal_count,
+        cash_weight=Decimal(summary.cash_weight) if summary.cash_weight is not None else None,
+        watchlist_highlights=list(highlights),
     )
 
 

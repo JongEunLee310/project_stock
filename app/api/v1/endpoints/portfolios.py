@@ -7,7 +7,10 @@ from app.api.v1.deps import get_current_user
 from app.core.pagination import PaginationParams
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
+from app.adapters.factory import get_llm_gateway
+from app.domains.portfolios.briefing_service import PortfolioBriefingService
 from app.domains.portfolios.schema import (
+    PortfolioBriefingResponse,
     PortfolioCheckResponse,
     PortfolioCreate,
     PortfolioResponse,
@@ -75,6 +78,25 @@ def get_portfolio_summary(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[PortfolioSummaryResponse]:
     return success(PortfolioService(db).get_summary(portfolio_id, current_user.id))
+
+
+@router.get(
+    "/{portfolio_id}/briefing",
+    response_model=ApiResponse[PortfolioBriefingResponse],
+    summary="Get portfolio briefing",
+    description="Generate an on-demand AI briefing for an owned portfolio.",
+)
+def get_portfolio_briefing(
+    portfolio_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[PortfolioBriefingResponse]:
+    return success(
+        PortfolioBriefingService(db, get_llm_gateway()).generate(
+            portfolio_id,
+            current_user.id,
+        )
+    )
 
 
 @router.post(

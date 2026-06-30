@@ -195,6 +195,14 @@ PORTFOLIO_SUMMARY_CONTRACT: Contract = {
     "sector_weights": list,
 }
 
+BRIEFING_CONTRACT: Contract = {
+    "headline": str,
+    "body": str,
+    "risk_headline": (str, type(None)),
+    "risk_checks": list,
+    "generated_at": str,
+}
+
 POSITION_WEIGHT_CONTRACT: Contract = {
     "asset_id": int,
     "quantity": str,
@@ -420,6 +428,45 @@ def test_portfolio_summary_response_contract(client: TestClient) -> None:
     assert_contract(data["sector_weights"][0], SECTOR_WEIGHT_CONTRACT)
 
 
+def test_portfolio_briefing_response_contract(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.core.config.settings.LLM_PROVIDER", "mock")
+    set_current_user(1)
+    portfolio = create_portfolio(client)
+    asset = create_asset(client)
+    position_response = client.post(
+        f"/api/v1/portfolios/{portfolio['id']}/positions",
+        json={"asset_id": asset["id"], "quantity": "2", "avg_buy_price": "100"},
+    )
+    assert position_response.status_code == 201
+
+    response = client.get(f"/api/v1/portfolios/{portfolio['id']}/briefing")
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, BRIEFING_CONTRACT)
+    assert all(isinstance(item, str) for item in data["risk_checks"])
+
+
+def test_dashboard_briefing_response_contract(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.core.config.settings.LLM_PROVIDER", "mock")
+    set_current_user(1)
+
+    response = client.get("/api/v1/dashboard/briefing")
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, BRIEFING_CONTRACT)
+    assert all(isinstance(item, str) for item in data["risk_checks"])
+
+
 def test_alert_candidate_list_response_contract(client: TestClient) -> None:
     create_alert_candidate(1)
     set_current_user(1)
@@ -470,6 +517,8 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/assets/{asset_id}/detail",
         "/api/v1/assets/{asset_id}/research-summary",
         "/api/v1/portfolios/{portfolio_id}/summary",
+        "/api/v1/portfolios/{portfolio_id}/briefing",
+        "/api/v1/dashboard/briefing",
         "/api/v1/alert-candidates",
         "/api/v1/decision-logs",
         "/api/v1/decision-logs/stats",
@@ -487,6 +536,8 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "ResearchSummaryResponse",
         "ResearchSummarySource",
         "PortfolioSummaryResponse",
+        "PortfolioBriefingResponse",
+        "DashboardBriefingResponse",
         "PositionWeight",
         "SectorWeight",
         "AlertCandidateResponse",
