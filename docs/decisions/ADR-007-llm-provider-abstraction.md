@@ -84,4 +84,4 @@ transport 계층은 그대로 두고, 그 위에 별도의 오케스트레이션
 - `JongEunLee310/project_stock#132`(본 ADR), Epic `#141`
 - `docs/designs/013-llm-adapter.md`(기존 transport 계층)
 - `docs/decisions/ADR-008-llm-task-routing-policy.md`
-- `docs/decisions/ADR-009-cloud-data-boundary-cloudsafe-dto.md`
+- `docs/decisions/ADR-009-cloud-data-boundary-cloudsafe-projection.md`

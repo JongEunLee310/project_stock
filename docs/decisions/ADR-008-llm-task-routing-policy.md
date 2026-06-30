@@ -47,7 +47,7 @@ ADR-007은 라우팅을 `LLMGateway` / `LLMRouter`에 두었다. 본 ADR은 그 
 
    | TaskType(의도)              | 출시            | 미래 primary              |
    | --------------------------- | --------------- | ------------------------- |
-   | 포트폴리오 브리핑           | Cloud           | Cloud (CloudSafe DTO)     |
+   | 포트폴리오 브리핑           | Cloud           | Cloud (CloudSafe projection) |
    | 대시보드 브리핑             | Cloud           | Local + Cloud escalation  |
    | 워치리스트 관찰 메모        | Cloud/Template  | Local (이관 #1)           |
    | 뉴스 / 공시 요약            | Cloud           | Local + 검증              |
@@ -92,5 +92,5 @@ ADR-007은 라우팅을 `LLMGateway` / `LLMRouter`에 두었다. 본 ADR은 그 
 
 - `JongEunLee310/project_stock#132`(본 ADR), Epic `#141`
 - `docs/decisions/ADR-007-llm-provider-abstraction.md`
-- `docs/decisions/ADR-009-cloud-data-boundary-cloudsafe-dto.md`
+- `docs/decisions/ADR-009-cloud-data-boundary-cloudsafe-projection.md`
 - `app/adapters/factory.py`(provider 선택 패턴)

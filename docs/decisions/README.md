@@ -15,7 +15,7 @@ This directory stores Architecture Decision Records.
 - `ADR-006-decision-log-domain.md`
 - `ADR-007-llm-provider-abstraction.md`
 - `ADR-008-llm-task-routing-policy.md`
-- `ADR-009-cloud-data-boundary-cloudsafe-dto.md`
+- `ADR-009-cloud-data-boundary-cloudsafe-projection.md`
 
 ## Writing Rules
 
