@@ -24,3 +24,18 @@ class DashboardBriefingResponse(BaseModel):
     risk_headline: str | None = None
     risk_checks: list[str]
     generated_at: UtcDatetime
+
+
+class TrendDataPoint(BaseModel):
+    date: str
+    count: int
+
+
+class TrendSeries(BaseModel):
+    key: str
+    data: list[TrendDataPoint]
+
+
+class DashboardTrendSeriesResponse(BaseModel):
+    days: int
+    series: list[TrendSeries]

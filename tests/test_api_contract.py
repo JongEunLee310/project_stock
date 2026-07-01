@@ -203,6 +203,21 @@ BRIEFING_CONTRACT: Contract = {
     "generated_at": str,
 }
 
+DASHBOARD_TREND_SERIES_CONTRACT: Contract = {
+    "days": int,
+    "series": list,
+}
+
+TREND_SERIES_CONTRACT: Contract = {
+    "key": str,
+    "data": list,
+}
+
+TREND_DATA_POINT_CONTRACT: Contract = {
+    "date": str,
+    "count": int,
+}
+
 POSITION_WEIGHT_CONTRACT: Contract = {
     "asset_id": int,
     "quantity": str,
@@ -467,6 +482,28 @@ def test_dashboard_briefing_response_contract(
     assert all(isinstance(item, str) for item in data["risk_checks"])
 
 
+def test_dashboard_trends_response_contract(client: TestClient) -> None:
+    set_current_user(1)
+
+    response = client.get("/api/v1/dashboard/trends", params={"days": 2})
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, DASHBOARD_TREND_SERIES_CONTRACT)
+    assert data["days"] == 2
+    assert [series["key"] for series in data["series"]] == [
+        "risk_alerts",
+        "review_signals",
+        "important_news",
+    ]
+    for series in data["series"]:
+        assert_contract(series, TREND_SERIES_CONTRACT)
+        assert len(series["data"]) == 2
+        for point in series["data"]:
+            assert_contract(point, TREND_DATA_POINT_CONTRACT)
+
+
 def test_alert_candidate_list_response_contract(client: TestClient) -> None:
     create_alert_candidate(1)
     set_current_user(1)
@@ -519,6 +556,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/portfolios/{portfolio_id}/summary",
         "/api/v1/portfolios/{portfolio_id}/briefing",
         "/api/v1/dashboard/briefing",
+        "/api/v1/dashboard/trends",
         "/api/v1/alert-candidates",
         "/api/v1/decision-logs",
         "/api/v1/decision-logs/stats",
@@ -538,6 +576,9 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "PortfolioSummaryResponse",
         "PortfolioBriefingResponse",
         "DashboardBriefingResponse",
+        "DashboardTrendSeriesResponse",
+        "TrendSeries",
+        "TrendDataPoint",
         "PositionWeight",
         "SectorWeight",
         "AlertCandidateResponse",
