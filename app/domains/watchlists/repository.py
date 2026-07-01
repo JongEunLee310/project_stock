@@ -65,6 +65,22 @@ class WatchlistItemRepository:
             stmt = stmt.limit(limit)
         return list(self.db.scalars(stmt).all())
 
+    def list_by_user(
+        self,
+        user_id: int,
+    ) -> list[WatchlistItem]:
+        stmt = (
+            select(WatchlistItem)
+            .join(Watchlist, WatchlistItem.watchlist_id == Watchlist.id)
+            .where(Watchlist.user_id == user_id)
+            .order_by(
+                WatchlistItem.priority,
+                WatchlistItem.created_at.desc(),
+                WatchlistItem.id.desc(),
+            )
+        )
+        return list(self.db.scalars(stmt).all())
+
     def count_by_watchlist(self, watchlist_id: int) -> int:
         stmt = (
             select(func.count())

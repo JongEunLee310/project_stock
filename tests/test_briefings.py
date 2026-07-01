@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, cast
 
@@ -13,11 +14,13 @@ from app.adapters.llm.privacy import (
     DashboardBriefingSnapshot,
     PortfolioBriefingSnapshot,
     PrivacyGate,
+    WatchlistHighlight,
     to_briefing_snapshot,
     to_dashboard_snapshot,
 )
 from app.adapters.llm.schema import BriefingResult
 from app.adapters.llm.types import LLMTaskType, SensitivityLevel
+from app.adapters.market.base import QuoteResult
 from app.core.config import settings
 from app.core.exceptions import AppException
 from app.domains.assets.repository import AssetRepository
@@ -34,6 +37,11 @@ from app.domains.portfolios.schema import (
     SectorWeight,
 )
 from app.domains.portfolios.service import PortfolioService
+from app.domains.signals.repository import SignalRepository
+from app.domains.signals.schema import SignalCreate
+from app.domains.signals.types import SignalType
+from app.domains.watchlists.model import WatchlistItem
+from app.domains.watchlists.repository import WatchlistItemRepository, WatchlistRepository
 from tests.conftest import api_data, set_current_user
 
 
@@ -167,6 +175,41 @@ def test_dashboard_briefing_snapshot_omits_highlights_when_data_is_unavailable()
     assert_no_monetary_fields(payload)
 
 
+def test_dashboard_briefing_snapshot_accepts_highlights_without_monetary_fields() -> None:
+    snapshot = to_dashboard_snapshot(
+        DashboardSummaryResponse(
+            risk_alert_count=2,
+            important_news_count=3,
+            review_signal_count=1,
+            cash_weight="0.2500",
+        ),
+        highlights=[
+            WatchlistHighlight(
+                symbol="AAPL",
+                status="RISK_ALERT",
+                per=Decimal("31.20"),
+                peg=Decimal("2.45"),
+                daily_change_percent=Decimal("1.26"),
+            )
+        ],
+    )
+
+    payload = snapshot.as_payload()
+
+    assert snapshot.sensitivity == SensitivityLevel.AGGREGATED
+    assert PrivacyGate().guard(snapshot) is snapshot
+    assert payload["watchlist_highlights"] == [
+        {
+            "symbol": "AAPL",
+            "status": "RISK_ALERT",
+            "per": "31.20",
+            "peg": "2.45",
+            "daily_change_percent": "1.26",
+        }
+    ]
+    assert_no_monetary_fields(payload)
+
+
 def test_original_portfolio_entity_is_rejected_at_cloud_boundary() -> None:
     portfolio = Portfolio(
         user_id=1,
@@ -177,6 +220,13 @@ def test_original_portfolio_entity_is_rejected_at_cloud_boundary() -> None:
 
     with pytest.raises(CloudBoundaryViolationError):
         PrivacyGate().guard(portfolio)
+
+
+def test_original_watchlist_item_entity_is_rejected_at_cloud_boundary() -> None:
+    item = WatchlistItem(watchlist_id=1, asset_id=101, priority=0)
+
+    with pytest.raises(CloudBoundaryViolationError):
+        PrivacyGate().guard(item)
 
 
 def create_owned_portfolio(db: Session) -> int:
@@ -246,6 +296,93 @@ def test_dashboard_briefing_service_maps_gateway_result_without_highlights(
     assert isinstance(payload, DashboardBriefingSnapshot)
     assert payload.watchlist_highlights == []
     assert schema is BriefingResult
+
+
+def test_dashboard_briefing_service_builds_watchlist_highlights(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asset_repo = AssetRepository(db)
+    aapl = asset_repo.create(
+        symbol="AAPL",
+        name="Apple Inc.",
+        market="NASDAQ",
+        sector="Technology",
+        industry=None,
+        description=None,
+    )
+    msft = asset_repo.create(
+        symbol="MSFT",
+        name="Microsoft Corp.",
+        market="NASDAQ",
+        sector="Technology",
+        industry=None,
+        description=None,
+    )
+    watchlist_repo = WatchlistRepository(db)
+    first_watchlist = watchlist_repo.create(user_id=1, name="Core")
+    second_watchlist = watchlist_repo.create(user_id=1, name="Ideas")
+    item_repo = WatchlistItemRepository(db)
+    item_repo.create(first_watchlist.id, aapl.id, priority=10, reason=None, tags=[], memo=None)
+    item_repo.create(second_watchlist.id, aapl.id, priority=0, reason=None, tags=[], memo=None)
+    item_repo.create(second_watchlist.id, msft.id, priority=1, reason=None, tags=[], memo=None)
+    SignalRepository(db).create(
+        SignalCreate(
+            asset_id=aapl.id,
+            signal_type=SignalType.WATCH,
+            score=70,
+            reason="Watch active signal.",
+        )
+    )
+    SignalRepository(db).create(
+        SignalCreate(
+            asset_id=aapl.id,
+            signal_type=SignalType.RISK_ALERT,
+            score=90,
+            reason="Risk active signal.",
+        )
+    )
+
+    class RecordingMarketProvider:
+        def get_quote(self, symbols: list[str]) -> list[QuoteResult]:
+            assert symbols == ["AAPL", "MSFT"]
+            return [
+                QuoteResult(
+                    symbol="AAPL",
+                    name="Apple Inc.",
+                    price=Decimal("195.64"),
+                    previous_close=Decimal("193.20"),
+                    change=Decimal("2.44"),
+                    change_percent=Decimal("1.26"),
+                    currency="USD",
+                    as_of=datetime(2026, 6, 19, tzinfo=timezone.utc),
+                    per=Decimal("31.20"),
+                    peg=Decimal("2.45"),
+                )
+            ]
+
+    monkeypatch.setattr(
+        "app.domains.dashboard.briefing_service.get_market_provider",
+        lambda: RecordingMarketProvider(),
+    )
+    gateway = RecordingGateway()
+
+    DashboardBriefingService(db, gateway).generate(user_id=1)
+
+    _task_type, payload, _schema, _prompt = gateway.calls[0]
+    assert isinstance(payload, DashboardBriefingSnapshot)
+    assert [highlight.symbol for highlight in payload.watchlist_highlights] == [
+        "AAPL",
+        "MSFT",
+    ]
+    assert payload.watchlist_highlights[0].status == SignalType.RISK_ALERT.value
+    assert payload.watchlist_highlights[0].per == Decimal("31.20")
+    assert payload.watchlist_highlights[0].peg == Decimal("2.45")
+    assert payload.watchlist_highlights[0].daily_change_percent == Decimal("1.26")
+    assert payload.watchlist_highlights[1].status == "NORMAL"
+    assert payload.watchlist_highlights[1].per is None
+    assert payload.watchlist_highlights[1].peg is None
+    assert payload.watchlist_highlights[1].daily_change_percent == Decimal("0")
 
 
 def test_portfolio_briefing_endpoint_returns_enveloped_mock_response(
@@ -326,3 +463,4 @@ def test_dashboard_briefing_endpoint_returns_enveloped_mock_response(
     assert data["body"] == "Mock briefing body."
     assert data["risk_checks"] == ["Mock risk check"]
     assert isinstance(data["generated_at"], str)
+    assert "watchlist_highlights" not in data
