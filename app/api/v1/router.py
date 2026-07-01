@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     decision_logs,
     health,
     job_runs,
+    market,
     portfolios,
     prices,
     reports,
@@ -28,6 +29,7 @@ api_router.include_router(
 )
 api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
 api_router.include_router(assets.router, prefix="/assets", tags=["assets"])
+api_router.include_router(market.router, prefix="/market", tags=["market"])
 api_router.include_router(prices.router, prefix="/stocks", tags=["prices"])
 api_router.include_router(watchlists.router, prefix="/watchlists", tags=["watchlists"])
 api_router.include_router(

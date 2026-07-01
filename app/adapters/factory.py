@@ -5,8 +5,16 @@ from app.adapters.llm.gateway import CLOUD, LOCAL, LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import DEFAULT_MOCK_RESPONSES, MockLLMClient
 from app.adapters.llm.openai import OpenAIClient
-from app.adapters.market.base import MarketDataProvider, PriceSeriesProvider
-from app.adapters.market.mock import MockMarketDataProvider, MockPriceSeriesProvider
+from app.adapters.market.base import (
+    IndexQuoteProvider,
+    MarketDataProvider,
+    PriceSeriesProvider,
+)
+from app.adapters.market.mock import (
+    MockIndexQuoteProvider,
+    MockMarketDataProvider,
+    MockPriceSeriesProvider,
+)
 from app.adapters.news.base import NewsAdapter
 from app.adapters.news.mock import MockNewsAdapter
 from app.adapters.portfolio.base import PortfolioProvider
@@ -23,6 +31,12 @@ def get_market_provider() -> MarketDataProvider:
 def get_price_series_provider() -> PriceSeriesProvider:
     if settings.MARKET_PROVIDER == "mock":
         return MockPriceSeriesProvider()
+    raise NotImplementedError("market real provider 미구현")
+
+
+def get_index_quote_provider() -> IndexQuoteProvider:
+    if settings.MARKET_PROVIDER == "mock":
+        return MockIndexQuoteProvider()
     raise NotImplementedError("market real provider 미구현")
 
 
