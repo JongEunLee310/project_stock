@@ -16,6 +16,12 @@ class AssetRepository:
         stmt = select(Asset).where(Asset.symbol == symbol, Asset.market == market)
         return self.db.scalars(stmt).first()
 
+    def list_by_ids(self, asset_ids: list[int]) -> list[Asset]:
+        if not asset_ids:
+            return []
+        stmt = select(Asset).where(Asset.id.in_(asset_ids)).order_by(Asset.id)
+        return list(self.db.scalars(stmt).all())
+
     def list_all(
         self,
         is_active: bool | None = None,

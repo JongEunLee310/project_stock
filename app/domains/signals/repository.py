@@ -73,6 +73,25 @@ class SignalRepository:
         )
         return int(self.db.scalar(stmt) or 0)
 
+    def active_signal_types_by_asset(
+        self,
+        asset_ids: list[int],
+    ) -> dict[int, set[str]]:
+        if not asset_ids:
+            return {}
+        stmt = (
+            select(Signal.asset_id, Signal.signal_type)
+            .where(
+                Signal.asset_id.in_(asset_ids),
+                self._active_clause(),
+            )
+            .distinct()
+        )
+        active_types: dict[int, set[str]] = {}
+        for asset_id, signal_type in self.db.execute(stmt):
+            active_types.setdefault(asset_id, set()).add(signal_type)
+        return active_types
+
     def exists_active(
         self,
         asset_id: int,

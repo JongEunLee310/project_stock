@@ -12,7 +12,7 @@ from app.domains.news.model import NewsItem
 from app.domains.signals.repository import SignalRepository
 from app.domains.signals.schema import SignalCreate
 from app.domains.signals.time import is_expired_at
-from app.domains.signals.types import SignalType
+from app.domains.signals.types import SignalType, resolve_watchlist_status
 from app.domains.theses.model import InvestmentThesis
 from app.domains.users.model import User
 from tests.conftest import api_data, api_meta, set_current_user
@@ -345,3 +345,87 @@ def test_signal_repository_exists_active_ignores_expired_rows(db: Session) -> No
     )
 
     assert repo.exists_active(asset.id, SignalType.RISK_ALERT.value, news_item.id) is True
+
+
+def test_signal_repository_active_signal_types_by_asset_groups_active_types(
+    db: Session,
+) -> None:
+    first_asset = create_db_asset(db)
+    second_asset = Asset(symbol="MSFT", name="Microsoft Corp.", market="NASDAQ")
+    db.add(second_asset)
+    db.commit()
+    db.refresh(second_asset)
+    repo = SignalRepository(db)
+    expired_at = datetime.now(timezone.utc) - timedelta(days=1)
+    repo.create(
+        SignalCreate(
+            asset_id=first_asset.id,
+            signal_type=SignalType.WATCH,
+            score=70,
+            reason="Watch active signal.",
+        )
+    )
+    repo.create(
+        SignalCreate(
+            asset_id=first_asset.id,
+            signal_type=SignalType.RISK_ALERT,
+            score=90,
+            reason="Risk active signal.",
+        )
+    )
+    repo.create(
+        SignalCreate(
+            asset_id=first_asset.id,
+            signal_type=SignalType.SELL_REVIEW,
+            score=75,
+            reason="Expired signal.",
+            expires_at=expired_at,
+        )
+    )
+    repo.create(
+        SignalCreate(
+            asset_id=second_asset.id,
+            signal_type=SignalType.BUY_CANDIDATE,
+            score=80,
+            reason="Buy candidate active signal.",
+        )
+    )
+
+    result = repo.active_signal_types_by_asset([first_asset.id, second_asset.id])
+
+    assert result == {
+        first_asset.id: {SignalType.WATCH.value, SignalType.RISK_ALERT.value},
+        second_asset.id: {SignalType.BUY_CANDIDATE.value},
+    }
+
+
+def test_signal_repository_active_signal_types_by_asset_returns_empty_for_empty_input(
+    db: Session,
+) -> None:
+    assert SignalRepository(db).active_signal_types_by_asset([]) == {}
+
+
+@pytest.mark.parametrize(
+    ("active_types", "expected"),
+    [
+        ({SignalType.WATCH.value}, SignalType.WATCH.value),
+        (
+            {SignalType.WATCH.value, SignalType.RISK_ALERT.value},
+            SignalType.RISK_ALERT.value,
+        ),
+        (
+            {SignalType.OVERHEATED.value, SignalType.SELL_REVIEW.value},
+            SignalType.SELL_REVIEW.value,
+        ),
+        (
+            {SignalType.BUY_CANDIDATE.value, SignalType.THESIS_BROKEN.value},
+            SignalType.THESIS_BROKEN.value,
+        ),
+        (set(), "NORMAL"),
+    ],
+)
+def test_resolve_watchlist_status_uses_signal_priority(
+    active_types: set[str],
+    expected: str,
+) -> None:
+    assert resolve_watchlist_status(active_types) == expected
