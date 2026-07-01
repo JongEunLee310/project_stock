@@ -15,12 +15,14 @@ from app.adapters.llm.privacy import (
     PortfolioConcentrationSnapshot,
     PortfolioBriefingSnapshot,
     PrivacyGate,
+    WatchlistObservationSnapshot,
     to_dashboard_snapshot,
     to_briefing_snapshot,
     to_concentration_snapshot,
+    to_watchlist_observation_snapshot,
 )
 from app.adapters.llm.router import LLMRouter, TaskRoute
-from app.adapters.llm.schema import BriefingResult
+from app.adapters.llm.schema import BriefingResult, ObservationItem, ObservationsResult
 from app.adapters.llm.types import (
     CachePolicy,
     LLMRequest,
@@ -51,6 +53,8 @@ __all__ = [
     "LocalLLMProvider",
     "MockLLMClient",
     "OpenAIClient",
+    "ObservationItem",
+    "ObservationsResult",
     "PortfolioBriefingSnapshot",
     "PortfolioConcentrationSnapshot",
     "PrivacyGate",
@@ -59,7 +63,9 @@ __all__ = [
     "TaskRoute",
     "TokenUsage",
     "ValidationStatus",
+    "WatchlistObservationSnapshot",
     "to_dashboard_snapshot",
     "to_briefing_snapshot",
     "to_concentration_snapshot",
+    "to_watchlist_observation_snapshot",
 ]

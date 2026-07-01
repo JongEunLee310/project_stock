@@ -69,3 +69,14 @@ class WatchlistSummaryResponse(BaseModel):
     total_count: int
     risk_increasing_count: int
     recent_items: list[RecentWatchlistItemResponse]
+
+
+class WatchlistObservationItemResponse(BaseModel):
+    symbol: str
+    note: str
+
+
+class WatchlistObservationsResponse(BaseModel):
+    summary: str
+    items: list[WatchlistObservationItemResponse]
+    generated_at: UtcDatetime

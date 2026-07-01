@@ -216,6 +216,17 @@ MARKET_INDEX_QUOTE_CONTRACT: Contract = {
     "reference_at": str,
 }
 
+WATCHLIST_OBSERVATIONS_CONTRACT: Contract = {
+    "summary": str,
+    "items": list,
+    "generated_at": str,
+}
+
+WATCHLIST_OBSERVATION_ITEM_CONTRACT: Contract = {
+    "symbol": str,
+    "note": str,
+}
+
 TREND_SERIES_CONTRACT: Contract = {
     "key": str,
     "data": list,
@@ -522,6 +533,23 @@ def test_market_index_quote_response_contract(client: TestClient) -> None:
     assert_contract(data[0], MARKET_INDEX_QUOTE_CONTRACT)
 
 
+def test_watchlist_observations_response_contract(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.core.config.settings.LLM_PROVIDER", "mock")
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+
+    response = client.get(f"/api/v1/watchlists/{watchlist['id']}/observations")
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, WATCHLIST_OBSERVATIONS_CONTRACT)
+    assert_contract(data["items"][0], WATCHLIST_OBSERVATION_ITEM_CONTRACT)
+
+
 def test_alert_candidate_list_response_contract(client: TestClient) -> None:
     create_alert_candidate(1)
     set_current_user(1)
@@ -567,6 +595,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
     expected_paths = {
         "/api/v1/watchlists",
         "/api/v1/watchlists/{watchlist_id}/items",
+        "/api/v1/watchlists/{watchlist_id}/observations",
         "/api/v1/signals",
         "/api/v1/signals/{signal_id}",
         "/api/v1/assets/{asset_id}/detail",
@@ -588,6 +617,8 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "PageMeta",
         "WatchlistResponse",
         "WatchlistItemResponse",
+        "WatchlistObservationsResponse",
+        "WatchlistObservationItemResponse",
         "SignalResponse",
         "AssetDetailResponse",
         "ResearchSummaryResponse",

@@ -4,15 +4,18 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
+from app.adapters.factory import get_llm_gateway
 from app.core.pagination import PaginationParams, SortParams, sort_param
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.users.model import User
+from app.domains.watchlists.observations_service import WatchlistObservationsService
 from app.domains.watchlists.schema import (
     WatchlistCreate,
     WatchlistItemCreate,
     WatchlistItemExpandedResponse,
     WatchlistItemResponse,
+    WatchlistObservationsResponse,
     WatchlistResponse,
     WatchlistSummaryResponse,
 )
@@ -137,6 +140,25 @@ def get_watchlist_summary(
             watchlist_id,
             current_user.id,
             recent_limit=recent_limit,
+        )
+    )
+
+
+@router.get(
+    "/{watchlist_id}/observations",
+    response_model=ApiResponse[WatchlistObservationsResponse],
+    summary="Generate watchlist observations",
+    description="Generate AI observation notes for a watchlist owned by the authenticated user.",
+)
+def get_watchlist_observations(
+    watchlist_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[WatchlistObservationsResponse]:
+    return success(
+        WatchlistObservationsService(db, get_llm_gateway()).generate(
+            watchlist_id,
+            current_user.id,
         )
     )
 
