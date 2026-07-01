@@ -3,6 +3,8 @@ from decimal import Decimal
 from hashlib import sha256
 
 from app.adapters.market.base import (
+    IndexQuoteProvider,
+    IndexQuoteResult,
     MarketDataProvider,
     PriceBarResult,
     PriceSeriesProvider,
@@ -16,6 +18,13 @@ _RANGE_COUNTS = {
     "3M": 66,
     "6M": 132,
     "1Y": 252,
+}
+MARKET_INDEX_SYMBOLS = ["SPX", "IXIC", "KOSPI", "VIX"]
+_INDEX_NAMES = {
+    "SPX": "S&P 500",
+    "IXIC": "NASDAQ Composite",
+    "KOSPI": "KOSPI",
+    "VIX": "VIX",
 }
 _SAMPLE_QUOTES: dict[str, QuoteResult] = {
     "AAPL": QuoteResult(
@@ -114,6 +123,11 @@ class MockPriceSeriesProvider(PriceSeriesProvider):
         return bars
 
 
+class MockIndexQuoteProvider(IndexQuoteProvider):
+    def get_quotes(self, symbols: list[str]) -> list[IndexQuoteResult]:
+        return [_index_quote(symbol) for symbol in symbols]
+
+
 def _fallback_quote(symbol: str) -> QuoteResult:
     normalized_symbol = symbol.upper()
     seed = sum(ord(character) for character in normalized_symbol)
@@ -128,6 +142,22 @@ def _fallback_quote(symbol: str) -> QuoteResult:
         change_percent=Decimal("1.00"),
         currency="USD",
         as_of=_AS_OF,
+    )
+
+
+def _index_quote(symbol: str) -> IndexQuoteResult:
+    normalized_symbol = symbol.upper()
+    seed = _stable_seed(f"index:{normalized_symbol}")
+    value = _money(Decimal(seed % 900_000 + 1_000) / Decimal("100"))
+    change_percent = _money(
+        Decimal((seed // 17) % 1000 - 500) / Decimal("100")
+    )
+    return IndexQuoteResult(
+        symbol=normalized_symbol,
+        name=_INDEX_NAMES.get(normalized_symbol, f"{normalized_symbol} Index"),
+        value=value,
+        change_percent=change_percent,
+        reference_at=_AS_OF,
     )
 
 

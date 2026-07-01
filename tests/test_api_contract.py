@@ -208,6 +208,14 @@ DASHBOARD_TREND_SERIES_CONTRACT: Contract = {
     "series": list,
 }
 
+MARKET_INDEX_QUOTE_CONTRACT: Contract = {
+    "symbol": str,
+    "name": str,
+    "value": str,
+    "change_percent": str,
+    "reference_at": str,
+}
+
 TREND_SERIES_CONTRACT: Contract = {
     "key": str,
     "data": list,
@@ -504,6 +512,16 @@ def test_dashboard_trends_response_contract(client: TestClient) -> None:
             assert_contract(point, TREND_DATA_POINT_CONTRACT)
 
 
+def test_market_index_quote_response_contract(client: TestClient) -> None:
+    response = client.get("/api/v1/market/indices")
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 4
+    assert_contract(data[0], MARKET_INDEX_QUOTE_CONTRACT)
+
+
 def test_alert_candidate_list_response_contract(client: TestClient) -> None:
     create_alert_candidate(1)
     set_current_user(1)
@@ -557,6 +575,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/portfolios/{portfolio_id}/briefing",
         "/api/v1/dashboard/briefing",
         "/api/v1/dashboard/trends",
+        "/api/v1/market/indices",
         "/api/v1/alert-candidates",
         "/api/v1/decision-logs",
         "/api/v1/decision-logs/stats",
@@ -577,6 +596,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "PortfolioBriefingResponse",
         "DashboardBriefingResponse",
         "DashboardTrendSeriesResponse",
+        "MarketIndexQuoteResponse",
         "TrendSeries",
         "TrendDataPoint",
         "PositionWeight",

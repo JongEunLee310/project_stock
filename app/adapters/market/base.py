@@ -54,3 +54,18 @@ class PriceSeriesProvider(ABC):
         adjusted: bool,
     ) -> list[PriceBarResult]:
         """Return deterministic daily OHLCV bars for the given symbol and market."""
+
+
+@dataclass(frozen=True)
+class IndexQuoteResult:
+    symbol: str
+    name: str
+    value: Decimal
+    change_percent: Decimal
+    reference_at: datetime
+
+
+class IndexQuoteProvider(ABC):
+    @abstractmethod
+    def get_quotes(self, symbols: list[str]) -> list[IndexQuoteResult]:
+        """Return current market index quotes for the given symbols."""
