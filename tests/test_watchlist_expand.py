@@ -67,7 +67,9 @@ def test_list_items_with_expand_asset_includes_asset_object(client: TestClient) 
     brief = item["asset"]
     assert brief is not None
     assert brief["symbol"] == "AAPL"
+    assert brief["market"] == asset["market"]
     assert "name" in brief
+    assert "market" in brief
     assert "price" in brief
     assert "change_percent" in brief
     assert "sector" in brief

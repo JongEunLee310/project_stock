@@ -39,6 +39,7 @@ class WatchlistItemResponse(BaseModel):
 
 class AssetBriefResponse(BaseModel):
     symbol: str
+    market: str
     name: str
     price: str
     change_percent: str

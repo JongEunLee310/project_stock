@@ -75,6 +75,7 @@ class SignalService:
                 quote = quotes.get(asset.symbol)
                 asset_brief = AssetBriefResponse(
                     symbol=asset.symbol,
+                    market=asset.market,
                     name=asset.name,
                     price=str(quote.price) if quote is not None else "0",
                     change_percent=str(quote.change_percent) if quote is not None else "0",

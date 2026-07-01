@@ -146,6 +146,7 @@ WATCHLIST_ITEM_CONTRACT: Contract = {
 
 ASSET_BRIEF_CONTRACT: Contract = {
     "symbol": str,
+    "market": str,
     "name": str,
     "price": str,
     "change_percent": str,
