@@ -163,6 +163,7 @@ def test_list_alert_candidates_expand_asset_includes_asset_object(
     for item in data:
         brief = item["asset"]
         assert brief["symbol"] == "AAPL"
+        assert brief["market"] == asset["market"]
         assert brief["name"] == "AAPL Inc."
         assert brief["price"] == "195.64"
         assert brief["change_percent"] == "1.26"
