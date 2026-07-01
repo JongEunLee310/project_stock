@@ -6,3 +6,13 @@ class BriefingResult(BaseModel):
     body: str
     risk_headline: str | None = None
     risk_checks: list[str]
+
+
+class ObservationItem(BaseModel):
+    symbol: str
+    note: str
+
+
+class ObservationsResult(BaseModel):
+    summary: str
+    items: list[ObservationItem]

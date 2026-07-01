@@ -24,6 +24,10 @@ DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
         "risk_headline": "Mock risk checks",
         "risk_checks": ["Mock risk check"],
     },
+    "ObservationsResult": {
+        "summary": "Mock watchlist observation summary.",
+        "items": [{"symbol": "AAPL", "note": "Mock watchlist observation note."}],
+    },
 }
 
 

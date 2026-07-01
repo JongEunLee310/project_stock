@@ -86,6 +86,14 @@ class DashboardBriefingSnapshot(CloudSafePayload):
     watchlist_highlights: list[WatchlistHighlight]
 
 
+class WatchlistObservationSnapshot(CloudSafePayload):
+    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
+
+    watchlist_id: int
+    item_count: int
+    items: list[WatchlistHighlight]
+
+
 def to_concentration_snapshot(
     portfolio: Portfolio,
     positions: Sequence[Position],
@@ -164,6 +172,17 @@ def to_dashboard_snapshot(
         review_signal_count=summary.review_signal_count,
         cash_weight=Decimal(summary.cash_weight) if summary.cash_weight is not None else None,
         watchlist_highlights=list(highlights),
+    )
+
+
+def to_watchlist_observation_snapshot(
+    watchlist_id: int,
+    items: Sequence[WatchlistHighlight],
+) -> WatchlistObservationSnapshot:
+    return WatchlistObservationSnapshot(
+        watchlist_id=watchlist_id,
+        item_count=len(items),
+        items=list(items),
     )
 
 
