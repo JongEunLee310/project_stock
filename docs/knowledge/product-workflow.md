@@ -7,15 +7,18 @@
 
 ## 큰 그림
 
-투자 리서치/감시 흐름은 두 갈래로 나뉜다.
+투자 리서치/감시 흐름은 세 갈래로 나뉜다.
 
-- **백그라운드 분석 흐름**: 뉴스를 수집·분석해 리포트와 Signal/Alert를 생성한다.
+- **데이터 수집 흐름**: 외부 provider에서 가격·뉴스 원시 데이터를 받아 원본 아카이브·검증을
+  거쳐 정규화 테이블에 적재한다. 이후 분석 흐름과 (후속) LLM 입력의 재료가 된다.
+- **백그라운드 분석 흐름**: 수집된 뉴스를 분석해 리포트와 Signal/Alert를 생성한다.
   RQ 워커 잡 또는 스케줄러가 트리거한다.
 - **사용자 요청 흐름**: 사용자가 API로 포트폴리오 점검, 매수 전 체크, 알림/후보
   검토 등 판단 보조 기능을 직접 호출한다.
 
-provider(`market`/`news`/`disclosure`/`portfolio`)는 `mock` 또는 `real` 모드로
-주입되며, 로컬·테스트 기본값은 deterministic mock이다.
+provider(`market`/`news`/`disclosure`/`portfolio`)는 모드별로 주입되며, 로컬·테스트 기본값은
+deterministic mock이다. `market`은 `mock` / `yfinance`(일봉 실수집) / `real`을 지원하고,
+나머지는 `mock` / `real`이다.
 
 ```mermaid
 flowchart LR
@@ -101,6 +104,25 @@ flowchart TD
 분석 파이프라인과 달리 요약·시그널 단계 없이 수집만 수행한다. 두 잡 모두 JobRun으로
 실행을 기록한다(아래).
 
+## 가격 수집 잡
+
+`collect_prices_job`(RQ 잡)은 일봉 가격을 실수집한다. `MARKET_PROVIDER=yfinance`일 때
+yfinance 단일 provider가 시장 suffix(`.KS`/`.KQ`)로 미국·한국을 모두 커버한다. 처리 순서:
+
+1. **universe 산출**: 인자로 심볼을 주지 않으면 관심종목(watchlist) + 보유종목(portfolio)의
+   `(symbol, market)` 합집합을 대상으로 삼는다.
+2. **수집**: provider로 일봉을 받는다. 미지 market은 fail-closed로 건너뛴다(경고).
+3. **원본 아카이브**: 정규화 전 원본 payload를 `raw_prices`에 저장한다. `payload_hash`가
+   이미 있으면 재저장하지 않는다(중복 스킵).
+4. **검증**: 결측·미래 날짜 bar는 drop, 통화 불일치·이상치(전일 대비 수익률 절대값이 임계
+   초과)는 경고하되 유지한다.
+5. **적재**: 검증 통과분을 `prices`에 upsert한다. unique 제약(symbol·market·interval·
+   timestamp)으로 중복을 흡수해 재수집이 멱등이다.
+
+종목 단위 실패는 격리되어 다음 종목으로 넘어가고, 잡 전체는 JobRun으로 추적한다. 이 잡은
+LLM을 호출하지 않는다 — 산출물은 `prices`·`raw_prices` 적재까지이며, Feature 계산·Context
+조립·LLM 입력 패키징은 후속 범위다.
+
 ## 스케줄러
 
 스케줄러는 현재 스켈레톤이다. 레지스트리에 등록된 잡(`mock_collection`, cron
@@ -149,3 +171,4 @@ stateDiagram-v2
 - [../backend-v0.2.md](../backend-v0.2.md): 로컬 실행·provider 전환·API 호출 가이드.
 - [../designs/019-watchlist-analysis-flow.md](../designs/019-watchlist-analysis-flow.md): 분석 플로우 설계.
 - [../designs/020-rule-engine.md](../designs/020-rule-engine.md): 룰 엔진 설계.
+- [../designs/065-price-ingestion-pipeline.md](../designs/065-price-ingestion-pipeline.md): 가격 실수집 파이프라인 설계.

@@ -54,7 +54,12 @@
 - **Portfolio / Position**: 포트폴리오와 보유 종목(수량·평균 매입가·집중도 기준·현금).
 - **Buy Checklist**: 매수 전 점검 항목 묶음과 완료 판정.
 - **Job Run**: 백그라운드 잡 실행 기록(상태·시각·에러).
-- **Provider**: market/news/disclosure/portfolio 외부 연동 어댑터. `mock` 또는 `real`.
+- **Provider**: market/news/disclosure/portfolio 외부 연동 어댑터. `market`은 `mock` /
+  `yfinance` / `real`, 나머지는 `mock` / `real`.
+- **Universe**: 가격 수집 대상 종목 집합. 관심종목(watchlist) + 보유종목(portfolio)의
+  `(symbol, market)` 합집합.
+- **Price Bar / Raw Price**: `prices`는 정규화된 일봉(OHLCV), `raw_prices`는 정규화 전 원본
+  payload 아카이브(`payload_hash`로 중복 스킵). 원본은 재처리·감사용으로 분리 저장한다.
 
 ## Forbidden Misunderstandings
 
@@ -63,7 +68,10 @@
 - Alert와 Alert Candidate는 별개 도메인이다. Candidate는 발송 전 검토 단계이고
   기존 `alerts` 도메인을 대체하지 않는다.
 - provider `real` 값은 설정 타입상 허용되지만 현재 실제 구현이 없는 provider는
-  `NotImplementedError`로 실패한다. 로컬·테스트 기본값은 deterministic mock이다.
+  `NotImplementedError`로 실패한다. 로컬·테스트 기본값은 deterministic mock이다. 예외로
+  `market`은 `yfinance` 실 구현이 있어 일봉을 실수집한다.
+- LLM은 수집 데이터를 직접 뒤지지 않는다. 백엔드가 수집·정규화·검증한 데이터를 재료로
+  삼으며, Feature 계산·Context 조립을 거쳐 마지막 단계에서만 LLM 입력이 만들어진다(후속 범위).
 - 집중도 비중은 시세 기반이다. 원가 기준 비중(`cost_weight`)과 혼동하지 않는다.
 - 패키지 버전(`pyproject.toml`의 `0.1.0`)과 문서상 마일스톤(v0.2)은 별개다.
 
@@ -86,3 +94,9 @@ ADR 수준이 아닌 프로젝트 정책 결정만 기록한다.
   Decisions, PR #76)
 - **Health 응답 envelope 미사용**: `/health`, `/api/v1/health`,
   `/api/v1/health/readiness`는 모니터링 호환을 위해 공통 envelope를 쓰지 않는다.
+- **가격 수집 원본 분리·검증·fail-closed 매핑**: 정규화 전 원본을 `raw_prices`에 아카이브해
+  재처리·감사 가능성을 확보하고, 정규화 데이터는 `prices`에 upsert(멱등)한다. 검증은
+  결측·미래 날짜 bar를 drop하고 통화 불일치·이상치는 경고하되 유지한다. 심볼→시장 매핑은
+  화이트리스트 기반이라 미지 market은 조용히 통과시키지 않고 fail-closed로 건너뛴다.
+  종목 단위 실패는 격리해 잡 전체를 중단시키지 않는다. 데이터 신뢰도 등급·자동 차단·스케줄
+  주기 확정은 후속 정책이다. (`docs/designs/065-price-ingestion-pipeline.md`, PR #169)
