@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.adapters.news.base import NewsAdapterResult
+from app.domains.ingestion.schema import ProcessingStatus
+from app.domains.raw_news.model import RawNewsEvent
 from app.domains.raw_news.repository import RawNewsEventRepository
 from app.domains.raw_news.schema import RawNewsEventCreate
 from app.domains.raw_news.service import RawNewsService
@@ -63,3 +65,41 @@ def test_save_with_symbol_tags_raw_news_event(db: Session) -> None:
     assert event is not None
     assert event.symbol == "AAPL"
     assert event.market == "NASDAQ"
+
+
+def test_raw_news_service_defaults_processing_status_to_fetched(db: Session) -> None:
+    result = NewsAdapterResult(
+        title="Apple launches new chip",
+        url="https://example.com/news/apple-chip-status",
+        body="Apple supplier update",
+        source="Example News",
+        published_at=datetime(2026, 6, 18, tzinfo=timezone.utc),
+        payload={"fixture": True},
+    )
+
+    event = RawNewsService(db).save_with_symbol(result, "AAPL", "NASDAQ")
+
+    assert event is not None
+    assert event.processing_status == ProcessingStatus.FETCHED.value
+
+
+def test_raw_news_processing_status_accepts_pipeline_states(db: Session) -> None:
+    normalized_event = RawNewsEvent(
+        title="Normalized event",
+        url="https://example.com/news/normalized",
+        source="Example News",
+        processing_status=ProcessingStatus.NORMALIZED.value,
+    )
+    failed_event = RawNewsEvent(
+        title="Failed event",
+        url="https://example.com/news/failed",
+        source="Example News",
+        processing_status=ProcessingStatus.FAILED.value,
+    )
+    db.add_all([normalized_event, failed_event])
+    db.commit()
+
+    statuses = {event.processing_status for event in (normalized_event, failed_event)}
+
+    assert ProcessingStatus.NORMALIZED.value in statuses
+    assert ProcessingStatus.FAILED.value in statuses

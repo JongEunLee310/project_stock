@@ -5,6 +5,7 @@ from sqlalchemy import JSON, DateTime, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
+from app.domains.ingestion.schema import ProcessingStatus
 
 
 class RawNewsEvent(Base, TimestampMixin):
@@ -23,5 +24,11 @@ class RawNewsEvent(Base, TimestampMixin):
     )
     collected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+    processing_status: Mapped[str] = mapped_column(
+        String(20),
+        server_default=ProcessingStatus.FETCHED.value,
+        nullable=False,
+        index=True,
     )
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

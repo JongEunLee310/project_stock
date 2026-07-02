@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.adapters.market.base import PriceBarResult, PriceSeriesProvider
 from app.adapters.market.yfinance import YFinancePriceProvider, to_yfinance_ticker
 from app.domains.assets.model import Asset
+from app.domains.ingestion.schema import ProcessingStatus
 from app.domains.jobs.model import JobRun
 from app.domains.portfolios.model import Portfolio, Position
 from app.domains.prices.ingestion_service import PriceIngestionService
@@ -153,6 +154,47 @@ def test_raw_price_service_skips_duplicate_payload(db: Session) -> None:
     assert first is not None
     assert second is None
     assert db.scalar(select(func.count()).select_from(RawPrice)) == 1
+
+
+def test_raw_price_service_defaults_processing_status_to_fetched(
+    db: Session,
+) -> None:
+    raw_price = RawPriceService(db).save_raw(
+        "AAPL",
+        "NASDAQ",
+        {"ticker": "AAPL", "rows": [{"close": "100"}]},
+    )
+
+    assert raw_price is not None
+    assert raw_price.processing_status == ProcessingStatus.FETCHED.value
+
+
+def test_raw_price_processing_status_accepts_pipeline_states(db: Session) -> None:
+    raw_price = RawPrice(
+        symbol="AAPL",
+        market="NASDAQ",
+        interval="1d",
+        source="fixture",
+        payload={"ticker": "AAPL"},
+        payload_hash="raw-price-normalized",
+        processing_status=ProcessingStatus.NORMALIZED.value,
+    )
+    failed_raw_price = RawPrice(
+        symbol="MSFT",
+        market="NASDAQ",
+        interval="1d",
+        source="fixture",
+        payload={"ticker": "MSFT"},
+        payload_hash="raw-price-failed",
+        processing_status=ProcessingStatus.FAILED.value,
+    )
+    db.add_all([raw_price, failed_raw_price])
+    db.commit()
+
+    statuses = set(db.scalars(select(RawPrice.processing_status)).all())
+
+    assert ProcessingStatus.NORMALIZED.value in statuses
+    assert ProcessingStatus.FAILED.value in statuses
 
 
 def test_price_universe_resolver_deduplicates_watchlist_and_portfolio(

@@ -5,6 +5,7 @@ from sqlalchemy import JSON, DateTime, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
+from app.domains.ingestion.schema import ProcessingStatus
 
 
 class RawPrice(Base, TimestampMixin):
@@ -20,6 +21,12 @@ class RawPrice(Base, TimestampMixin):
     source: Mapped[str] = mapped_column(String(30))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
     payload_hash: Mapped[str] = mapped_column(String(64))
+    processing_status: Mapped[str] = mapped_column(
+        String(20),
+        server_default=ProcessingStatus.FETCHED.value,
+        nullable=False,
+        index=True,
+    )
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
