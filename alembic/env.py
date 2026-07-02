@@ -16,6 +16,7 @@ import app.domains.news.model  # noqa: F401 — registers NewsItem model for aut
 import app.domains.portfolios.model  # noqa: F401 — registers Portfolio models for autogenerate
 import app.domains.prices.model  # noqa: F401 — registers price bar model
 import app.domains.raw_news.model  # noqa: F401 — registers RawNewsEvent model for autogenerate
+import app.domains.raw_prices.model  # noqa: F401 — registers RawPrice model
 import app.domains.reports.model  # noqa: F401 — registers ResearchReport model for autogenerate
 import app.domains.signals.model  # noqa: F401 — registers Signal model for autogenerate
 import app.domains.theses.conflict_model  # noqa: F401 — registers thesis conflict model

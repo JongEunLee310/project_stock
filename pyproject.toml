@@ -19,6 +19,7 @@ dependencies = [
     "rq>=1.16.0",
     "sqlalchemy>=2.0.51",
     "uvicorn[standard]>=0.30.0",
+    "yfinance>=1.5.1",
 ]
 
 [dependency-groups]

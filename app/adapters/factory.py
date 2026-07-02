@@ -15,6 +15,7 @@ from app.adapters.market.mock import (
     MockMarketDataProvider,
     MockPriceSeriesProvider,
 )
+from app.adapters.market.yfinance import YFinancePriceProvider
 from app.adapters.news.base import NewsAdapter
 from app.adapters.news.mock import MockNewsAdapter
 from app.adapters.portfolio.base import PortfolioProvider
@@ -31,6 +32,8 @@ def get_market_provider() -> MarketDataProvider:
 def get_price_series_provider() -> PriceSeriesProvider:
     if settings.MARKET_PROVIDER == "mock":
         return MockPriceSeriesProvider()
+    if settings.MARKET_PROVIDER == "yfinance":
+        return YFinancePriceProvider()
     raise NotImplementedError("market real provider 미구현")
 
 

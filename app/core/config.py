@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     LLM_TIMEOUT_SECONDS: int = 30
     LLM_PROVIDER: Literal["cloud", "local", "mock"] = "cloud"
-    MARKET_PROVIDER: Literal["mock", "real"] = "mock"
+    MARKET_PROVIDER: Literal["mock", "real", "yfinance"] = "mock"
     NEWS_PROVIDER: Literal["mock", "real"] = "mock"
     DISCLOSURE_PROVIDER: Literal["mock", "real"] = "mock"
     PORTFOLIO_PROVIDER: Literal["mock", "real"] = "mock"

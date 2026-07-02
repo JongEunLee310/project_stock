@@ -9,6 +9,7 @@ from app.adapters.factory import (
     get_price_series_provider,
 )
 from app.adapters.market.mock import MockMarketDataProvider, MockPriceSeriesProvider
+from app.adapters.market.yfinance import YFinancePriceProvider
 from app.adapters.news.mock import MockNewsAdapter
 from app.adapters.portfolio.mock import MockPortfolioProvider
 from app.core.config import settings
@@ -71,6 +72,14 @@ def test_factories_return_mock_providers(monkeypatch: pytest.MonkeyPatch) -> Non
     assert isinstance(get_news_adapter(), MockNewsAdapter)
     assert isinstance(get_disclosure_provider(), MockDisclosureProvider)
     assert isinstance(get_portfolio_provider(), MockPortfolioProvider)
+
+
+def test_price_series_factory_returns_yfinance_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "MARKET_PROVIDER", "yfinance")
+
+    assert isinstance(get_price_series_provider(), YFinancePriceProvider)
 
 
 @pytest.mark.parametrize(
