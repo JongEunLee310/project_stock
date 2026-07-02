@@ -55,11 +55,15 @@
 - **Buy Checklist**: 매수 전 점검 항목 묶음과 완료 판정.
 - **Job Run**: 백그라운드 잡 실행 기록(상태·시각·에러).
 - **Provider**: market/news/disclosure/portfolio 외부 연동 어댑터. `market`은 `mock` /
-  `yfinance` / `real`, 나머지는 `mock` / `real`.
-- **Universe**: 가격 수집 대상 종목 집합. 관심종목(watchlist) + 보유종목(portfolio)의
-  `(symbol, market)` 합집합.
+  `yfinance` / `real`, `news`는 `mock` / `rss` / `real`, 나머지는 `mock` / `real`.
+- **Universe**: 데이터 수집 대상 종목 집합. 관심종목(watchlist) + 보유종목(portfolio)의
+  `(symbol, market)` 합집합이며, 가격·뉴스 수집 잡이 공통으로 쓴다. 뉴스 수집은 회사명 쿼리를
+  위해 대상별 `name`을 함께 싣는다.
 - **Price Bar / Raw Price**: `prices`는 정규화된 일봉(OHLCV), `raw_prices`는 정규화 전 원본
   payload 아카이브(`payload_hash`로 중복 스킵). 원본은 재처리·감사용으로 분리 저장한다.
+- **Raw News Event**: `raw_news_events`는 정규화 전 원본 뉴스 아카이브(`url` unique로 중복
+  스킵). 수집 잡이 붙인 `symbol`·`market` 태그(nullable)로 종목에 귀속되며, 정규화(News Item)
+  전 단계다. 분석 파이프라인 경로에서 저장되는 이벤트는 태그가 null이다.
 
 ## Forbidden Misunderstandings
 
@@ -69,7 +73,7 @@
   기존 `alerts` 도메인을 대체하지 않는다.
 - provider `real` 값은 설정 타입상 허용되지만 현재 실제 구현이 없는 provider는
   `NotImplementedError`로 실패한다. 로컬·테스트 기본값은 deterministic mock이다. 예외로
-  `market`은 `yfinance` 실 구현이 있어 일봉을 실수집한다.
+  `market`은 `yfinance`, `news`는 `rss` 실 구현이 있어 각각 일봉·원시 뉴스를 실수집한다.
 - LLM은 수집 데이터를 직접 뒤지지 않는다. 백엔드가 수집·정규화·검증한 데이터를 재료로
   삼으며, Feature 계산·Context 조립을 거쳐 마지막 단계에서만 LLM 입력이 만들어진다(후속 범위).
 - 집중도 비중은 시세 기반이다. 원가 기준 비중(`cost_weight`)과 혼동하지 않는다.
@@ -100,3 +104,9 @@ ADR 수준이 아닌 프로젝트 정책 결정만 기록한다.
   화이트리스트 기반이라 미지 market은 조용히 통과시키지 않고 fail-closed로 건너뛴다.
   종목 단위 실패는 격리해 잡 전체를 중단시키지 않는다. 데이터 신뢰도 등급·자동 차단·스케줄
   주기 확정은 후속 정책이다. (`docs/designs/065-price-ingestion-pipeline.md`, PR #169)
+- **뉴스 수집 회사명 쿼리·종목 태깅·fail-open locale**: 심볼로 직접 거를 수 없는 뉴스는 회사명
+  (`assets.name`)을 쿼리로 삼아 종목별로 RSS를 호출하고, 반환 기사를 대상 `(symbol, market)`에
+  귀속시켜 `raw_news_events`에 태깅 저장한다. market별 locale로 한국·미국을 커버하되 미지
+  market은 fail-open(기본 locale + 경고)으로 수집을 계속한다 — 가격 수집의 fail-closed와
+  대비된다(뉴스는 누락보다 과수집을 허용). 멀티종목 기사는 `url` unique로 first-writer-wins이며
+  다중 귀속은 후속 범위다. (`docs/designs/066-news-ingestion-pipeline.md`, PR #171)
