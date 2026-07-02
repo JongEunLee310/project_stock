@@ -181,6 +181,7 @@ stateDiagram-v2
 ## 관련 문서
 
 - [domain-knowledge.md](domain-knowledge.md): 비즈니스 규칙·도메인 용어·정책 결정.
+- [llm-data-pipeline.md](llm-data-pipeline.md): 외부 데이터→정규화·검증·Feature·ContextBundle→LLM 파이프라인 전체 지침.
 - [../api/frontend-api-spec.md](../api/frontend-api-spec.md): 화면별 API 매핑과 catalog.
 - [../backend-v0.2.md](../backend-v0.2.md): 로컬 실행·provider 전환·API 호출 가이드.
 - [../designs/019-watchlist-analysis-flow.md](../designs/019-watchlist-analysis-flow.md): 분석 플로우 설계.

@@ -10,6 +10,7 @@ This directory stores project workflow knowledge, glossary terms, and project-sp
 - `product-workflow.md` (제품 런타임 흐름)
 - `glossary.md`
 - `domain-knowledge.md`
+- `llm-data-pipeline.md` (LLM 사전 데이터 수집·가공 파이프라인 지침)
 - `template-usage.md`
 - `orchestrator-comparison.md` (오케스트레이터 조합 비교 실측)
 
