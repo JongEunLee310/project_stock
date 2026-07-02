@@ -79,6 +79,17 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     assert settings.CORS_ALLOW_CREDENTIALS is True
 
 
+def test_settings_accept_yfinance_market_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_settings_env(monkeypatch)
+    monkeypatch.setenv("MARKET_PROVIDER", "yfinance")
+
+    settings = _settings_without_env_file()
+
+    assert settings.MARKET_PROVIDER == "yfinance"
+
+
 def test_settings_reject_wildcard_origin_with_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -12,6 +12,9 @@ class PriceBarRepository:
         self.db = db
 
     def upsert_many(self, bars: list[PriceBarResult]) -> None:
+        self.upsert_bars(bars)
+
+    def upsert_bars(self, bars: list[PriceBarResult]) -> int:
         for bar in bars:
             existing = self.get_by_unique_key(
                 symbol=bar.symbol,
@@ -46,6 +49,7 @@ class PriceBarRepository:
             existing.currency = bar.currency
             existing.source = bar.source
         self.db.commit()
+        return len(bars)
 
     def get_by_unique_key(
         self,

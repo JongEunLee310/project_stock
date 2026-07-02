@@ -24,7 +24,7 @@ class DependencyCheck(BaseModel):
 
 
 class ProviderModes(BaseModel):
-    market: Literal["mock", "real"]
+    market: Literal["mock", "real", "yfinance"]
     news: Literal["mock", "real"]
     disclosure: Literal["mock", "real"]
     portfolio: Literal["mock", "real"]
