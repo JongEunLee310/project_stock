@@ -1,18 +1,31 @@
 from app.adapters.factory import get_news_adapter
 from app.db.session import SessionLocal
 from app.domains.jobs.service import JobRunService
-from app.domains.raw_news.service import RawNewsService
+from app.domains.raw_news.ingestion_service import NewsIngestionService
+from app.domains.raw_news.universe import NewsUniverseResolver
 
 
-def collect_news_job(symbols: list[str]) -> None:
+def collect_news_job(symbols: list[str] | None = None) -> None:
     db = SessionLocal()
     job_run_service = JobRunService(db)
     job_run_id: int | None = None
+    targets: list[tuple[str, str, str]] = []
     try:
-        job_run = job_run_service.start("news_collection", {"symbols": symbols})
+        targets = NewsUniverseResolver(db).resolve(symbols)
+        job_run = job_run_service.start(
+            "news_collection",
+            {
+                "symbols": symbols,
+                "targets": [
+                    {"symbol": symbol, "market": market, "name": name}
+                    for symbol, market, name in targets
+                ],
+            },
+        )
         job_run_id = job_run.id
-        RawNewsService(db).collect_and_save(get_news_adapter(), symbols)
+        NewsIngestionService(db).collect_and_save(get_news_adapter(), targets)
         job_run_service.succeed(job_run.id)
+        return None
     except Exception as exc:
         if job_run_id is not None:
             job_run_service.fail(job_run_id, str(exc))

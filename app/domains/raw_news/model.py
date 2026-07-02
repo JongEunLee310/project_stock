@@ -14,6 +14,8 @@ class RawNewsEvent(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(500))
     url: Mapped[str] = mapped_column(String(2048))
+    symbol: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    market: Mapped[str | None] = mapped_column(String(20), nullable=True)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(100))
     published_at: Mapped[datetime | None] = mapped_column(

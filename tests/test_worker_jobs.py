@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
+from app.domains.assets.model import Asset
 from app.domains.jobs.model import JobRun
 from app.domains.raw_news.model import RawNewsEvent
 from app.main import app
@@ -41,25 +42,35 @@ def patch_worker_session(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_collect_news_job_records_success(db: Session) -> None:
+    db.add(Asset(symbol="AAPL", name="Apple Inc.", market="NASDAQ"))
+    db.commit()
+
     collect_news_job(["AAPL"])
 
     job_run = db.scalars(select(JobRun)).one()
     assert job_run.job_type == "news_collection"
     assert job_run.status == "success"
     assert job_run.finished_at is not None
-    assert job_run.metadata_ == {"symbols": ["AAPL"]}
+    assert job_run.metadata_ == {
+        "symbols": ["AAPL"],
+        "targets": [{"symbol": "AAPL", "market": "NASDAQ", "name": "Apple Inc."}],
+    }
 
     raw_news_events = db.scalars(
         select(RawNewsEvent).order_by(RawNewsEvent.url)
     ).all()
     assert len(raw_news_events) == 2
     assert [event.title for event in raw_news_events] == [
-        "AAPL mock news 1",
-        "AAPL mock news 2",
+        "Apple Inc. mock news 1",
+        "Apple Inc. mock news 2",
+    ]
+    assert [(event.symbol, event.market) for event in raw_news_events] == [
+        ("AAPL", "NASDAQ"),
+        ("AAPL", "NASDAQ"),
     ]
     assert [event.payload for event in raw_news_events] == [
-        {"symbol": "AAPL", "index": 1},
-        {"symbol": "AAPL", "index": 2},
+        {"query": "Apple Inc.", "market": "NASDAQ", "index": 1},
+        {"query": "Apple Inc.", "market": "NASDAQ", "index": 2},
     ]
 
 
@@ -67,15 +78,13 @@ def test_collect_news_job_records_failure(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def raise_error(self: object, symbols: list[str]) -> list[Any]:
+    db.add(Asset(symbol="AAPL", name="Apple Inc.", market="NASDAQ"))
+    db.commit()
+
+    def raise_error() -> Any:
         raise RuntimeError("adapter timeout")
 
-    failing_adapter = type(
-        "FailingNewsAdapter",
-        (),
-        {"fetch": raise_error},
-    )()
-    monkeypatch.setattr(news, "get_news_adapter", lambda: failing_adapter)
+    monkeypatch.setattr(news, "get_news_adapter", raise_error)
 
     with pytest.raises(RuntimeError, match="adapter timeout"):
         collect_news_job(["AAPL"])
@@ -83,6 +92,29 @@ def test_collect_news_job_records_failure(
     job_run = db.scalars(select(JobRun)).one()
     assert job_run.status == "failed"
     assert job_run.error_message == "adapter timeout"
+
+
+def test_collect_news_job_records_success_with_target_failure(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingTargetAdapter:
+        def fetch(self, symbols: list[str]) -> list[Any]:
+            return []
+
+        def fetch_query(self, query: str, market: str) -> list[Any]:
+            raise RuntimeError("target timeout")
+
+    db.add(Asset(symbol="AAPL", name="Apple Inc.", market="NASDAQ"))
+    db.commit()
+    monkeypatch.setattr(news, "get_news_adapter", lambda: FailingTargetAdapter())
+
+    collect_news_job(["AAPL"])
+
+    job_run = db.scalars(select(JobRun)).one()
+    assert job_run.status == "success"
+    assert job_run.finished_at is not None
+    assert db.scalars(select(RawNewsEvent)).all() == []
 
 
 def test_enqueue_news_job_api(monkeypatch: pytest.MonkeyPatch) -> None:

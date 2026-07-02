@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     LLM_TIMEOUT_SECONDS: int = 30
     LLM_PROVIDER: Literal["cloud", "local", "mock"] = "cloud"
     MARKET_PROVIDER: Literal["mock", "real", "yfinance"] = "mock"
-    NEWS_PROVIDER: Literal["mock", "real"] = "mock"
+    NEWS_PROVIDER: Literal["mock", "real", "rss"] = "mock"
+    NEWS_QUERY_URL_TEMPLATE: str = (
+        "https://news.google.com/rss/search?q={query}&hl={hl}&gl={gl}&ceid={gl}:{hl}"
+    )
     DISCLOSURE_PROVIDER: Literal["mock", "real"] = "mock"
     PORTFOLIO_PROVIDER: Literal["mock", "real"] = "mock"
     CORS_ORIGINS: Annotated[list[str], NoDecode] = []

@@ -11,6 +11,7 @@ from app.adapters.factory import (
 from app.adapters.market.mock import MockMarketDataProvider, MockPriceSeriesProvider
 from app.adapters.market.yfinance import YFinancePriceProvider
 from app.adapters.news.mock import MockNewsAdapter
+from app.adapters.news.rss import RSSNewsAdapter
 from app.adapters.portfolio.mock import MockPortfolioProvider
 from app.core.config import settings
 
@@ -80,6 +81,20 @@ def test_price_series_factory_returns_yfinance_provider(
     monkeypatch.setattr(settings, "MARKET_PROVIDER", "yfinance")
 
     assert isinstance(get_price_series_provider(), YFinancePriceProvider)
+
+
+def test_news_factory_returns_rss_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "NEWS_PROVIDER", "rss")
+    monkeypatch.setattr(
+        settings,
+        "NEWS_QUERY_URL_TEMPLATE",
+        "https://example.com/rss?q={query}&hl={hl}&gl={gl}",
+    )
+
+    adapter = get_news_adapter()
+
+    assert isinstance(adapter, RSSNewsAdapter)
+    assert adapter.query_url_template == "https://example.com/rss?q={query}&hl={hl}&gl={gl}"
 
 
 @pytest.mark.parametrize(

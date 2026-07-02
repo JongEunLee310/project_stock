@@ -2,8 +2,10 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.adapters.news.base import NewsAdapterResult
 from app.domains.raw_news.repository import RawNewsEventRepository
 from app.domains.raw_news.schema import RawNewsEventCreate
+from app.domains.raw_news.service import RawNewsService
 
 
 def raw_news_payload(url: str = "https://example.com/news/1") -> RawNewsEventCreate:
@@ -44,3 +46,20 @@ def test_collected_at_is_set_automatically(db: Session) -> None:
 
     assert event is not None
     assert event.collected_at is not None
+
+
+def test_save_with_symbol_tags_raw_news_event(db: Session) -> None:
+    result = NewsAdapterResult(
+        title="Apple launches new chip",
+        url="https://example.com/news/apple-chip",
+        body="Apple supplier update",
+        source="Example News",
+        published_at=datetime(2026, 6, 18, tzinfo=timezone.utc),
+        payload={"fixture": True},
+    )
+
+    event = RawNewsService(db).save_with_symbol(result, "AAPL", "NASDAQ")
+
+    assert event is not None
+    assert event.symbol == "AAPL"
+    assert event.market == "NASDAQ"
