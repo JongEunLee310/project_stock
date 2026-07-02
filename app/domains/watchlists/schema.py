@@ -72,6 +72,21 @@ class WatchlistSummaryResponse(BaseModel):
     recent_items: list[RecentWatchlistItemResponse]
 
 
+class WatchlistSummaryTrendDataPoint(BaseModel):
+    date: str
+    count: int
+
+
+class WatchlistSummaryTrendSeries(BaseModel):
+    key: str
+    data: list[WatchlistSummaryTrendDataPoint]
+
+
+class WatchlistSummaryTrendResponse(BaseModel):
+    days: int
+    series: list[WatchlistSummaryTrendSeries]
+
+
 class WatchlistObservationItemResponse(BaseModel):
     symbol: str
     note: str

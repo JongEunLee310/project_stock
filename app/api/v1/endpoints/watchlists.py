@@ -18,8 +18,10 @@ from app.domains.watchlists.schema import (
     WatchlistObservationsResponse,
     WatchlistResponse,
     WatchlistSummaryResponse,
+    WatchlistSummaryTrendResponse,
 )
 from app.domains.watchlists.service import WatchlistService
+from app.domains.watchlists.trend_service import WatchlistSummaryTrendService
 
 router = APIRouter()
 watchlist_item_sort = sort_param(
@@ -140,6 +142,27 @@ def get_watchlist_summary(
             watchlist_id,
             current_user.id,
             recent_limit=recent_limit,
+        )
+    )
+
+
+@router.get(
+    "/{watchlist_id}/summary/trends",
+    response_model=ApiResponse[WatchlistSummaryTrendResponse],
+    summary="Get watchlist summary trend series",
+    description="Return daily summary trend counts for a watchlist owned by the authenticated user.",
+)
+def get_watchlist_summary_trends(
+    watchlist_id: int,
+    days: Annotated[int, Query(ge=1, le=90)] = 14,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[WatchlistSummaryTrendResponse]:
+    return success(
+        WatchlistSummaryTrendService(db).get_trends(
+            watchlist_id,
+            current_user.id,
+            days,
         )
     )
 
