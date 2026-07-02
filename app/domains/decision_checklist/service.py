@@ -75,10 +75,10 @@ class DecisionChecklistService:
         checked_keys = set(note.checked_item_keys if note is not None else [])
         items = [
             BuyChecklistItem(
-                key=key,
+                id=key,
                 label=_ITEM_LABELS[key],
-                status="checked" if key in checked_keys else "pending",
-                detail=self._detail_for(key),
+                description=self._detail_for(key),
+                checked=key in checked_keys,
             )
             for key in _REQUIRED_KEYS
         ]

@@ -1,18 +1,20 @@
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
 from app.core.schema import UtcDatetime
 
 
-class ResearchSummarySource(BaseModel):
-    type: str
-    label: str
-    url: HttpUrl | None = None
+class ResearchRisk(BaseModel):
+    id: str
+    title: str
+    level: str
+    description: str
 
 
 class ResearchSummaryResponse(BaseModel):
     asset_id: int
-    positive_factors: list[str]
-    negative_factors: list[str]
-    items_to_verify: list[str]
-    sources: list[ResearchSummarySource]
-    updated_at: UtcDatetime
+    stance: str
+    stance_confidence: str
+    headline: str
+    body: str
+    key_risks: list[ResearchRisk]
+    created_at: UtcDatetime

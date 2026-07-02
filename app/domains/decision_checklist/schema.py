@@ -10,14 +10,11 @@ ChecklistItemKey = Literal[
     "portfolio_concentration",
     "earnings_disclosure",
 ]
-ChecklistItemStatus = Literal["pending", "checked"]
-
-
 class BuyChecklistItem(BaseModel):
-    key: ChecklistItemKey
+    id: ChecklistItemKey
     label: str
-    status: ChecklistItemStatus
-    detail: str | None = None
+    description: str | None = None
+    checked: bool
 
 
 class BuyChecklistNoteUpdate(BaseModel):

@@ -42,6 +42,8 @@ def test_create_research_report_success(client: TestClient) -> None:
     assert data["id"] > 0
     assert data["asset_id"] == asset["id"]
     assert data["summary"] == "Services growth offsets softer hardware demand."
+    assert data["title"] == "Services growth offsets softer hardware demand."
+    assert data["source"] is None
     assert data["positive_factors"] == [
         "Services revenue accelerated",
         "Margins improved",

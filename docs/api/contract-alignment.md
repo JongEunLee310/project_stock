@@ -1,6 +1,7 @@
 # API Contract Alignment — 공통 API 계약 정렬
 
-상태: **결정 반영(Draft v3)** — Q1–Q8 답변 + 파생 항목(N1–N4) 확정 반영(2026-06-23).
+상태: **결정 반영(Draft v4)** — Q1–Q8 답변 + 파생 항목(N1–N4) 확정 반영,
+BE #163 응답 계약 정렬 반영(2026-07-02).
 
 이 문서는 백엔드(`project_stock`, FastAPI)와 프론트엔드(`project_stock_FE`, React)가
 **하나의 공통 API 계약**에 합의하기 위한 정렬 문서다. 양쪽이 현재 가진 API를 모두
@@ -92,6 +93,27 @@ FE 도메인 모델은 백엔드 계약과 **독립적으로** 설계되어, 필
 | G9 | Signal 모델 상이 | **BE 리스크/가설충돌 모델로 통일**(Q5 확정). 단 FE 모멘텀 시각화는 G4 가격 시계열로 재구성해 유지. **후속(BE#112 완료)**: 목록에 `?expand=asset` 추가로 symbol 표시 지원 | **FE 재정의(+G4 선행)** |
 | G10 | DecisionLog 백엔드 부재 | **BE에 decision-log 도메인 신규 추가**(Q7 확정). 작업지도 → `docs/designs/decision-log-domain.md`. 추가 전까지 FE 로컬 임시 | **BE 신규** |
 | G11 | 알림 설정(Settings) | Q3로 Alerts가 인박스로 재정의됨 → 규칙/채널 설정 API 불요. Settings는 `auth/me`만 | **폐기(불요)** |
+
+---
+
+## 3.1 BE #163 응답 계약 정렬 결과
+
+BE #163에서 FE가 이미 기대하던 DTO 형태에 맞춰 백엔드 `response_model`을 정렬했다. DB
+마이그레이션 없이 기존 컬럼, quote mock, 응답 조립 시점의 파생값만 사용한다.
+
+| 대상 | 정렬 결과 | 파생/출처 |
+| --- | --- | --- |
+| `GET /auth/me` | `username`, `created_at` 추가 | `username`은 email local-part, `created_at`은 기존 `users.created_at` |
+| `GET /assets`, `GET /assets/{id}` | `sector` 추가 | 기존 `assets.sector` |
+| `GET /assets/{id}/detail` | `market_cap`, `next_earnings_date`, `updated_at` 추가 | quote mock, `updated_at`은 provider quote timestamp |
+| `GET /assets/{id}/research-summary` | `stance`, `stance_confidence`, `headline`, `body`, `key_risks`, `created_at` 형태로 교체 | asset id 기반 deterministic mock |
+| `GET /assets/{id}/buy-checklist` | item을 `{ id, label, description, checked }`로 교체 | 기존 key/detail/status를 응답에서만 매핑. 쓰기 `checked_item_keys`는 기존 key 문자열 유지 |
+| `GET /reports`, `GET /reports/{id}` | `title`, `source` 추가 | `title`은 `summary` 첫 non-empty line, `source`는 현재 `null` |
+| `GET /theses/latest` 등 thesis 응답 | `title` 추가 | `summary` 첫 non-empty line |
+| `GET /alerts` 및 read/dismiss 응답 | `title` 추가 | `symbol`과 `alert_type` 조합 |
+
+응답에서 제외된 구형 research-summary factor-list 형태와 구형 자산 상세 timestamp 필드는 새
+계약에 사용하지 않는다. report/news 입력·저장 필드는 별도 도메인 계약이므로 유지한다.
 
 ---
 

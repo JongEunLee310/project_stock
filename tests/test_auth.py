@@ -42,7 +42,9 @@ def test_register_user_success(client: TestClient) -> None:
     data = register_user(client)
 
     assert data["email"] == "owner@example.com"
+    assert data["username"] == "owner"
     assert data["is_active"] is True
+    assert "created_at" in data
     assert "id" in data
 
 
@@ -127,6 +129,8 @@ def test_get_me_with_bearer_token(client: TestClient) -> None:
     data = cast(dict[str, Any], api_data(response))
     assert data["id"] == user["id"]
     assert data["email"] == "owner@example.com"
+    assert data["username"] == "owner"
+    assert "created_at" in data
 
 
 def test_get_me_requires_authorization_header(client: TestClient) -> None:

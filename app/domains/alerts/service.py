@@ -126,6 +126,10 @@ class AlertService:
             asset_id=signal.asset_id if signal is not None else None,
             symbol=asset.symbol if asset is not None else None,
             alert_type=signal.signal_type if signal is not None else None,
+            title=self._title_for(
+                symbol=asset.symbol if asset is not None else None,
+                alert_type=signal.signal_type if signal is not None else None,
+            ),
             message=signal.reason if signal is not None else None,
         )
 
@@ -133,3 +137,12 @@ class AlertService:
         if signal.news_item_id is not None:
             return f"{signal.signal_type}:{signal.news_item_id}"
         return f"{signal.signal_type}:signal:{signal.id}"
+
+    def _title_for(self, symbol: str | None, alert_type: str | None) -> str | None:
+        if symbol is None and alert_type is None:
+            return None
+        if symbol is None:
+            return alert_type
+        if alert_type is None:
+            return symbol
+        return f"{symbol} {alert_type}"

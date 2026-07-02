@@ -197,7 +197,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `201`:
 
 ```json
-{ "data": { "id": 1, "email": "user@example.com", "is_active": true }, "message": null, "error": null, "meta": null }
+{ "data": { "id": 1, "email": "user@example.com", "is_active": true, "created_at": "2026-06-19T00:00:00Z", "username": "user" }, "message": null, "error": null, "meta": null }
 ```
 
 - Representative error `400 USER_EMAIL_DUPLICATE`:
@@ -263,7 +263,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": { "id": 1, "email": "user@example.com", "is_active": true }, "message": null, "error": null, "meta": null }
+{ "data": { "id": 1, "email": "user@example.com", "is_active": true, "created_at": "2026-06-19T00:00:00Z", "username": "user" }, "message": null, "error": null, "meta": null }
 ```
 
 - Representative error `401 AUTH_INVALID_TOKEN`: see Auth section.
@@ -329,7 +329,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": [{ "id": 1, "symbol": "AAPL", "name": "Apple Inc.", "market": "NASDAQ", "is_active": true, "created_at": "2026-06-19T00:00:00" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
+{ "data": [{ "id": 1, "symbol": "AAPL", "name": "Apple Inc.", "market": "NASDAQ", "sector": "Technology", "is_active": true, "created_at": "2026-06-19T00:00:00Z" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
 ```
 
 - `symbol` 지정 시 해당 심볼만 반환(0 또는 1건). `is_active`와 조합 가능. FE는 `symbol` 단일키 라우팅 보조에 사용한다(C4).
@@ -353,10 +353,11 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": { "id": 1, "symbol": "AAPL", "name": "Apple Inc.", "market": "NASDAQ", "price": "195.64", "previous_close": "193.20", "change": "2.44", "change_percent": "1.26", "currency": "USD", "sector": "Technology", "industry": "Consumer Electronics", "description": "Makes devices and services.", "as_of": "2026-06-19T00:00:00Z", "per": "31.2", "peg": "2.1", "fifty_two_week_low": "164.08", "fifty_two_week_high": "237.49", "target_price": "210.00", "target_upside_percent": "7.34" }, "message": null, "error": null, "meta": null }
+{ "data": { "id": 1, "symbol": "AAPL", "name": "Apple Inc.", "market": "NASDAQ", "price": "195.64", "previous_close": "193.20", "change": "2.44", "change_percent": "1.26", "currency": "USD", "sector": "Technology", "industry": "Consumer Electronics", "description": "Makes devices and services.", "updated_at": "2026-06-19T00:00:00Z", "market_cap": "3000000000000", "next_earnings_date": "2026-07-30", "per": "31.20", "peg": "2.45", "fifty_two_week_low": "164.08", "fifty_two_week_high": "237.49", "target_price": "220.00", "target_upside_percent": "12.45" }, "message": null, "error": null, "meta": null }
 ```
 
-- 펀더멘털 6필드(`per`, `peg`, `fifty_two_week_low`, `fifty_two_week_high`, `target_price`, `target_upside_percent`)는 모두 **nullable 문자열 Decimal**이다(C5). provider가 값을 제공하지 않으면 `null`. 현재 mock provider는 AAPL에만 값을 채우고 그 외 심볼은 6필드 모두 `null`이다. FE 어댑터는 `null` 표시 fallback(예: "—")을 둔다.
+- `updated_at`은 provider quote timestamp를 응답 계약명에 맞춰 노출한 값이다.
+- `market_cap`과 펀더멘털 6필드(`per`, `peg`, `fifty_two_week_low`, `fifty_two_week_high`, `target_price`, `target_upside_percent`)는 모두 **nullable 문자열 Decimal**이다(C5). `next_earnings_date`는 nullable ISO date 문자열이다. provider가 값을 제공하지 않으면 `null`. 현재 mock provider는 AAPL/TSLA에 일부 값을 채우고 그 외 심볼은 nullable 확장 필드가 `null`이다. FE 어댑터는 `null` 표시 fallback(예: "—")을 둔다.
 - Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
 
 #### `GET /api/v1/assets/{asset_id}/research-summary`
@@ -366,7 +367,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": { "asset_id": 1, "positive_factors": ["견조한 매출 성장"], "negative_factors": ["밸류에이션 부담"], "items_to_verify": ["최근 실적 발표 원문 확인"], "sources": [{ "type": "news", "label": "AAPL mock news", "url": null }], "updated_at": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
+{ "data": { "asset_id": 1, "stance": "WATCH", "stance_confidence": "0.64", "headline": "비용 효율화는 긍정적이나 단기 과열 여부를 확인해야 합니다.", "body": "신규 고객 증가와 마진 방어력이 관찰되지만 재고 부담과 규제 리스크가 남아 있습니다.", "key_risks": [{ "id": "news_overheated", "title": "단기 뉴스 과열", "level": "MEDIUM", "description": "최근 뉴스 흐름이 가격에 과도하게 반영되었는지 확인하세요." }], "created_at": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
 ```
 
 - Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
@@ -378,7 +379,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": { "asset_id": 1, "items": [{ "key": "valuation", "label": "밸류에이션 확인", "status": "pending", "detail": "현재 가격과 최근 실적 기준 밸류에이션을 확인하세요." }], "memo": null, "checked_item_keys": [], "is_complete": false, "decided_at": null }, "message": null, "error": null, "meta": null }
+{ "data": { "asset_id": 1, "items": [{ "id": "valuation", "label": "밸류에이션 확인", "description": "현재 가격과 최근 실적 기준 밸류에이션을 확인하세요.", "checked": false }], "memo": null, "checked_item_keys": [], "is_complete": false, "decided_at": null }, "message": null, "error": null, "meta": null }
 ```
 
 - Completion rule: `is_complete` is true when `memo` has non-whitespace text and all four required keys are checked.
@@ -695,7 +696,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `201`:
 
 ```json
-{ "data": { "id": 1, "user_id": 1, "asset_id": 1, "summary": "Revenue growth thesis", "risk_factors": "FX risk", "invalidation_conditions": "Growth below 5%", "is_active": true, "created_at": "2026-06-19T00:00:00" }, "message": null, "error": null, "meta": null }
+{ "data": { "id": 1, "user_id": 1, "asset_id": 1, "summary": "Revenue growth thesis", "title": "Revenue growth thesis", "risk_factors": "FX risk", "invalidation_conditions": "Growth below 5%", "is_active": true, "created_at": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
 ```
 
 - Representative error `404 ASSET_NOT_FOUND`: see Assets section.
@@ -748,7 +749,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `201`:
 
 ```json
-{ "data": { "id": 1, "asset_id": 1, "thesis_id": 1, "summary": "AI demand remains strong", "positive_factors": ["Revenue beat"], "negative_factors": ["Valuation"], "risk_level": "MEDIUM", "thesis_conflict_status": "NONE", "conflict_reason": null, "news_item_ids": [10], "created_at": "2026-06-19T00:00:00" }, "message": null, "error": null, "meta": null }
+{ "data": { "id": 1, "asset_id": 1, "thesis_id": 1, "summary": "AI demand remains strong", "title": "AI demand remains strong", "source": null, "positive_factors": ["Revenue beat"], "negative_factors": ["Valuation"], "risk_level": "MEDIUM", "thesis_conflict_status": "NONE", "conflict_reason": null, "news_item_ids": [10], "created_at": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
 ```
 
 - Representative error `422 VALIDATION_ERROR`: see Auth section.
@@ -760,7 +761,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": [{ "id": 1, "asset_id": 1, "thesis_id": 1, "summary": "AI demand remains strong", "positive_factors": ["Revenue beat"], "negative_factors": ["Valuation"], "risk_level": "MEDIUM", "thesis_conflict_status": "NONE", "conflict_reason": null, "news_item_ids": [10], "created_at": "2026-06-19T00:00:00" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
+{ "data": [{ "id": 1, "asset_id": 1, "thesis_id": 1, "summary": "AI demand remains strong", "title": "AI demand remains strong", "source": null, "positive_factors": ["Revenue beat"], "negative_factors": ["Valuation"], "risk_level": "MEDIUM", "thesis_conflict_status": "NONE", "conflict_reason": null, "news_item_ids": [10], "created_at": "2026-06-19T00:00:00Z" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
 ```
 
 - Representative error `401 AUTH_INVALID_TOKEN`: see Auth section.
@@ -833,7 +834,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": [{ "id": 1, "user_id": 1, "signal_id": 1, "status": "UNREAD", "created_at": "2026-06-19T00:00:00" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
+{ "data": [{ "id": 1, "user_id": 1, "signal_id": 1, "status": "UNREAD", "created_at": "2026-06-19T00:00:00Z", "asset_id": 1, "symbol": "AAPL", "alert_type": "RISK_ALERT", "title": "AAPL RISK_ALERT", "message": "Thesis conflict detected" }], "message": null, "error": null, "meta": { "page": 1, "size": 20, "total": 1 } }
 ```
 
 - Representative error `401 AUTH_INVALID_TOKEN`: see Auth section.
@@ -845,7 +846,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": { "id": 1, "user_id": 1, "signal_id": 1, "status": "READ", "created_at": "2026-06-19T00:00:00" }, "message": null, "error": null, "meta": null }
+{ "data": { "id": 1, "user_id": 1, "signal_id": 1, "status": "READ", "created_at": "2026-06-19T00:00:00Z", "asset_id": 1, "symbol": "AAPL", "alert_type": "RISK_ALERT", "title": "AAPL RISK_ALERT", "message": "Thesis conflict detected" }, "message": null, "error": null, "meta": null }
 ```
 
 - Representative error `404 ALERT_NOT_FOUND`:
@@ -861,7 +862,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": { "id": 1, "user_id": 1, "signal_id": 1, "status": "DISMISSED", "created_at": "2026-06-19T00:00:00" }, "message": null, "error": null, "meta": null }
+{ "data": { "id": 1, "user_id": 1, "signal_id": 1, "status": "DISMISSED", "created_at": "2026-06-19T00:00:00Z", "asset_id": 1, "symbol": "AAPL", "alert_type": "RISK_ALERT", "title": "AAPL RISK_ALERT", "message": "Thesis conflict detected" }, "message": null, "error": null, "meta": null }
 ```
 
 - Representative error `404 ALERT_NOT_FOUND`: same as mark read.
