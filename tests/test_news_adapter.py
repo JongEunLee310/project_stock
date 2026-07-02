@@ -71,6 +71,69 @@ def test_rss_news_adapter_skips_failed_feed(
     assert "failed to parse RSS feed" in caplog.text
 
 
+def test_rss_news_adapter_fetch_query_uses_market_locale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    published = datetime(2026, 6, 18, 12, 30, tzinfo=timezone.utc)
+    captured_urls: list[str] = []
+    parsed_feed = SimpleNamespace(
+        bozo=False,
+        feed=SimpleNamespace(title="Query Feed"),
+        entries=[
+            {
+                "title": "Samsung Electronics expands AI memory output",
+                "link": "https://example.com/samsung",
+                "summary": "Korean chip demand rises.",
+                "published_parsed": published.timetuple(),
+            },
+            {
+                "title": "",
+                "link": "https://example.com/empty",
+                "summary": "skipped",
+            },
+        ],
+    )
+
+    def parse(url: str) -> Any:
+        captured_urls.append(url)
+        return parsed_feed
+
+    monkeypatch.setattr("app.adapters.news.rss.feedparser.parse", parse)
+
+    results = RSSNewsAdapter(
+        [],
+        query_url_template="https://example.com/rss?q={query}&hl={hl}&gl={gl}",
+    ).fetch_query("Samsung Electronics", "KOSPI")
+
+    assert captured_urls == [
+        "https://example.com/rss?q=Samsung+Electronics&hl=ko&gl=KR"
+    ]
+    assert len(results) == 1
+    assert results[0].title == "Samsung Electronics expands AI memory output"
+    assert results[0].source == "Query Feed"
+    assert results[0].published_at == published
+
+
+def test_rss_news_adapter_fetch_query_uses_us_locale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_urls: list[str] = []
+    parsed_feed = SimpleNamespace(bozo=False, feed={}, entries=[])
+
+    def parse(url: str) -> Any:
+        captured_urls.append(url)
+        return parsed_feed
+
+    monkeypatch.setattr("app.adapters.news.rss.feedparser.parse", parse)
+
+    RSSNewsAdapter(
+        [],
+        query_url_template="https://example.com/rss?q={query}&hl={hl}&gl={gl}",
+    ).fetch_query("Apple Inc.", "NASDAQ")
+
+    assert captured_urls == ["https://example.com/rss?q=Apple+Inc.&hl=en-US&gl=US"]
+
+
 def test_raw_news_service_collect_and_save_with_mock_adapter(db: Session) -> None:
     saved_count = RawNewsService(db).collect_and_save(
         MockNewsAdapter(), ["AAPL", "TSLA"]

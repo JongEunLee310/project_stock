@@ -18,6 +18,7 @@ from app.adapters.market.mock import (
 from app.adapters.market.yfinance import YFinancePriceProvider
 from app.adapters.news.base import NewsAdapter
 from app.adapters.news.mock import MockNewsAdapter
+from app.adapters.news.rss import RSSNewsAdapter
 from app.adapters.portfolio.base import PortfolioProvider
 from app.adapters.portfolio.mock import MockPortfolioProvider
 from app.core.config import settings
@@ -46,6 +47,8 @@ def get_index_quote_provider() -> IndexQuoteProvider:
 def get_news_adapter() -> NewsAdapter:
     if settings.NEWS_PROVIDER == "mock":
         return MockNewsAdapter()
+    if settings.NEWS_PROVIDER == "rss":
+        return RSSNewsAdapter([], query_url_template=settings.NEWS_QUERY_URL_TEMPLATE)
     raise NotImplementedError("news real provider 미구현")
 
 

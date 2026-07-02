@@ -33,6 +33,7 @@ def test_settings_use_defaults_without_env_file(monkeypatch: pytest.MonkeyPatch)
     assert settings.LLM_PROVIDER == "cloud"
     assert settings.MARKET_PROVIDER == "mock"
     assert settings.NEWS_PROVIDER == "mock"
+    assert "{query}" in settings.NEWS_QUERY_URL_TEMPLATE
     assert settings.DISCLOSURE_PROVIDER == "mock"
     assert settings.PORTFOLIO_PROVIDER == "mock"
     assert settings.CORS_ORIGINS == []
@@ -52,6 +53,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("LLM_PROVIDER", "local")
     monkeypatch.setenv("MARKET_PROVIDER", "real")
     monkeypatch.setenv("NEWS_PROVIDER", "real")
+    monkeypatch.setenv("NEWS_QUERY_URL_TEMPLATE", "https://example.com/rss?q={query}")
     monkeypatch.setenv("DISCLOSURE_PROVIDER", "real")
     monkeypatch.setenv("PORTFOLIO_PROVIDER", "real")
     monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000, http://localhost:5173")
@@ -70,6 +72,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     assert settings.LLM_PROVIDER == "local"
     assert settings.MARKET_PROVIDER == "real"
     assert settings.NEWS_PROVIDER == "real"
+    assert settings.NEWS_QUERY_URL_TEMPLATE == "https://example.com/rss?q={query}"
     assert settings.DISCLOSURE_PROVIDER == "real"
     assert settings.PORTFOLIO_PROVIDER == "real"
     assert settings.CORS_ORIGINS == [

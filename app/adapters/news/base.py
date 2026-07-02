@@ -18,3 +18,7 @@ class NewsAdapter(ABC):
     @abstractmethod
     def fetch(self, symbols: list[str]) -> list[NewsAdapterResult]:
         """Fetch news items matching the given symbols."""
+
+    def fetch_query(self, query: str, market: str) -> list[NewsAdapterResult]:
+        """Fetch news items for a company-name query and market locale."""
+        raise NotImplementedError("query-based news fetch is not implemented")

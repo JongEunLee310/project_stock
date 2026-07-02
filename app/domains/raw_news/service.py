@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
-from app.adapters.news.base import NewsAdapter
+from app.adapters.news.base import NewsAdapter, NewsAdapterResult
+from app.domains.raw_news.model import RawNewsEvent
 from app.domains.raw_news.repository import RawNewsEventRepository
 from app.domains.raw_news.schema import RawNewsEventCreate
 
@@ -25,3 +26,22 @@ class RawNewsService:
             if event is not None:
                 saved_count += 1
         return saved_count
+
+    def save_with_symbol(
+        self,
+        result: NewsAdapterResult,
+        symbol: str,
+        market: str,
+    ) -> RawNewsEvent | None:
+        return self.repo.create_or_skip(
+            RawNewsEventCreate(
+                title=result.title,
+                url=result.url,
+                symbol=symbol,
+                market=market,
+                body=result.body,
+                source=result.source,
+                published_at=result.published_at,
+                payload=result.payload,
+            )
+        )
