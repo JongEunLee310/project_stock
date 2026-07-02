@@ -17,8 +17,8 @@
   검토 등 판단 보조 기능을 직접 호출한다.
 
 provider(`market`/`news`/`disclosure`/`portfolio`)는 모드별로 주입되며, 로컬·테스트 기본값은
-deterministic mock이다. `market`은 `mock` / `yfinance`(일봉 실수집) / `real`을 지원하고,
-나머지는 `mock` / `real`이다.
+deterministic mock이다. `market`은 `mock` / `yfinance`(일봉 실수집) / `real`을, `news`는
+`mock` / `rss`(회사명 쿼리 실수집) / `real`을 지원하고, 나머지는 `mock` / `real`이다.
 
 ```mermaid
 flowchart LR
@@ -100,9 +100,23 @@ flowchart TD
 
 ## 뉴스 수집 잡
 
-`collect_news_job`(RQ 잡)은 심볼 목록을 받아 news adapter로 원시 뉴스를 수집·저장한다.
-분석 파이프라인과 달리 요약·시그널 단계 없이 수집만 수행한다. 두 잡 모두 JobRun으로
-실행을 기록한다(아래).
+`collect_news_job`(RQ 잡)은 회사명 쿼리로 원시 뉴스를 실수집한다. `NEWS_PROVIDER=rss`일 때
+Google News 검색 RSS를 종목별 쿼리로 호출한다. 분석 파이프라인과 달리 요약·시그널 단계 없이
+수집만 수행한다. 처리 순서:
+
+1. **universe 산출**: 인자로 심볼을 주지 않으면 관심종목(watchlist) + 보유종목(portfolio)의
+   `(symbol, market)` 합집합을 대상으로 삼고, 각 대상의 회사명(`assets.name`)을 함께 싣는다.
+   심볼을 명시하면 assets에서 조회하고 미존재 심볼은 경고 후 건너뛴다.
+2. **쿼리 수집**: 종목별로 회사명을 쿼리에 넣어 RSS를 호출한다. market별 locale을 부여해
+   (KOSPI/KOSDAQ→`ko/KR`, NASDAQ/NYSE→`en-US/US`, 미지 market은 기본 locale + 경고로
+   fail-open) 한국·미국 종목을 모두 커버한다.
+3. **종목 태깅 저장**: per-company 쿼리라 반환 기사를 전부 대상 `(symbol, market)`에 귀속시켜
+   `raw_news_events`에 저장한다. `url` unique 제약으로 동일 기사 재수집은 스킵한다(멀티종목
+   기사는 first-writer-wins).
+
+종목 단위 실패는 격리되어 다음 종목으로 넘어가고, 잡 전체는 JobRun으로 추적한다. 이 잡은
+LLM을 호출하지 않는다 — 산출물은 `raw_news_events` 적재까지이며, 정규화(News Item)·요약·
+시그널은 분석 파이프라인의 범위다. 두 잡 모두 JobRun으로 실행을 기록한다(아래).
 
 ## 가격 수집 잡
 
@@ -172,3 +186,4 @@ stateDiagram-v2
 - [../designs/019-watchlist-analysis-flow.md](../designs/019-watchlist-analysis-flow.md): 분석 플로우 설계.
 - [../designs/020-rule-engine.md](../designs/020-rule-engine.md): 룰 엔진 설계.
 - [../designs/065-price-ingestion-pipeline.md](../designs/065-price-ingestion-pipeline.md): 가격 실수집 파이프라인 설계.
+- [../designs/066-news-ingestion-pipeline.md](../designs/066-news-ingestion-pipeline.md): 뉴스 실수집 파이프라인 설계.
