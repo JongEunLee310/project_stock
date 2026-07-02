@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 from app.core.schema import UtcDatetime
 
@@ -31,7 +31,13 @@ class ResearchReportResponse(BaseModel):
     thesis_conflict_status: str | None
     conflict_reason: str | None
     news_item_ids: list[int] | None
+    source: str | None = None
     created_at: UtcDatetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        return _title_from_summary(self.summary, fallback="Research report")
 
     @field_validator(
         "positive_factors",
@@ -46,3 +52,8 @@ class ResearchReportResponse(BaseModel):
         if isinstance(value, str):
             return json.loads(value)
         return value
+
+
+def _title_from_summary(summary: str, *, fallback: str) -> str:
+    title = next((line.strip() for line in summary.splitlines() if line.strip()), "")
+    return title or fallback

@@ -135,7 +135,9 @@ def test_get_asset_detail_with_mock_quote(client: TestClient) -> None:
     assert data["sector"] == "Technology"
     assert data["industry"] == "Consumer Electronics"
     assert data["description"] == "Makes devices and services."
-    assert data["as_of"] == "2026-06-19T00:00:00Z"
+    assert data["updated_at"] == "2026-06-19T00:00:00Z"
+    assert data["market_cap"] == "3000000000000"
+    assert data["next_earnings_date"] == "2026-07-30"
 
 
 def test_get_asset_detail_uses_mock_fallback_for_unknown_symbol(
@@ -193,11 +195,12 @@ def test_get_research_summary_returns_deterministic_mock_data(
     first_data = cast(dict[str, Any], api_data(first_response))
     assert first_data == api_data(second_response)
     assert first_data["asset_id"] == asset["id"]
-    assert first_data["positive_factors"]
-    assert first_data["negative_factors"]
-    assert first_data["items_to_verify"]
-    assert first_data["sources"]
-    assert first_data["updated_at"] == "2026-06-19T00:00:00Z"
+    assert first_data["stance"]
+    assert first_data["stance_confidence"]
+    assert first_data["headline"]
+    assert first_data["body"]
+    assert first_data["key_risks"]
+    assert first_data["created_at"] == "2026-06-19T00:00:00Z"
 
 
 def test_get_research_summary_returns_404_when_missing(client: TestClient) -> None:

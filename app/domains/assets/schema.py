@@ -19,6 +19,7 @@ class AssetResponse(BaseModel):
     symbol: str
     name: str
     market: str
+    sector: str | None = None
     is_active: bool
     created_at: UtcDatetime
 
@@ -36,7 +37,9 @@ class AssetDetailResponse(BaseModel):
     sector: str | None = None
     industry: str | None = None
     description: str | None = None
-    as_of: UtcDatetime
+    updated_at: UtcDatetime
+    market_cap: str | None = None
+    next_earnings_date: str | None = None
     per: str | None = None
     peg: str | None = None
     fifty_two_week_low: str | None = None

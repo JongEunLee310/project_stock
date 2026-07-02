@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, computed_field, field_validator
 
 from app.core.schema import UtcDatetime
 
@@ -34,3 +34,12 @@ class ThesisResponse(BaseModel):
     invalidation_conditions: str | None
     is_active: bool
     created_at: UtcDatetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        title = next(
+            (line.strip() for line in self.summary.splitlines() if line.strip()),
+            "",
+        )
+        return title or "Investment thesis"

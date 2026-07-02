@@ -46,6 +46,7 @@ def test_create_thesis_success(client: TestClient) -> None:
     assert data["user_id"] == 1
     assert data["asset_id"] == asset["id"]
     assert data["summary"] == "Long-term compounder"
+    assert data["title"] == "Long-term compounder"
     assert data["risk_factors"] == "Margin compression"
     assert data["invalidation_conditions"] == "Revenue growth below 5%"
     assert data["is_active"] is True

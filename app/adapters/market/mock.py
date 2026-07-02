@@ -38,6 +38,8 @@ _SAMPLE_QUOTES: dict[str, QuoteResult] = {
         as_of=_AS_OF,
         per=Decimal("31.20"),
         peg=Decimal("2.45"),
+        market_cap=Decimal("3000000000000"),
+        next_earnings_date="2026-07-30",
         fifty_two_week_low=Decimal("164.08"),
         fifty_two_week_high=Decimal("237.49"),
         target_price=Decimal("220.00"),
@@ -52,6 +54,8 @@ _SAMPLE_QUOTES: dict[str, QuoteResult] = {
         change_percent=Decimal("-1.45"),
         currency="USD",
         as_of=_AS_OF,
+        market_cap=Decimal("580000000000"),
+        next_earnings_date="2026-07-23",
     ),
 }
 

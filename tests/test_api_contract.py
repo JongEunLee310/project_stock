@@ -10,6 +10,8 @@ from app.core.schema import UtcDatetime
 from app.domains.alert_candidates.schema import AlertCandidateCreate
 from app.domains.alert_candidates.service import AlertCandidateService
 from app.domains.alert_candidates.types import AlertCandidateType, AlertImportance
+from app.domains.alerts.service import AlertService
+from app.domains.signals.repository import SignalRepository
 from app.main import app
 from tests.conftest import TestingSessionLocal, api_data, api_meta, set_current_user
 
@@ -126,6 +128,18 @@ def create_signal(client: TestClient, asset_id: int) -> dict[str, Any]:
     return cast(dict[str, Any], api_data(response))
 
 
+def create_alert(client: TestClient, asset_id: int, user_id: int) -> None:
+    signal = create_signal(client, asset_id)
+    db = TestingSessionLocal()
+    try:
+        signal_model = SignalRepository(db).get_by_id(signal["id"])
+        assert signal_model is not None
+        alert = AlertService(db).create_alert(user_id, signal_model)
+        assert alert is not None
+    finally:
+        db.close()
+
+
 WATCHLIST_CONTRACT: Contract = {
     "id": int,
     "user_id": int,
@@ -166,22 +180,92 @@ ASSET_DETAIL_CONTRACT: Contract = {
     "sector": (str, type(None)),
     "industry": (str, type(None)),
     "description": (str, type(None)),
-    "as_of": str,
+    "updated_at": str,
+    "market_cap": (str, type(None)),
+    "next_earnings_date": (str, type(None)),
 }
 
 RESEARCH_SUMMARY_CONTRACT: Contract = {
     "asset_id": int,
-    "positive_factors": list,
-    "negative_factors": list,
-    "items_to_verify": list,
-    "sources": list,
-    "updated_at": str,
+    "stance": str,
+    "stance_confidence": str,
+    "headline": str,
+    "body": str,
+    "key_risks": list,
+    "created_at": str,
 }
 
-RESEARCH_SUMMARY_SOURCE_CONTRACT: Contract = {
-    "type": str,
+RESEARCH_RISK_CONTRACT: Contract = {
+    "id": str,
+    "title": str,
+    "level": str,
+    "description": str,
+}
+
+ASSET_CONTRACT: Contract = {
+    "id": int,
+    "symbol": str,
+    "name": str,
+    "market": str,
+    "sector": (str, type(None)),
+    "is_active": bool,
+    "created_at": str,
+}
+
+USER_CONTRACT: Contract = {
+    "id": int,
+    "email": str,
+    "is_active": bool,
+    "created_at": str,
+    "username": str,
+}
+
+BUY_CHECKLIST_ITEM_CONTRACT: Contract = {
+    "id": str,
     "label": str,
-    "url": (str, type(None)),
+    "description": (str, type(None)),
+    "checked": bool,
+}
+
+RESEARCH_REPORT_CONTRACT: Contract = {
+    "id": int,
+    "asset_id": int,
+    "thesis_id": (int, type(None)),
+    "summary": str,
+    "title": str,
+    "source": (str, type(None)),
+    "positive_factors": (list, type(None)),
+    "negative_factors": (list, type(None)),
+    "risk_level": (str, type(None)),
+    "thesis_conflict_status": (str, type(None)),
+    "conflict_reason": (str, type(None)),
+    "news_item_ids": (list, type(None)),
+    "created_at": str,
+}
+
+THESIS_CONTRACT: Contract = {
+    "id": int,
+    "user_id": int,
+    "asset_id": int,
+    "summary": str,
+    "title": str,
+    "risk_factors": (str, type(None)),
+    "invalidation_conditions": (str, type(None)),
+    "is_active": bool,
+    "created_at": str,
+}
+
+ALERT_CONTRACT: Contract = {
+    "id": int,
+    "user_id": int,
+    "signal_id": int,
+    "status": str,
+    "created_at": str,
+    "asset_id": (int, type(None)),
+    "symbol": (str, type(None)),
+    "alert_type": (str, type(None)),
+    "title": (str, type(None)),
+    "message": (str, type(None)),
 }
 
 PORTFOLIO_SUMMARY_CONTRACT: Contract = {
@@ -365,6 +449,43 @@ def test_refresh_response_contract(client: TestClient) -> None:
     assert data["expires_in"] > 0
 
 
+@pytest.mark.usefixtures("stable_password_hashing")
+def test_auth_me_response_contract(client: TestClient) -> None:
+    register_response = client.post(
+        "/api/v1/auth/register",
+        json={"email": "owner@example.com", "password": "pw"},
+    )
+    assert register_response.status_code == 201
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "owner@example.com", "password": "pw"},
+    )
+    token = cast(dict[str, Any], api_data(login_response))["access_token"]
+
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, USER_CONTRACT)
+    assert data["username"] == "owner"
+
+
+def test_asset_list_response_contract_includes_sector(client: TestClient) -> None:
+    created = create_asset(client)
+
+    response = client.get("/api/v1/assets")
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=True)
+    assets = cast(list[dict[str, Any]], api_data(response))
+    assert_contract(assets[0], ASSET_CONTRACT)
+    assert assets[0]["sector"] == created["sector"]
+
+
 def test_watchlist_response_contract(client: TestClient) -> None:
     set_current_user(1)
     watchlist = create_watchlist(client)
@@ -400,7 +521,7 @@ def test_watchlist_response_contract(client: TestClient) -> None:
 def test_signal_expand_asset_response_contract(client: TestClient) -> None:
     set_current_user(1)
     asset = create_asset(client)
-    create_signal(client, asset["id"])
+    create_alert(client, asset["id"], user_id=1)
 
     response = client.get(
         "/api/v1/signals",
@@ -437,10 +558,92 @@ def test_research_summary_response_contract(client: TestClient) -> None:
     assert_envelope(response.json(), has_meta=False)
     data = cast(dict[str, Any], api_data(response))
     assert_contract(data, RESEARCH_SUMMARY_CONTRACT)
-    assert all(isinstance(item, str) for item in data["positive_factors"])
-    assert all(isinstance(item, str) for item in data["negative_factors"])
-    assert all(isinstance(item, str) for item in data["items_to_verify"])
-    assert_contract(data["sources"][0], RESEARCH_SUMMARY_SOURCE_CONTRACT)
+    assert data["headline"]
+    assert data["body"]
+    assert data["key_risks"]
+    assert_contract(data["key_risks"][0], RESEARCH_RISK_CONTRACT)
+
+
+def test_buy_checklist_item_response_contract(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+
+    response = client.get(f"/api/v1/assets/{asset['id']}/buy-checklist")
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data["items"][0], BUY_CHECKLIST_ITEM_CONTRACT)
+    assert data["items"][0]["id"] == "valuation"
+    assert data["items"][0]["checked"] is False
+
+
+def test_report_list_response_contract_includes_title(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+    create_response = client.post(
+        "/api/v1/reports",
+        json={
+            "asset_id": asset["id"],
+            "summary": "Services growth offsets softer hardware demand.",
+            "positive_factors": ["Services revenue accelerated"],
+            "negative_factors": ["Hardware demand remains soft"],
+            "risk_level": "MEDIUM",
+            "thesis_conflict_status": "SUPPORTS",
+            "conflict_reason": "The news supports the active thesis.",
+            "news_item_ids": [10],
+        },
+    )
+    assert create_response.status_code == 201
+
+    response = client.get("/api/v1/reports", params={"asset_id": asset["id"]})
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=True)
+    reports = cast(list[dict[str, Any]], api_data(response))
+    assert_contract(reports[0], RESEARCH_REPORT_CONTRACT)
+    assert reports[0]["title"] == "Services growth offsets softer hardware demand."
+    assert reports[0]["source"] is None
+
+
+def test_latest_thesis_response_contract_includes_title(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+    create_response = client.post(
+        "/api/v1/theses",
+        json={
+            "asset_id": asset["id"],
+            "summary": "Long-term compounder",
+            "risk_factors": "Margin compression",
+            "invalidation_conditions": "Revenue growth below 5%",
+        },
+    )
+    assert create_response.status_code == 201
+
+    response = client.get(
+        "/api/v1/theses/latest",
+        params={"asset_id": asset["id"]},
+    )
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, THESIS_CONTRACT)
+    assert data["title"] == "Long-term compounder"
+
+
+def test_alert_list_response_contract_includes_title(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+    create_alert(client, asset["id"], user_id=1)
+
+    response = client.get("/api/v1/alerts")
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=True)
+    alerts = cast(list[dict[str, Any]], api_data(response))
+    assert_contract(alerts[0], ALERT_CONTRACT)
+    assert alerts[0]["title"] == "AAPL RISK_ALERT"
 
 
 def test_portfolio_summary_response_contract(client: TestClient) -> None:
@@ -623,7 +826,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "SignalResponse",
         "AssetDetailResponse",
         "ResearchSummaryResponse",
-        "ResearchSummarySource",
+        "ResearchRisk",
         "PortfolioSummaryResponse",
         "PortfolioBriefingResponse",
         "DashboardBriefingResponse",

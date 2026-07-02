@@ -17,13 +17,13 @@ def test_get_buy_checklist_returns_four_items_and_incomplete(
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
     assert data["asset_id"] == asset["id"]
-    assert [item["key"] for item in data["items"]] == [
+    assert [item["id"] for item in data["items"]] == [
         "valuation",
         "news_overheated",
         "portfolio_concentration",
         "earnings_disclosure",
     ]
-    assert all(item["status"] == "pending" for item in data["items"])
+    assert all(item["checked"] is False for item in data["items"])
     assert data["memo"] is None
     assert data["checked_item_keys"] == []
     assert data["is_complete"] is False
@@ -48,11 +48,11 @@ def test_save_buy_checklist_note_round_trips(client: TestClient) -> None:
     data = cast(dict[str, Any], api_data(get_response))
     assert data["memo"] == "Buy only after reviewing valuation."
     assert data["checked_item_keys"] == ["valuation", "news_overheated"]
-    assert [item["status"] for item in data["items"]] == [
-        "checked",
-        "checked",
-        "pending",
-        "pending",
+    assert [item["checked"] for item in data["items"]] == [
+        True,
+        True,
+        False,
+        False,
     ]
     assert data["is_complete"] is False
     assert data["decided_at"] is None

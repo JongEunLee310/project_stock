@@ -16,6 +16,8 @@ class QuoteResult:
     as_of: datetime
     per: Decimal | None = None
     peg: Decimal | None = None
+    market_cap: Decimal | None = None
+    next_earnings_date: str | None = None
     fifty_two_week_low: Decimal | None = None
     fifty_two_week_high: Decimal | None = None
     target_price: Decimal | None = None
