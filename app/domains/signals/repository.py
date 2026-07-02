@@ -73,6 +73,26 @@ class SignalRepository:
         )
         return int(self.db.scalar(stmt) or 0)
 
+    def count_assets_with_active_signal_as_of(
+        self,
+        asset_ids: list[int],
+        signal_type: str,
+        as_of: Any,
+    ) -> int:
+        if not asset_ids:
+            return 0
+        stmt = (
+            select(func.count(func.distinct(Signal.asset_id)))
+            .select_from(Signal)
+            .where(
+                Signal.asset_id.in_(asset_ids),
+                Signal.signal_type == signal_type,
+                Signal.created_at <= as_of,
+                or_(Signal.expires_at.is_(None), Signal.expires_at > as_of),
+            )
+        )
+        return int(self.db.scalar(stmt) or 0)
+
     def active_signal_types_by_asset(
         self,
         asset_ids: list[int],
