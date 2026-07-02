@@ -368,17 +368,22 @@ LLM 판단 결과만 저장하면 안 된다.
 - 이 계층에서 복잡한 도메인 해석을 하지 않는다.
 ```
 
-권장 인터페이스 예시:
+인터페이스 예시(이 프로젝트 관례 — 외부 fetch는 `app/adapters/`의 adapter, 원본 저장과 대상
+순회는 도메인 `ingestion_service`가 맡고, 둘 다 동기 함수다):
 
 ```python
-class MarketDataIngestionService:
-    async def fetch_daily_prices(self, symbol: str, market: str) -> RawProviderResponse:
+# app/adapters/market/base.py — 외부 API 경계
+class MarketAdapter:
+    def get_daily_bars(self, symbol: str, market: str) -> list[PriceBarResult]:
         ...
 ```
 
 ```python
-class NewsIngestionService:
-    async def fetch_recent_news(self, symbol: str, market: str) -> list[RawProviderResponse]:
+# app/domains/prices/ingestion_service.py — 원본 저장 + 검증 + 정규화 적재
+class PriceIngestionService:
+    def collect_and_save(
+        self, provider: MarketAdapter, targets: list[tuple[str, str]]
+    ) -> IngestionResult:
         ...
 ```
 
@@ -726,89 +731,94 @@ strong_sell
 
 ---
 
-## 9. 권장 FastAPI 패키지 구조
+## 9. 패키지 구조
+
+이 프로젝트는 레이어별 top-level 패키지(`services/ingestion`, `services/normalization` 등)가
+아니라 **도메인 응집형** 레이아웃을 쓴다. 도메인 하나가 `model` / `schema` / `service` /
+`repository`(+ 필요 시 `ingestion_service` / `universe`)를 함께 묶고, 외부 provider 연동은
+`app/adapters/`로, 백그라운드 잡은 `app/worker/jobs/`로 분리한다. 지침의 파이프라인 레이어는
+아래 구조 안의 모듈로 매핑된다(`신규` = 이 지침으로 새로 추가할 대상).
 
 ```text
 app/
+  main.py
+
   api/
-    routes/
-      market_data.py
-      news.py
-      portfolio.py
-      decisions.py
-      llm_analysis.py
+    v1/
+      router.py
+      deps.py
+      endpoints/                 # route는 얇게 — Application Service 호출만
+        prices.py  market.py  watchlists.py  portfolios.py
+        reports.py  signals.py  theses.py  assets.py
+        alerts.py  alert_candidates.py  decision_logs.py
+        dashboard.py  job_runs.py  worker.py  health.py  auth.py
+        # 신규: llm_analysis.py (분석 실행/결과 조회)
 
-  domain/
-    market/
-      models.py
-      schemas.py
-      services.py
+  adapters/                      # Ingestion Layer의 fetch 계층 (외부 API 경계)
+    factory.py
+    market/    { base.py, mock.py, yfinance }
+    news/      { base.py, mock.py, rss.py }
+    disclosure/  portfolio/
+    llm/       { base.py, gateway.py, router.py, privacy.py, mock.py, ... }  # LLM Gateway
 
-    news/
-      models.py
-      schemas.py
-      services.py
+  domains/
+    # --- Raw Store (원본 저장, 기존) ---
+    raw_prices/    { model, schema, service, repository }        # payload_hash dedup
+    raw_news/      { model, schema, service, repository, ingestion_service, universe }  # url dedup
 
-    portfolio/
-      models.py
-      schemas.py
-      services.py
+    # --- 정규화 도메인 (기존) ---
+    prices/        { model(PriceDaily), schema, service, repository,
+                     ingestion_service, universe }              # 정규화·검증을 잡 내부에 인라인 응집
+    news/          { model(NewsArticle), schema, service, repository }
 
-    decision/
-      models.py
-      schemas.py
-      services.py
+    # --- 신규 도메인 (지침 5·6·1단계) ---
+    features/      # PriceFeatureBuilder / PortfolioFeatureBuilder / NewsFeatureBuilder
+    llm_context/   # LLMContextBundle schema + ContextBuilder
+    llm_analysis/  # LLMAnalysisRun / LLMAnalysisResult (input_context_json 저장)
 
-    llm_context/
-      schemas.py
-      context_builder.py
+    # --- 기타 기존 도메인 ---
+    assets/  watchlists/  portfolios/  theses/  reports/  signals/
+    alerts/  alert_candidates/  decision_logs/  decision_checklist/
+    research_summary/  dashboard/  market/  analysis/  jobs/  users/
 
-  services/
-    ingestion/
-      market_data_ingestion.py
-      news_ingestion.py
-      filing_ingestion.py
+  core/    { config, exceptions, security, response, ... }
+  db/      { base.py, session.py }
 
-    normalization/
-      price_normalizer.py
-      news_normalizer.py
-      filing_normalizer.py
+  worker/
+    connection.py
+    entrypoint.py
+    jobs/
+      prices.py       # collect_prices_job
+      news.py         # collect_news_job
+      analysis.py     # analyze_watchlist_job
+      # 신규: detect_signals 등 필요 시
 
-    validation/
-      price_validator.py
-      news_validator.py
-      data_quality.py
+  scheduler/ { interface, jobs, registry, runner }
 
-    features/
-      price_feature_builder.py
-      portfolio_feature_builder.py
-      news_feature_builder.py
-
-    signals/
-      signal_detector.py
-
-    llm/
-      llm_gateway.py
-      prompt_builder.py
-      output_parser.py
-
-  workers/
-    collect_daily_prices.py
-    collect_recent_news.py
-    detect_signals.py
-
-  models/
-    raw_provider_response.py
-    llm_analysis_run.py
-
-  db/
-    session.py
-    migrations/
-
-  tests/
-    unit/
-    integration/
+alembic/                         # DB migration (repo 루트 alembic.ini)
+  env.py
+  versions/
 ```
+
+레이어 → 모듈 매핑:
+
+```text
+Ingestion        → app/adapters/<domain>/ + app/domains/<domain>/ingestion_service.py
+Raw Store        → app/domains/raw_prices/, app/domains/raw_news/
+Normalization    → 도메인 service/ingestion_service에 응집 (별도 패키지 아님)
+                   · 가격: prices/ingestion_service.py 에서 정규화 인라인
+                   · 뉴스: 현재 domains/analysis/service.py 에 분리됨 → domains/news/로
+                     끌어와 수집 잡과 연결하는 것이 3단계 과제
+Validation       → 도메인 내부 (가격: prices/ingestion_service.py 의 _validate_bars).
+                   뉴스 Validator·DataQualityStatus 는 신규
+Feature/Signal   → domains/features/ (신규), domains/signals/ + domains/analysis/ (룰 엔진)
+Context Builder  → domains/llm_context/ (신규)
+LLM Gateway      → app/adapters/llm/gateway.py (기존)
+Analysis Store   → domains/llm_analysis/ (신규)
+```
+
+> 지침 3.1의 계층 흐름(`IngestionService → RawStore → … → LLMGateway`)은 개념 순서이며,
+> 물리적으로는 위 도메인 모듈에 나뉘어 산다. top-level `services/` 패키지는 두지 않는다.
 
 ---
 
