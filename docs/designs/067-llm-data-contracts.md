@@ -23,8 +23,8 @@ LLM 하이브리드 아키텍처(Epic #141)의 데이터 계약 선행.
 | PriceDaily | 존재(`domains/prices`, `prices` 테이블) | 재사용, 신규 없음 |
 | NewsArticle | 존재(`domains/news`, `news_items`/`NewsItem`) | 재사용(명칭만 대응), 신규 없음 |
 | DecisionLog | 존재(`domains/decision_logs`) | 재사용, `suggested_action` 어휘 정합 |
-| RawProviderResponse | 부재 | **신규(경계 DTO + `ProcessingStatus`)** |
-| LLMContextBundle | 부재 | **신규(Pydantic DTO 계층)** |
+| RawProviderResponse | 부재 | **신규(경계 projection + `ProcessingStatus`)** |
+| LLMContextBundle | 부재 | **신규(Pydantic projection 계층)** |
 | LLMAnalysisRun | 부재 | **신규(SQLAlchemy Model)** |
 | LLMAnalysisResult | 부재 | **신규(Pydantic 출력 스키마)** |
 
@@ -37,10 +37,10 @@ LLM 하이브리드 아키텍처(Epic #141)의 데이터 계약 선행.
 
 포함(계약 정의만):
 
-- `LLMContextBundle` Pydantic DTO 계층(지침 7절) + 데이터 품질/출력 계약 enum.
+- `LLMContextBundle` Pydantic projection 계층(지침 7절) + 데이터 품질/출력 계약 enum.
 - `LLMAnalysisResult` Pydantic 출력 스키마(지침 8절) + `SuggestedAction` enum.
 - `LLMAnalysisRun` SQLAlchemy Model + 마이그레이션(지침 3.5·16절).
-- `RawProviderResponse` 경계 Pydantic DTO + `ProcessingStatus` enum(지침 3.3·6.2).
+- `RawProviderResponse` 경계 Pydantic projection + `ProcessingStatus` enum(지침 3.3·6.2).
 - 각 계약의 Pydantic validation 테스트(외부 API·DB 세션 불필요).
 
 비포함(후속 단계):
@@ -55,12 +55,14 @@ LLM 하이브리드 아키텍처(Epic #141)의 데이터 계약 선행.
 
 ## 3. 신규 도메인 배치
 
-지침 9절(도메인 응집형 레이아웃)을 따른다.
+지침 9절(도메인 응집형 레이아웃)을 따른다. 용어: 경계·파생 뷰 Pydantic 타입은 프로젝트 관례상
+"DTO" 대신 "projection"으로 부른다(#132, ADR-009). HTTP 요청/응답은 `schema`, `LLMRequest`
+내용은 `payload`로 이미 쓰여 충돌하기 때문이다.
 
 ```
 app/domains/
   llm_context/                 # 신규 — ContextBundle 계약
-    schema.py                  # LLMContextBundle + 중첩 DTO + enum
+    schema.py                  # LLMContextBundle + 중첩 projection + enum
   llm_analysis/                # 신규 — 분석 실행/결과 계약
     model.py                   # LLMAnalysisRun (테이블)
     schema.py                  # LLMAnalysisRun I/O 스키마 + LLMAnalysisResult 출력 스키마
@@ -71,12 +73,12 @@ app/domains/
 `ingestion/`은 특정 provider에 묶이지 않는 공통 경계 계약만 담는다. 기존 `raw_prices`·
 `raw_news`는 각자 원본 테이블(raw store)로 유지하고, 본 단계에서 스키마를 바꾸지 않는다.
 
-## 4. RawProviderResponse — 경계 DTO (`domains/ingestion/schema.py`)
+## 4. RawProviderResponse — 경계 projection (`domains/ingestion/schema.py`)
 
-지침 3.2는 원본/정규화 분리를, 3.3은 외부 응답 → 내부 표준 DTO 변환을 요구한다. 현재 원본
+지침 3.2는 원본/정규화 분리를, 3.3은 외부 응답 → 내부 표준 projection 변환을 요구한다. 현재 원본
 저장은 이미 `raw_prices`(payload_hash dedup)·`raw_news_events`(url dedup)로 구현돼 있어, **통합
 원본 테이블을 새로 만들지 않는다**(§9 Decision A). 대신 두 수집 경로가 공통으로 emit할 수 있는
-**표준 경계 DTO**로 계약을 세운다.
+**표준 경계 projection**으로 계약을 세운다.
 
 `RawProviderResponse` (Pydantic, 저장 아님):
 
@@ -94,10 +96,10 @@ app/domains/
 `ProcessingStatus` enum(지침 6.2): `fetched` \| `normalized` \| `failed` \| `skipped_duplicate`.
 `RawDataType` enum: `price` \| `news`.
 
-> 이 DTO는 2단계에서 기존 raw 테이블에 `processing_status` 컬럼을 붙이고 수집 서비스가 emit하도록
+> 이 projection은 2단계에서 기존 raw 테이블에 `processing_status` 컬럼을 붙이고 수집 서비스가 emit하도록
 > 연결한다. 본 단계는 타입 정의와 validation까지만 한다.
 
-## 5. LLMContextBundle — 입력 DTO 계층 (`domains/llm_context/schema.py`)
+## 5. LLMContextBundle — 입력 projection 계층 (`domains/llm_context/schema.py`)
 
 지침 7절 예시 JSON을 Pydantic 계약으로 옮긴다. 모든 중첩은 BaseModel로 강타입화한다.
 
@@ -116,7 +118,7 @@ app/domains/
 | recent_decisions | list[`RecentDecision`] | 과거 판단 요약 |
 | output_contract | `OutputContract` | 출력 요구 계약 |
 
-중첩 DTO(필드는 지침 7절 예시 기준):
+중첩 projection(필드는 지침 7절 예시 기준):
 
 - `DataQualitySection`: price_data_status·news_data_status·portfolio_data_status(`DataQualityStatus`),
   warnings(list[str]).
@@ -199,7 +201,7 @@ app/domains/
 - **A. 통합 원본 테이블 미신설**: 지침의 `raw_provider_responses` 통합 테이블 대신 기존
   `raw_prices`·`raw_news_events`를 원본 저장소로 유지한다. 두 테이블이 이미 원본/정규화 분리와
   dedup을 충족하며, 통합 테이블 신설은 중복·마이그레이션 부담만 늘린다(YAGNI). `RawProviderResponse`는
-  두 경로가 공유하는 경계 DTO로만 둔다. 통합 저장은 공급자가 늘어날 때 재검토한다.
+  두 경로가 공유하는 경계 projection으로만 둔다. 통합 저장은 공급자가 늘어날 때 재검토한다.
 - **B. LLMAnalysisResult 테이블 미분리**: 출력은 `LLMAnalysisRun.output_json`(JSONB)에 저장하고
   별도 결과 테이블을 두지 않는다. 결과 단독 질의 요구가 생기면 승격한다(지침 16절 초기 JSONB 충분).
 - **C. 기존 LLM enum 재사용**: `task_type`·`risk_level`은 `app/adapters/llm/types.py`의
@@ -212,6 +214,6 @@ app/domains/
 ## 10. ADR 판단
 
 경계선. 계약 정의 자체는 기존 도메인 응집형 패턴을 따르는 통상 작업이라 ADR 불필요다. 다만
-Decision A(통합 원본 테이블을 두지 않고 경계 DTO로 대체)와 Decision C(어댑터 enum 재사용)는 지침
+Decision A(통합 원본 테이블을 두지 않고 경계 projection으로 대체)와 Decision C(어댑터 enum 재사용)는 지침
 문서의 문언과 다른 방향이므로, 개발자 리뷰에서 이견이 있으면 ADR로 승격한다. LLM 어댑터(Epic
 #141)와 본 파이프라인의 경계·소유권 정리가 커지면 별도 ADR로 다룬다.

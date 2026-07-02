@@ -97,7 +97,9 @@ raw_filings
 
 외부 데이터 공급자의 필드명, 응답 구조, 특이한 날짜 형식, 심볼 표기 방식이 내부 도메인 전체로 퍼지면 안 된다.
 
-모든 외부 응답은 내부 표준 DTO로 변환한다.
+모든 외부 응답은 내부 표준 projection으로 변환한다. (이 프로젝트는 경계·파생 뷰 타입을 "DTO"가
+아니라 "projection"으로 부른다 — #132, ADR-009. `schema`는 HTTP 요청/응답, `payload`는
+`LLMRequest` 내용에 이미 쓰인다.)
 
 예시:
 
@@ -843,7 +845,7 @@ Analysis Store   → domains/llm_analysis/ (신규)
 - 뉴스 검증
 - 기본 가격 피처 생성
 - 기본 뉴스 피처 생성
-- LLMContextBundle DTO
+- LLMContextBundle projection
 - ContextBuilder 기본 구현
 - LLMAnalysisRun 저장 구조
 ```
