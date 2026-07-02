@@ -207,9 +207,10 @@ app/domains/
 - **C. 기존 LLM enum 재사용**: `task_type`·`risk_level`은 `app/adapters/llm/types.py`의
   `LLMTaskType`·`RiskLevel`을 재사용해 어댑터(Epic #141)와 어휘를 통일한다. 지침 예시의
   `symbol_risk_review` 등 신규 task가 필요하면 `LLMTaskType`에 값을 추가한다(별도 enum 신설 금지).
-- **D. suggested_action ↔ decision_type 정합**: `SuggestedAction`은 DecisionLog `decision_type`
-  어휘(watch/buy_watch/hold/trim_watch/avoid/need_more_data)와 정합하되, 출력 계약에는 명령형
-  값을 넣지 않는다.
+- **D. suggested_action은 독립 enum**: `SuggestedAction`은 지침 8절 어휘(buy_watch/hold/
+  trim_watch/avoid/need_more_data)를 따르는 신규 enum이다. 기존 `DecisionLog`의 `DecisionType`
+  (WATCH/BUY/HOLD/SELL… 대문자·명령형 포함)은 사용자 판단 로그용 별개 개념이라 재사용·미러링하지
+  않는다. 지침 17절(LLM 출력에 명령형 action 금지)을 지킨다.
 
 ## 10. ADR 판단
 
