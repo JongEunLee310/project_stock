@@ -4,6 +4,8 @@
 
 Create an issue with purpose, background, requirements, out-of-scope items, verification expectations, and documentation impact.
 
+For larger work, structure it as a strategy (Epic) issue plus sub-issues, and fill in the issue and milestone metadata, per `docs/harness/issue-authoring-policy.md`.
+
 ## 2. Claude Plan
 
 Claude Code reads the issue and relevant docs, then creates a plan.
