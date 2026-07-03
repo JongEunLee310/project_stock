@@ -53,4 +53,4 @@ If an automated run appears to make no progress, confirm it is **actually hung**
 
 ## PR Grouping
 
-핸드오프 문서와 설계 문서는 그 자체로 단독 PR을 만들지 않는다. Codex가 해당 스코프를 구현한 뒤, 설계·핸드오프·구현을 하나의 PR로 함께 올린다. 그래야 리뷰어가 한 PR에서 근거와 구현을 같이 확인할 수 있고, 문서만 담긴 빈 PR이 남지 않는다. 핸드오프는 별도 PR을 기다리지 않고 위 Codex Execution 절차에 따라 바로 위임할 수 있다.
+A handoff document or design record is never opened as a standalone PR on its own. After Codex implements the scope, the design, handoff, and implementation land together in a single PR, so reviewers see the rationale and the code in one place and no doc-only empty PR is left behind. The handoff itself does not wait for a separate PR — it can be delegated directly per the Codex Execution steps above.
