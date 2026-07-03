@@ -1,14 +1,19 @@
-from decimal import Decimal
 from collections.abc import Mapping
+from datetime import datetime
+from decimal import Decimal
 from typing import Any, ClassVar, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
 from app.adapters.llm.exceptions import CloudBoundaryViolationError
-from app.adapters.llm.types import SensitivityLevel
+from app.adapters.llm.types import LLMTaskType, SensitivityLevel
+from app.domains.dashboard.schema import DashboardSummaryResponse
+from app.domains.llm_context.schema import (
+    DataQualityStatus,
+    LLMContextBundle,
+)
 from app.domains.portfolios.model import Portfolio, Position
 from app.domains.portfolios.schema import PortfolioSummaryResponse
-from app.domains.dashboard.schema import DashboardSummaryResponse
 
 
 ZERO = Decimal("0")
@@ -92,6 +97,89 @@ class WatchlistObservationSnapshot(CloudSafePayload):
     watchlist_id: int
     item_count: int
     items: list[WatchlistHighlight]
+
+
+class ContextBundleProjectionModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ContextBundleDataQualityProjection(ContextBundleProjectionModel):
+    price_data_status: DataQualityStatus
+    news_data_status: DataQualityStatus
+    portfolio_data_status: DataQualityStatus
+    warnings: list[str]
+
+
+class ContextBundlePriceSnapshotProjection(ContextBundleProjectionModel):
+    close: float | None
+    return_1d: float | None
+    return_5d: float | None
+    return_20d: float | None
+    drawdown_from_52w_high: float | None
+    volume_vs_20d_avg: float | None
+
+
+class ContextBundlePortfolioContextProjection(ContextBundleProjectionModel):
+    holding: bool
+    weight: float | None
+    unrealized_return: float | None
+
+
+class ContextBundleRecentNewsProjection(ContextBundleProjectionModel):
+    title: str
+    summary: str
+    source: str
+    published_at: datetime
+    trust_level: str
+
+
+class ContextBundleSignalProjection(ContextBundleProjectionModel):
+    type: str
+    severity: str
+    reason: str
+
+
+class ContextBundleSymbolCardProjection(ContextBundleProjectionModel):
+    symbol: str
+    market: str
+    display_name: str
+    price_snapshot: ContextBundlePriceSnapshotProjection
+    portfolio_context: ContextBundlePortfolioContextProjection | None
+    recent_news: list[ContextBundleRecentNewsProjection]
+    signals: list[ContextBundleSignalProjection]
+
+
+class ContextBundlePortfolioSummaryProjection(ContextBundleProjectionModel):
+    cash_ratio: float | None
+    top_holding_weight: float | None
+    concentration_risk: str
+
+
+class ContextBundleRecentDecisionProjection(ContextBundleProjectionModel):
+    symbol: str
+    decision_type: str
+    reason: str
+    created_at: datetime
+
+
+class ContextBundleOutputContractProjection(ContextBundleProjectionModel):
+    format: str
+    required_fields: list[str]
+
+
+class ContextBundleSnapshot(CloudSafePayload):
+    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
+
+    task_type: LLMTaskType
+    as_of: datetime
+    user_intent: str
+    symbols: list[str]
+    data_quality: ContextBundleDataQualityProjection
+    symbol_cards: list[ContextBundleSymbolCardProjection]
+    portfolio_summary: ContextBundlePortfolioSummaryProjection | None
+    user_rules: list[str]
+    recent_decisions: list[ContextBundleRecentDecisionProjection]
+    output_contract: ContextBundleOutputContractProjection
 
 
 def to_concentration_snapshot(
@@ -183,6 +271,61 @@ def to_watchlist_observation_snapshot(
         watchlist_id=watchlist_id,
         item_count=len(items),
         items=list(items),
+    )
+
+
+def to_context_bundle_snapshot(bundle: LLMContextBundle) -> ContextBundleSnapshot:
+    return ContextBundleSnapshot(
+        task_type=bundle.task_type,
+        as_of=bundle.as_of,
+        user_intent=bundle.user_intent,
+        symbols=list(bundle.symbols),
+        data_quality=ContextBundleDataQualityProjection.model_validate(
+            bundle.data_quality
+        ),
+        symbol_cards=[
+            ContextBundleSymbolCardProjection(
+                symbol=card.symbol,
+                market=card.market,
+                display_name=card.display_name,
+                price_snapshot=ContextBundlePriceSnapshotProjection.model_validate(
+                    card.price_snapshot
+                ),
+                portfolio_context=(
+                    ContextBundlePortfolioContextProjection(
+                        holding=card.portfolio_context.holding,
+                        weight=card.portfolio_context.weight,
+                        unrealized_return=card.portfolio_context.unrealized_return,
+                    )
+                    if card.portfolio_context is not None
+                    else None
+                ),
+                recent_news=[
+                    ContextBundleRecentNewsProjection.model_validate(news_item)
+                    for news_item in card.recent_news
+                ],
+                signals=[
+                    ContextBundleSignalProjection.model_validate(signal)
+                    for signal in card.signals
+                ],
+            )
+            for card in bundle.symbol_cards
+        ],
+        portfolio_summary=(
+            ContextBundlePortfolioSummaryProjection.model_validate(
+                bundle.portfolio_summary
+            )
+            if bundle.portfolio_summary is not None
+            else None
+        ),
+        user_rules=list(bundle.user_rules),
+        recent_decisions=[
+            ContextBundleRecentDecisionProjection.model_validate(decision)
+            for decision in bundle.recent_decisions
+        ],
+        output_contract=ContextBundleOutputContractProjection.model_validate(
+            bundle.output_contract
+        ),
     )
 
 
