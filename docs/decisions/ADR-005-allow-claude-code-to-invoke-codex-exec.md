@@ -70,6 +70,15 @@ Claude Code는 다음을 **모두** 충족하는 조건에서 구현 단계로 `
   검증(`.codex/CODEX_SETUP_NOTES.md`).
 - 수정된 Codex 릴리스가 나오면 고정 버전을 재평가.
 
+## Update (2026-07-03)
+
+Decision 3번(`고정된 CLI`)은 더 이상 요구하지 않는다. 당시 SIGTRAP 크래시를 일으키던
+회귀는 이후 Codex CLI 릴리스에서 해소됐고, 현재 설치된 CLI는 특정 버전 고정 없이
+`codex exec`를 정상 실행한다. 따라서 자동 호출 전제에서 버전 고정 항목을 제거하고, 대신
+실행이 멈춘(hang) 경우 실제 정지 여부를 확인한 뒤 제한된 횟수만 재시도하는 운영 규칙으로
+대체한다(`docs/harness/handoff-policy.md`, `.codex/CODEX_SETUP_NOTES.md`). 나머지 조건(기본
+sandbox만, 권한 격상 금지, 제한된 위임, 핸드오프 필수, 휴먼 게이트 불변)은 그대로 유효하다.
+
 ## Related Documents
 
 - `docs/decisions/ADR-001-separate-claude-code-and-codex-roles.md`

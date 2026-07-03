@@ -24,4 +24,5 @@ Use a `type/topic` prefix matching the commit type of the work:
 - One feature branch per unit of work. Keep branches narrow and short-lived.
 - Direct pushes to `main` are forbidden. Integrate only through PRs.
 - When review feedback arrives, push fixes to the same feature branch (updating the existing PR) rather than opening a new PR. See `docs/harness/local-review-policy.md`.
+- Be careful with the base branch when stacking PRs. If a PR's base is an intermediate feature branch, it merges into that branch and its code may never reach `main`. Set each PR's base to `main`, or retarget a follow-up PR's base to `main` once the preceding PR has merged.
 - Delete feature branches after merge to avoid stale-branch drift.
