@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.adapters.news.base import NewsAdapter, NewsAdapterResult
 from app.domains.assets.model import Asset
+from app.domains.ingestion.schema import ProcessingStatus
+from app.domains.news.model import NewsItem
 from app.domains.portfolios.model import Portfolio, Position
 from app.domains.raw_news.ingestion_service import NewsIngestionService
 from app.domains.raw_news.model import RawNewsEvent
@@ -52,6 +54,88 @@ def test_news_ingestion_tags_deduplicates_and_continues_after_failure(
         ("AAPL", "NASDAQ"),
         ("005930", "KOSPI"),
     ]
+
+
+def test_news_ingestion_normalizes_saved_raw_event(db: Session) -> None:
+    asset = Asset(symbol="AAPL", name="Apple Inc.", market="NASDAQ")
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    adapter = MixedNewsAdapter(
+        {
+            "Apple Inc.": [
+                news_result(
+                    "Apple supplier expands",
+                    "https://EXAMPLE.com/apple-1/#section",
+                )
+            ]
+        }
+    )
+
+    result = NewsIngestionService(db).collect_and_save(
+        adapter,
+        [("aapl.o", " nasdaq ", "Apple Inc.")],
+    )
+
+    assert result.saved_count == 1
+    assert result.normalized_count == 1
+    raw_event = db.scalars(select(RawNewsEvent)).one()
+    news_item = db.scalars(select(NewsItem)).one()
+    assert raw_event.processing_status == ProcessingStatus.NORMALIZED.value
+    assert news_item.raw_news_event_id == raw_event.id
+    assert news_item.asset_id == asset.id
+    assert news_item.title == "Apple supplier expands"
+    assert news_item.url == "https://example.com/apple-1"
+    assert news_item.source == "fixture"
+    assert news_item.summary is None
+    assert news_item.sentiment is None
+    assert news_item.impact_level is None
+
+
+def test_news_ingestion_leaves_unresolved_asset_fetched(db: Session) -> None:
+    adapter = MixedNewsAdapter(
+        {"Missing Corp.": [news_result("Missing update", "https://example.com/missing")]}
+    )
+
+    result = NewsIngestionService(db).collect_and_save(
+        adapter,
+        [("MISS", "NASDAQ", "Missing Corp.")],
+    )
+
+    assert result.saved_count == 1
+    assert result.normalized_count == 0
+    raw_event = db.scalars(select(RawNewsEvent)).one()
+    assert raw_event.processing_status == ProcessingStatus.FETCHED.value
+    assert db.scalars(select(NewsItem)).all() == []
+
+
+def test_news_ingestion_deduplicates_canonical_news_item_url(db: Session) -> None:
+    db.add(Asset(symbol="AAPL", name="Apple Inc.", market="NASDAQ"))
+    db.commit()
+    adapter = MixedNewsAdapter(
+        {
+            "Apple Inc.": [
+                news_result("Apple one", "https://EXAMPLE.com/apple"),
+                news_result("Apple duplicate", "https://example.com/apple/#fragment"),
+            ]
+        }
+    )
+
+    result = NewsIngestionService(db).collect_and_save(
+        adapter,
+        [("AAPL", "NASDAQ", "Apple Inc.")],
+    )
+
+    assert result.saved_count == 2
+    assert result.normalized_count == 2
+    raw_events = db.scalars(select(RawNewsEvent).order_by(RawNewsEvent.id)).all()
+    assert [event.processing_status for event in raw_events] == [
+        ProcessingStatus.NORMALIZED.value,
+        ProcessingStatus.NORMALIZED.value,
+    ]
+    news_items = db.scalars(select(NewsItem)).all()
+    assert len(news_items) == 1
+    assert news_items[0].url == "https://example.com/apple"
 
 
 def test_news_universe_resolver_deduplicates_watchlist_and_portfolio(

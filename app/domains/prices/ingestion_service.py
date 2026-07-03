@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 import logging
 from typing import Any
@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.adapters.market.base import PriceBarResult, PriceSeriesProvider
+from app.domains.prices.normalizer import PriceNormalizer
 from app.domains.prices.repository import PriceBarRepository
 from app.domains.raw_prices.service import RawPriceService
 
@@ -38,6 +39,7 @@ class PriceIngestionService:
     def __init__(self, db: Session) -> None:
         self.price_repo = PriceBarRepository(db)
         self.raw_price_service = RawPriceService(db)
+        self.normalizer = PriceNormalizer()
 
     def collect_and_save(
         self,
@@ -56,8 +58,8 @@ class PriceIngestionService:
         market: str,
         result: IngestionResult,
     ) -> IngestionResult:
-        normalized_symbol = symbol.upper()
-        normalized_market = market.upper()
+        normalized_symbol = self.normalizer.canonicalize_symbol(symbol)
+        normalized_market = self.normalizer.canonicalize_market(market)
         try:
             bars = provider.get_daily_bars(
                 normalized_symbol,
@@ -126,7 +128,7 @@ class PriceIngestionService:
                 )
                 dropped_count += 1
                 continue
-            if _as_utc(bar.timestamp).date() > today:
+            if self.normalizer.normalize_timestamp(bar.timestamp).date() > today:
                 logger.warning(
                     "Dropping future-dated price bar",
                     extra={"symbol": symbol, "market": market},
@@ -218,6 +220,4 @@ def _has_missing_required_price(bar: PriceBarResult) -> bool:
 
 
 def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
+    return PriceNormalizer().normalize_timestamp(value)

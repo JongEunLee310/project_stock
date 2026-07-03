@@ -4,6 +4,8 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.adapters.news.base import NewsAdapter
+from app.domains.ingestion.schema import ProcessingStatus
+from app.domains.news.normalization_service import NewsNormalizationService
 from app.domains.raw_news.service import RawNewsService
 
 logger = logging.getLogger(__name__)
@@ -17,11 +19,13 @@ class IngestionResult:
     received_count: int = 0
     saved_count: int = 0
     skipped_count: int = 0
+    normalized_count: int = 0
 
 
 class NewsIngestionService:
     def __init__(self, db: Session) -> None:
         self.raw_news_service = RawNewsService(db)
+        self.news_normalization_service = NewsNormalizationService(db)
 
     def collect_and_save(
         self,
@@ -61,10 +65,12 @@ class NewsIngestionService:
                 received_count=result.received_count,
                 saved_count=result.saved_count,
                 skipped_count=result.skipped_count,
+                normalized_count=result.normalized_count,
             )
 
         saved_count = 0
         skipped_count = 0
+        normalized_count = 0
         for entry in entries:
             event = self.raw_news_service.save_with_symbol(
                 entry,
@@ -75,6 +81,9 @@ class NewsIngestionService:
                 skipped_count += 1
             else:
                 saved_count += 1
+                self.news_normalization_service.normalize_event(event)
+                if event.processing_status == ProcessingStatus.NORMALIZED.value:
+                    normalized_count += 1
 
         return IngestionResult(
             target_count=result.target_count,
@@ -83,4 +92,5 @@ class NewsIngestionService:
             received_count=result.received_count + len(entries),
             saved_count=result.saved_count + saved_count,
             skipped_count=result.skipped_count + skipped_count,
+            normalized_count=result.normalized_count + normalized_count,
         )

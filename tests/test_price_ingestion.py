@@ -11,6 +11,7 @@ from app.adapters.market.yfinance import YFinancePriceProvider, to_yfinance_tick
 from app.domains.assets.model import Asset
 from app.domains.ingestion.schema import ProcessingStatus
 from app.domains.jobs.model import JobRun
+from app.domains.prices.normalizer import PriceNormalizer
 from app.domains.portfolios.model import Portfolio, Position
 from app.domains.prices.ingestion_service import PriceIngestionService
 from app.domains.prices.model import StockPriceBar
@@ -132,6 +133,21 @@ def test_price_ingestion_validates_and_saves_counts(db: Session) -> None:
     assert result.dropped_bar_count == 2
     assert result.warning_count == 2
     assert db.scalar(select(func.count()).select_from(StockPriceBar)) == 2
+
+
+def test_price_normalizer_preserves_existing_canonicalization() -> None:
+    normalizer = PriceNormalizer()
+
+    assert normalizer.canonicalize_symbol("aapl") == "AAPL"
+    assert normalizer.canonicalize_market("nasdaq") == "NASDAQ"
+    assert normalizer.normalize_timestamp(datetime(2026, 6, 18, 12, 30)) == datetime(
+        2026,
+        6,
+        18,
+        12,
+        30,
+        tzinfo=UTC,
+    )
 
 
 def test_price_ingestion_upsert_is_idempotent(db: Session) -> None:
