@@ -11,6 +11,7 @@ This directory defines the AI-assisted engineering harness used by this template
 - `agent-role-policy.md`
 - `completion-commit-policy.md`
 - `handoff-policy.md`
+- `issue-authoring-policy.md`
 - `design-record-policy.md`
 - `local-review-policy.md`
 - `feedback-loop-policy.md`
