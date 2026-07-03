@@ -25,7 +25,8 @@ Codex subagents spend more tokens than a single session (separate model/tool cal
 
 `docs/decisions/ADR-005-allow-claude-code-to-invoke-codex-exec.md` lets Claude Code invoke `codex exec` automatically. Before relying on that, confirm all of the following — otherwise fall back to manual execution (ADR-004):
 
-- **Pin the CLI.** Codex CLI must be a crash-free version. Version 0.140.0 was verified working on this machine; some later versions (e.g. 0.141.0) carried a SIGTRAP regression on Intel macOS x86_64 that crashes even trivial read-only runs. Pin via npm and re-check on upgrade.
+- **No version pin required.** Current Codex CLI runs `codex exec` correctly. The earlier SIGTRAP regression (some 0.14x builds on Intel macOS x86_64 that crashed even trivial read-only runs) is resolved in current releases, so no specific version needs pinning. Re-check only if a future upgrade reintroduces crashes.
+- **Detect hangs before retrying.** If an automated `codex exec` run stops making progress — no new output or file activity within a reasonable window, not merely a long step — confirm it is actually hung before retrying. Cap retries at a small bounded number; if it stays hung, fall back to manual execution (ADR-004) rather than looping.
 - **Default sandbox only.** Invoke under `read-only` / `workspace-write`. `--dangerously-bypass-approvals-and-sandbox` and `-s danger-full-access` are forbidden in automated workflows (ADR-005 point 2). If the default sandbox cannot run a task, stop and ask the human — never escalate.
 - **Dry run first.** Verify one `workspace-write` `codex exec` call completes (exit 0) on a trivial task before enabling automated invocation for real work.
 - **Bounded delegation.** Confirm `max_depth = 1` is honored (see the verification note above) so a Codex subagent cannot spawn further subagents.
