@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -90,6 +90,35 @@ def test_news_ingestion_normalizes_saved_raw_event(db: Session) -> None:
     assert news_item.summary is None
     assert news_item.sentiment is None
     assert news_item.impact_level is None
+
+
+def test_news_ingestion_marks_invalid_news_failed_without_news_item(
+    db: Session,
+) -> None:
+    db.add(Asset(symbol="AAPL", name="Apple Inc.", market="NASDAQ"))
+    db.commit()
+    adapter = MixedNewsAdapter(
+        {
+            "Apple Inc.": [
+                news_result(
+                    "Apple future update",
+                    "https://example.com/apple-future",
+                    published_at=datetime.now(timezone.utc) + timedelta(days=1),
+                )
+            ]
+        }
+    )
+
+    result = NewsIngestionService(db).collect_and_save(
+        adapter,
+        [("AAPL", "NASDAQ", "Apple Inc.")],
+    )
+
+    assert result.saved_count == 1
+    assert result.normalized_count == 0
+    raw_event = db.scalars(select(RawNewsEvent)).one()
+    assert raw_event.processing_status == ProcessingStatus.FAILED.value
+    assert db.scalars(select(NewsItem)).all() == []
 
 
 def test_news_ingestion_leaves_unresolved_asset_fetched(db: Session) -> None:
@@ -210,12 +239,16 @@ def seed_assets(db: Session) -> tuple[Asset, Asset]:
     return aapl, samsung
 
 
-def news_result(title: str, url: str) -> NewsAdapterResult:
+def news_result(
+    title: str,
+    url: str,
+    published_at: datetime | None = datetime(2026, 6, 18, tzinfo=timezone.utc),
+) -> NewsAdapterResult:
     return NewsAdapterResult(
         title=title,
         url=url,
         body="body",
         source="fixture",
-        published_at=datetime(2026, 6, 18, tzinfo=timezone.utc),
+        published_at=published_at,
         payload={"url": url},
     )

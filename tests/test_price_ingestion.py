@@ -15,6 +15,7 @@ from app.domains.prices.normalizer import PriceNormalizer
 from app.domains.portfolios.model import Portfolio, Position
 from app.domains.prices.ingestion_service import PriceIngestionService
 from app.domains.prices.model import StockPriceBar
+from app.domains.prices.validator import PriceValidator
 from app.domains.prices.universe import PriceUniverseResolver
 from app.domains.raw_prices.model import RawPrice
 from app.domains.raw_prices.service import RawPriceService
@@ -133,6 +134,29 @@ def test_price_ingestion_validates_and_saves_counts(db: Session) -> None:
     assert result.dropped_bar_count == 2
     assert result.warning_count == 2
     assert db.scalar(select(func.count()).select_from(StockPriceBar)) == 2
+
+
+def test_price_validator_preserves_drop_and_warning_counts() -> None:
+    today = date.today()
+    bars = [
+        price_bar(date=today - timedelta(days=3), close=Decimal("100")),
+        price_bar(
+            date=today - timedelta(days=2),
+            close=cast(Any, None),
+        ),
+        price_bar(date=today + timedelta(days=1), close=Decimal("101")),
+        price_bar(
+            date=today - timedelta(days=1),
+            close=Decimal("200"),
+            currency="EUR",
+        ),
+    ]
+
+    result = PriceValidator().validate_bars(bars, "AAPL", "NASDAQ")
+
+    assert len(result.valid_bars) == 2
+    assert result.dropped_count == 2
+    assert result.warning_count == 2
 
 
 def test_price_normalizer_preserves_existing_canonicalization() -> None:

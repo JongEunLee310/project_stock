@@ -35,3 +35,12 @@ class RawNewsEventRepository:
         self.db.commit()
         self.db.refresh(event)
         return event
+
+    def mark_failed(self, event_id: int) -> RawNewsEvent | None:
+        event = self.db.get(RawNewsEvent, event_id)
+        if event is None:
+            return None
+        event.processing_status = ProcessingStatus.FAILED.value
+        self.db.commit()
+        self.db.refresh(event)
+        return event
