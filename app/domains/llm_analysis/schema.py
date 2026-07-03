@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -43,6 +44,25 @@ class LLMAnalysisRunCreate(BaseModel):
     provider: str | None = None
     related_decision_log_id: int | None = None
     error_message: str | None = None
+
+
+class LLMAnalysisRunSummary(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    task_type: str
+    related_symbols: list[str]
+    status: str
+    model_name: str | None
+    prompt_version: str | None
+    provider: str | None
+    error_message: str | None
+    created_at: datetime
+
+
+class LLMAnalysisRunDetail(LLMAnalysisRunSummary):
+    input_context_json: dict[str, Any]
+    output_json: dict[str, Any] | None
 
 
 class LLMAnalysisRunResponse(BaseModel):

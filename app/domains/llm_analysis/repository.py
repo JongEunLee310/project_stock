@@ -1,5 +1,6 @@
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domains.llm_analysis.model import LLMAnalysisRun
@@ -31,6 +32,26 @@ class LLMAnalysisRunRepository:
 
     def get_by_id(self, run_id: int) -> LLMAnalysisRun | None:
         return self.db.get(LLMAnalysisRun, run_id)
+
+    def list_by_user(self, user_id: int, limit: int = 20) -> list[LLMAnalysisRun]:
+        statement = (
+            select(LLMAnalysisRun)
+            .where(LLMAnalysisRun.user_id == user_id)
+            .order_by(LLMAnalysisRun.created_at.desc(), LLMAnalysisRun.id.desc())
+            .limit(limit)
+        )
+        return list(self.db.scalars(statement).all())
+
+    def get_by_id_for_user(
+        self,
+        run_id: int,
+        user_id: int,
+    ) -> LLMAnalysisRun | None:
+        statement = select(LLMAnalysisRun).where(
+            LLMAnalysisRun.id == run_id,
+            LLMAnalysisRun.user_id == user_id,
+        )
+        return self.db.scalars(statement).first()
 
     def mark_succeeded(
         self,
