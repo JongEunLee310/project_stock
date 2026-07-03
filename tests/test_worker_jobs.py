@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
@@ -8,14 +9,18 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
+from app.adapters.llm.types import LLMTaskType
 from app.domains.assets.model import Asset
 from app.domains.jobs.model import JobRun
+from app.domains.llm_analysis.schema import RunStatus
 from app.domains.raw_news.model import RawNewsEvent
 from app.main import app
+from app.worker.jobs import llm_analysis
 from app.worker.jobs import news
 from app.worker.jobs.analysis import analyze_watchlist_job
+from app.worker.jobs.llm_analysis import run_llm_analysis_job
 from app.worker.jobs.news import collect_news_job
-from tests.conftest import api_data
+from tests.conftest import api_data, set_current_user
 
 engine = create_engine(
     "sqlite://",
@@ -117,6 +122,102 @@ def test_collect_news_job_records_success_with_target_failure(
     assert db.scalars(select(RawNewsEvent)).all() == []
 
 
+@dataclass
+class FakeLLMAnalysisRun:
+    status: str
+    error_message: str | None = None
+
+
+def test_run_llm_analysis_job_records_success(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class SuccessfulService:
+        def __init__(self, db: Session, gateway: object) -> None:
+            self.db = db
+            self.gateway = gateway
+
+        def run_analysis(
+            self,
+            task_type: LLMTaskType,
+            user_id: int,
+            symbols: list[tuple[str, str]],
+        ) -> FakeLLMAnalysisRun:
+            assert task_type == LLMTaskType.WATCHLIST_NOTE
+            assert user_id == 42
+            assert symbols == [("AAPL", "NASDAQ")]
+            return FakeLLMAnalysisRun(status=RunStatus.SUCCEEDED.value)
+
+    monkeypatch.setattr(llm_analysis, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(llm_analysis, "get_llm_gateway", lambda: object())
+    monkeypatch.setattr(llm_analysis, "LLMAnalysisService", SuccessfulService)
+
+    run_llm_analysis_job(42, LLMTaskType.WATCHLIST_NOTE.value, [("AAPL", "NASDAQ")])
+
+    job_run = db.scalars(select(JobRun)).one()
+    assert job_run.job_type == "llm_analysis"
+    assert job_run.status == "success"
+    assert job_run.finished_at is not None
+    assert job_run.error_message is None
+
+
+def test_run_llm_analysis_job_records_failed_run_status(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailedService:
+        def __init__(self, db: Session, gateway: object) -> None:
+            self.db = db
+            self.gateway = gateway
+
+        def run_analysis(
+            self,
+            task_type: LLMTaskType,
+            user_id: int,
+            symbols: list[tuple[str, str]],
+        ) -> FakeLLMAnalysisRun:
+            return FakeLLMAnalysisRun(
+                status=RunStatus.FAILED.value,
+                error_message="schema validation failed",
+            )
+
+    monkeypatch.setattr(llm_analysis, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(llm_analysis, "get_llm_gateway", lambda: object())
+    monkeypatch.setattr(llm_analysis, "LLMAnalysisService", FailedService)
+
+    run_llm_analysis_job(42, LLMTaskType.WATCHLIST_NOTE.value, [("AAPL", "NASDAQ")])
+
+    job_run = db.scalars(select(JobRun)).one()
+    assert job_run.job_type == "llm_analysis"
+    assert job_run.status == "failed"
+    assert job_run.error_message == "schema validation failed"
+    assert job_run.finished_at is not None
+
+
+def test_run_llm_analysis_job_records_wrapper_exception(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_error() -> object:
+        raise RuntimeError("gateway unavailable")
+
+    monkeypatch.setattr(llm_analysis, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(llm_analysis, "get_llm_gateway", raise_error)
+
+    with pytest.raises(RuntimeError, match="gateway unavailable"):
+        run_llm_analysis_job(
+            42,
+            LLMTaskType.WATCHLIST_NOTE.value,
+            [("AAPL", "NASDAQ")],
+        )
+
+    job_run = db.scalars(select(JobRun)).one()
+    assert job_run.job_type == "llm_analysis"
+    assert job_run.status == "failed"
+    assert job_run.error_message == "gateway unavailable"
+    assert job_run.finished_at is not None
+
+
 def test_enqueue_news_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeJob:
         id = "rq-job-1"
@@ -184,3 +285,86 @@ def test_enqueue_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
         "func": analyze_watchlist_job,
         "watchlist_id": 7,
     }
+
+
+def test_enqueue_llm_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeJob:
+        id = "rq-job-3"
+
+    class FakeQueue:
+        def __init__(self, name: str, connection: object) -> None:
+            self.name = name
+            self.connection = connection
+
+        def enqueue(
+            self,
+            func: object,
+            user_id: int,
+            task_type: str,
+            symbols: list[tuple[str, str]],
+        ) -> FakeJob:
+            captured["queue_name"] = self.name
+            captured["connection"] = self.connection
+            captured["func"] = func
+            captured["user_id"] = user_id
+            captured["task_type"] = task_type
+            captured["symbols"] = symbols
+            return FakeJob()
+
+    redis_connection = object()
+    monkeypatch.setattr("app.api.v1.endpoints.worker.Queue", FakeQueue)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.worker.get_redis_connection",
+        lambda: redis_connection,
+    )
+    set_current_user(42)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/worker/jobs/llm-analysis",
+            json={
+                "task_type": "WATCHLIST_NOTE",
+                "symbols": [{"symbol": "AAPL", "market": "NASDAQ"}],
+            },
+        )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    data = cast(dict[str, str], api_data(response))
+    assert data == {"job_id": "rq-job-3", "status": "queued"}
+    assert captured == {
+        "queue_name": "default",
+        "connection": redis_connection,
+        "func": run_llm_analysis_job,
+        "user_id": 42,
+        "task_type": "WATCHLIST_NOTE",
+        "symbols": [("AAPL", "NASDAQ")],
+    }
+
+
+def test_enqueue_llm_analysis_job_requires_auth() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/worker/jobs/llm-analysis",
+            json={
+                "task_type": "WATCHLIST_NOTE",
+                "symbols": [{"symbol": "AAPL", "market": "NASDAQ"}],
+            },
+        )
+
+    assert response.status_code == 401
+
+
+def test_enqueue_llm_analysis_job_rejects_empty_symbols() -> None:
+    set_current_user(42)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/worker/jobs/llm-analysis",
+            json={"task_type": "WATCHLIST_NOTE", "symbols": []},
+        )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 422

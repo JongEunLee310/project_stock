@@ -4,9 +4,12 @@ from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.api.v1.deps import get_current_user
 from app.core.response import ApiResponse, success
 from app.db.session import get_db
+from app.adapters.llm.types import LLMTaskType
 from app.domains.jobs.service import JobRunService
+from app.domains.users.model import User
 from app.scheduler.registry import default_scheduler_registry
 from app.scheduler.runner import (
     ManualSchedulerRunner,
@@ -15,6 +18,7 @@ from app.scheduler.runner import (
 )
 from app.worker.connection import get_redis_connection
 from app.worker.jobs.analysis import analyze_watchlist_job
+from app.worker.jobs.llm_analysis import run_llm_analysis_job
 from app.worker.jobs.news import collect_news_job
 
 router = APIRouter()
@@ -26,6 +30,16 @@ class NewsJobRequest(BaseModel):
 
 class AnalysisJobRequest(BaseModel):
     watchlist_id: int
+
+
+class SymbolRef(BaseModel):
+    symbol: str
+    market: str
+
+
+class LLMAnalysisJobRequest(BaseModel):
+    task_type: LLMTaskType
+    symbols: list[SymbolRef] = Field(min_length=1)
 
 
 class JobQueuedResponse(BaseModel):
@@ -60,6 +74,26 @@ def enqueue_news_job(payload: NewsJobRequest) -> ApiResponse[JobQueuedResponse]:
 def enqueue_analysis_job(payload: AnalysisJobRequest) -> ApiResponse[JobQueuedResponse]:
     queue = Queue("default", connection=get_redis_connection())
     job = queue.enqueue(analyze_watchlist_job, payload.watchlist_id)
+    return success(JobQueuedResponse(job_id=str(job.id), status="queued"))
+
+
+@router.post(
+    "/jobs/llm-analysis",
+    response_model=ApiResponse[JobQueuedResponse],
+    summary="Enqueue LLM analysis job",
+    description="Queue a background job that runs LLM analysis for the authenticated user.",
+)
+def enqueue_llm_analysis_job(
+    payload: LLMAnalysisJobRequest,
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[JobQueuedResponse]:
+    queue = Queue("default", connection=get_redis_connection())
+    job = queue.enqueue(
+        run_llm_analysis_job,
+        current_user.id,
+        payload.task_type.value,
+        [(symbol.symbol, symbol.market) for symbol in payload.symbols],
+    )
     return success(JobQueuedResponse(job_id=str(job.id), status="queued"))
 
 
