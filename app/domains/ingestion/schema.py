@@ -12,6 +12,24 @@ class ProcessingStatus(str, Enum):
     SKIPPED_DUPLICATE = "skipped_duplicate"
 
 
+class DataQualityStatus(str, Enum):
+    VALID = "valid"
+    INVALID = "invalid"
+    STALE = "stale"
+    DUPLICATE = "duplicate"
+    LOW_TRUST = "low_trust"
+
+
+class ValidationErrorReason(str, Enum):
+    MISSING_REQUIRED_FIELD = "missing_required_field"
+    FUTURE_TIMESTAMP = "future_timestamp"
+    STALE = "stale"
+    NEGATIVE_PRICE = "negative_price"
+    HIGH_LOW_INVERTED = "high_low_inverted"
+    CURRENCY_MISMATCH = "currency_mismatch"
+    OUTLIER_RETURN = "outlier_return"
+
+
 class RawDataType(str, Enum):
     PRICE = "price"
     NEWS = "news"

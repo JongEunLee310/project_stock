@@ -1,6 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime
-from decimal import Decimal
+from datetime import datetime
 import logging
 from typing import Any
 
@@ -9,17 +8,10 @@ from sqlalchemy.orm import Session
 from app.adapters.market.base import PriceBarResult, PriceSeriesProvider
 from app.domains.prices.normalizer import PriceNormalizer
 from app.domains.prices.repository import PriceBarRepository
+from app.domains.prices.validator import PriceValidator
 from app.domains.raw_prices.service import RawPriceService
 
 logger = logging.getLogger(__name__)
-
-_OUTLIER_THRESHOLD = Decimal("0.5")
-_EXPECTED_CURRENCY_BY_MARKET = {
-    "KOSPI": "KRW",
-    "KOSDAQ": "KRW",
-    "NASDAQ": "USD",
-    "NYSE": "USD",
-}
 
 
 @dataclass(frozen=True)
@@ -40,6 +32,7 @@ class PriceIngestionService:
         self.price_repo = PriceBarRepository(db)
         self.raw_price_service = RawPriceService(db)
         self.normalizer = PriceNormalizer()
+        self.validator = PriceValidator()
 
     def collect_and_save(
         self,
@@ -74,12 +67,16 @@ class PriceIngestionService:
                 payload,
                 source=_provider_source(provider, bars),
             )
-            valid_bars, dropped_count, warning_count = self._validate_bars(
+            validation = self.validator.validate_bars(
                 bars,
                 normalized_symbol,
                 normalized_market,
             )
-            saved_count = self.price_repo.upsert_bars(valid_bars) if valid_bars else 0
+            saved_count = (
+                self.price_repo.upsert_bars(validation.valid_bars)
+                if validation.valid_bars
+                else 0
+            )
             return IngestionResult(
                 target_count=result.target_count,
                 success_count=result.success_count + 1,
@@ -88,8 +85,8 @@ class PriceIngestionService:
                 raw_skipped_count=result.raw_skipped_count + (0 if raw_price else 1),
                 received_bar_count=result.received_bar_count + len(bars),
                 saved_bar_count=result.saved_bar_count + saved_count,
-                dropped_bar_count=result.dropped_bar_count + dropped_count,
-                warning_count=result.warning_count + warning_count,
+                dropped_bar_count=result.dropped_bar_count + validation.dropped_count,
+                warning_count=result.warning_count + validation.warning_count,
             )
         except Exception:
             logger.exception(
@@ -107,66 +104,6 @@ class PriceIngestionService:
                 dropped_bar_count=result.dropped_bar_count,
                 warning_count=result.warning_count,
             )
-
-    def _validate_bars(
-        self,
-        bars: list[PriceBarResult],
-        symbol: str,
-        market: str,
-    ) -> tuple[list[PriceBarResult], int, int]:
-        valid_bars: list[PriceBarResult] = []
-        dropped_count = 0
-        warning_count = 0
-        previous_close: Decimal | None = None
-        today = date.today()
-
-        for bar in sorted(bars, key=lambda item: item.timestamp):
-            if _has_missing_required_price(bar):
-                logger.warning(
-                    "Dropping price bar with missing OHLC data",
-                    extra={"symbol": symbol, "market": market},
-                )
-                dropped_count += 1
-                continue
-            if self.normalizer.normalize_timestamp(bar.timestamp).date() > today:
-                logger.warning(
-                    "Dropping future-dated price bar",
-                    extra={"symbol": symbol, "market": market},
-                )
-                dropped_count += 1
-                continue
-
-            expected_currency = _EXPECTED_CURRENCY_BY_MARKET.get(market)
-            if expected_currency is not None and bar.currency.upper() != expected_currency:
-                logger.warning(
-                    "Price bar currency does not match expected market currency",
-                    extra={
-                        "symbol": symbol,
-                        "market": market,
-                        "currency": bar.currency,
-                        "expected_currency": expected_currency,
-                    },
-                )
-                warning_count += 1
-
-            if previous_close is not None and previous_close != 0:
-                return_rate = (bar.close_price - previous_close) / previous_close
-                if abs(return_rate) > _OUTLIER_THRESHOLD:
-                    logger.warning(
-                        "Price bar return exceeds outlier threshold",
-                        extra={
-                            "symbol": symbol,
-                            "market": market,
-                            "return_rate": str(return_rate),
-                        },
-                    )
-                    warning_count += 1
-
-            valid_bars.append(bar)
-            previous_close = bar.close_price
-
-        return valid_bars, dropped_count, warning_count
-
 
 def _provider_payload(
     provider: PriceSeriesProvider,
@@ -204,20 +141,5 @@ def _provider_source(provider: PriceSeriesProvider, bars: list[PriceBarResult]) 
     if bars:
         return bars[0].source
     return provider.__class__.__name__
-
-
-def _has_missing_required_price(bar: PriceBarResult) -> bool:
-    return any(
-        value is None
-        for value in (
-            bar.open_price,
-            bar.high_price,
-            bar.low_price,
-            bar.close_price,
-            bar.adjusted_close_price,
-        )
-    )
-
-
 def _as_utc(value: datetime) -> datetime:
     return PriceNormalizer().normalize_timestamp(value)
