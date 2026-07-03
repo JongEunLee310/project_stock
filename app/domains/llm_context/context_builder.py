@@ -17,17 +17,28 @@ from app.domains.llm_context.schema import (
     PortfolioSummary,
     PriceSnapshot,
     RecentDecision,
+    RecentNewsItem,
+    SignalItem,
     SymbolCard,
 )
 from app.domains.llm_context.user_rules import DEFAULT_USER_RULES
+from app.domains.news.model import NewsItem
+from app.domains.news.repository import NewsItemRepository
 from app.domains.portfolios.repository import PortfolioRepository
 from app.domains.portfolios.schema import PortfolioSummaryResponse, PositionWeight
 from app.domains.portfolios.service import PortfolioService
 from app.domains.prices.model import StockPriceBar
 from app.domains.prices.repository import PriceBarRepository
+from app.domains.signals.model import Signal
+from app.domains.signals.repository import SignalRepository
 
 _PRICE_BAR_LIMIT = 252
 _RECENT_DECISION_LIMIT = 5
+_RECENT_NEWS_LIMIT = 5
+_RECENT_SIGNAL_LIMIT = 5
+_DEFAULT_NEWS_TRUST_LEVEL = "unknown"
+_HIGH_SIGNAL_SCORE_THRESHOLD = 70
+_MEDIUM_SIGNAL_SCORE_THRESHOLD = 40
 _NEWS_MISSING_WARNING = "뉴스 데이터는 아직 포함되지 않았습니다."
 _OUTPUT_REQUIRED_FIELDS = [
     "summary",
@@ -57,6 +68,8 @@ class ContextBuilder:
         self.portfolio_repo = PortfolioRepository(db)
         self.portfolio_service = PortfolioService(db)
         self.decision_log_repo = DecisionLogRepository(db)
+        self.news_item_repo = NewsItemRepository(db)
+        self.signal_repo = SignalRepository(db)
         self.price_feature_builder = PriceFeatureBuilder()
 
     def build_symbol_context(
@@ -72,6 +85,8 @@ class ContextBuilder:
             interval="1d",
             limit=_PRICE_BAR_LIMIT,
         )
+        recent_news = self._build_recent_news(asset.id) if asset is not None else []
+        signals = self._build_signals(asset.id) if asset is not None else []
         return SymbolCard(
             symbol=symbol,
             market=market,
@@ -80,8 +95,8 @@ class ContextBuilder:
             portfolio_context=self._build_position_context(user_id, asset.id)
             if asset is not None
             else None,
-            recent_news=[],
-            signals=[],
+            recent_news=recent_news,
+            signals=signals,
         )
 
     def build_portfolio_context(self, user_id: int) -> PortfolioSummary | None:
@@ -171,6 +186,18 @@ class ContextBuilder:
             unrealized_return=_calculate_unrealized_return(position),
         )
 
+    def _build_recent_news(self, asset_id: int) -> list[RecentNewsItem]:
+        news_items = self.news_item_repo.list_by_asset(asset_id)[:_RECENT_NEWS_LIMIT]
+        return [_recent_news_item_from_model(news_item) for news_item in news_items]
+
+    def _build_signals(self, asset_id: int) -> list[SignalItem]:
+        signals = self.signal_repo.list_by_asset(
+            asset_id,
+            include_expired=False,
+            limit=_RECENT_SIGNAL_LIMIT,
+        )
+        return [_signal_item_from_model(signal) for signal in signals]
+
     def _get_first_portfolio_summary(
         self,
         user_id: int,
@@ -188,12 +215,16 @@ class ContextBuilder:
         symbol_cards: list[SymbolCard],
         user_id: int,
     ) -> DataQualitySection:
-        warnings = [_NEWS_MISSING_WARNING]
         price_status = _price_data_status(symbol_cards)
+        news_status = _news_data_status(symbol_cards)
+        warnings: list[str] = []
         if price_status == DataQualityStatus.MISSING:
             warnings.append("가격 데이터가 없습니다.")
         elif price_status == DataQualityStatus.PARTIAL:
             warnings.append("일부 종목의 가격 데이터가 부족합니다.")
+
+        if news_status == DataQualityStatus.MISSING:
+            warnings.append(_NEWS_MISSING_WARNING)
 
         portfolio_status = self._portfolio_data_status(user_id)
         if portfolio_status == DataQualityStatus.MISSING:
@@ -201,7 +232,7 @@ class ContextBuilder:
 
         return DataQualitySection(
             price_data_status=price_status,
-            news_data_status=DataQualityStatus.MISSING,
+            news_data_status=news_status,
             portfolio_data_status=portfolio_status,
             warnings=warnings,
         )
@@ -245,6 +276,32 @@ def _snapshot_from_features(
     )
 
 
+def _recent_news_item_from_model(news_item: NewsItem) -> RecentNewsItem:
+    return RecentNewsItem(
+        title=news_item.title,
+        summary=news_item.summary or "",
+        source=news_item.source,
+        published_at=news_item.published_at or news_item.created_at,
+        trust_level=_DEFAULT_NEWS_TRUST_LEVEL,
+    )
+
+
+def _signal_item_from_model(signal: Signal) -> SignalItem:
+    return SignalItem(
+        type=signal.signal_type,
+        severity=signal.risk_level or _severity_from_score(signal.score),
+        reason=signal.reason,
+    )
+
+
+def _severity_from_score(score: int) -> str:
+    if score >= _HIGH_SIGNAL_SCORE_THRESHOLD:
+        return "high"
+    if score >= _MEDIUM_SIGNAL_SCORE_THRESHOLD:
+        return "medium"
+    return "low"
+
+
 def _calculate_unrealized_return(position: PositionWeight) -> float | None:
     if position.cost_value == 0:
         return None
@@ -276,6 +333,12 @@ def _price_data_status(symbol_cards: list[SymbolCard]) -> DataQualityStatus:
         return DataQualityStatus.PARTIAL
     if cards_with_price > 0:
         return DataQualityStatus.PARTIAL
+    return DataQualityStatus.MISSING
+
+
+def _news_data_status(symbol_cards: list[SymbolCard]) -> DataQualityStatus:
+    if any(card.recent_news for card in symbol_cards):
+        return DataQualityStatus.VALID
     return DataQualityStatus.MISSING
 
 
