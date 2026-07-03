@@ -23,6 +23,72 @@ flowchart LR
     SIGNAL --> USER
 ```
 
+## 데이터 수집 파이프라인
+
+LLM이 판단을 돕기 전에, 백엔드는 외부 데이터를 모아 정규화·검증하고 피처와 시그널로
+가공한 뒤 LLM 직전 입력인 `LLMContextBundle`까지 조립합니다. 각 단계는 도메인 모듈로
+나뉘어 있으며, 외부 연동은 `app/adapters/`의 fetch 경계로 격리해 provider를 mock과 real
+사이에서 교체할 수 있습니다. 설계 원칙과 계약 상세는
+[docs/knowledge/llm-data-pipeline.md](docs/knowledge/llm-data-pipeline.md)를 참고하세요.
+
+```mermaid
+flowchart TD
+    EXT["외부 데이터 소스<br/>가격 · 뉴스 · 공시 · 포트폴리오"] --> ADP
+
+    subgraph ADP["Adapters — fetch 경계 (app/adapters)"]
+        MKT["market<br/>yfinance(real) · mock"]
+        NWS["news<br/>rss(real) · mock"]
+        DSC["disclosure<br/>mock"]
+        PFL["portfolio<br/>mock"]
+    end
+
+    ADP --> RAW
+
+    subgraph RAW["Raw Store — 원본 보존 (app/domains)"]
+        RP["raw_prices<br/>payload dedup"]
+        RN["raw_news<br/>url dedup"]
+    end
+
+    RAW --> NORM
+
+    subgraph NORM["Normalization · Validation"]
+        PR["prices<br/>StockPriceBar"]
+        NI["news<br/>NewsItem"]
+        DQ["DataQualityStatus<br/>valid · partial · missing · stale"]
+    end
+
+    NORM --> FEAT["Feature<br/>features · PriceFeatureBuilder"]
+    NORM --> SIG["Signal<br/>signals · analysis 룰 엔진"]
+    FEAT --> SIG
+    FEAT --> CTX
+    NORM --> CTX
+    SIG --> CTX["Context Builder<br/>llm_context · ContextBuilder → LLMContextBundle"]
+
+    CTX -. 데이터 채워질 때까지 연결 보류 .-> LLMSTAGE
+
+    subgraph LLMSTAGE["LLM 단계 — 구현 완료, 파이프라인 연결 대기"]
+        GW["adapters/llm · LLMGateway<br/>번들→CloudSafe projection"]
+        AN["llm_analysis<br/>LLMAnalysisService · LLMAnalysisRun"]
+        GW --> AN
+    end
+```
+
+수집·가공은 RQ 워커 잡이 구동합니다. `collect_prices_job`은 가격 일봉을, `collect_news_job`은
+뉴스를 수집·정규화해 저장하고, `analyze_watchlist_job`은 시그널·분석 흐름을 실행합니다.
+스케줄러(`app/scheduler/`)는 아직 스켈레톤이라 잡 실등록은 후속 과제입니다.
+
+| 단계 | 모듈 | 구현 상태 |
+| --- | --- | --- |
+| Fetch (가격) | `adapters/market` | `yfinance` 실수집(일봉) + mock. 시세/지수 quote는 mock |
+| Fetch (뉴스) | `adapters/news` | `rss` 실수집 + mock |
+| Fetch (공시·포트폴리오) | `adapters/disclosure` · `adapters/portfolio` | mock만 |
+| Raw Store | `domains/raw_prices` · `domains/raw_news` | 원본 아카이브·중복 방지 완료 |
+| Normalization · Validation | `domains/prices` · `domains/news` | 정규화·검증을 수집 잡 내부에 인라인 |
+| Feature | `domains/features` | `PriceFeatureBuilder`(수익률·낙폭·거래량 비율 등) |
+| Signal | `domains/signals` · `domains/analysis` | 룰 엔진 기반 시그널 생성 |
+| Context Builder | `domains/llm_context` | `LLMContextBundle` 조립(가격·뉴스·시그널·포트폴리오·decision-log·데이터 품질) |
+| LLM Gateway · Analysis Store | `adapters/llm` · `domains/llm_analysis` | 오케스트레이션·결과 영속 구현 완료. 데이터 수집이 채워지기 전까지 파이프라인 연결 보류 |
+
 ## 기술 스택
 
 - Python 3.12, FastAPI, Uvicorn
