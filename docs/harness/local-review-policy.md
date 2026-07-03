@@ -46,6 +46,17 @@ Keep the tone polite and plain — use the `~합니다` register and explain wha
 
 Use sentence structures that read naturally in Korean. Avoid English-calque phrasing, over-compressed noun endings that drop the verb (e.g. "~ 정리.", "~ 일관."), arrow (`→`) clause joining, and piling multiple modifiers onto a single noun so the line is hard to parse in one pass. Unpack such cases into sentences with a clear subject and predicate, keeping identifiers and information density intact — fix the structure, not the substance. 상세 원칙은 `design-record-policy.md` 참조.
 
+### Depth and Substance
+
+The fixed headers are a skeleton; each section should carry real substance rather than a bare label. Scale the depth to the change — a small PR gets a short record, a substantial one a fuller record — while holding to these conventions:
+
+- **Review Summary** — Explain in prose what the PR does and how: what existing code it reuses, what is newly added, the core mechanism, and the key boundary or design decision it turns on. A reader should grasp the change without opening the diff.
+- **Numbered, self-contained findings** — Label findings so they can be referenced later: `S1`, `S2`, … under Suggestions and `Q1`, `Q2`, … under Questions. Write each as a **bold one-line title** followed by its rationale and an explicit severity/scope judgment (whether it blocks, whether it is acceptable within the current scope, or why a choice was unavoidable). Do not leave a finding as a bare observation.
+- **Ground each judgment** — Tie findings back to their basis: the design decision, handoff task, issue, or spec section that supports the call, so the reasoning is auditable rather than opinion.
+- **CI Result with concrete evidence** — State the actual command outputs and counts (tests passed, files typechecked, single migration head, and so on), not just "passed". Concrete numbers let a reader confirm the verification was real.
+- **Final Recommendation with reasoning** — Give the merge-readiness judgment and why: scope held, regression risk, what the added tests cover. Restate the outcome (for example, Blocking none; Suggestions and Questions are follow-up) so the merge decision is unambiguous.
+- **Honest severity** — Keep the Blocking / Suggestions / Questions split truthful. Blocking is a must-change-before-merge item; Suggestions are optional or follow-up; Questions need author or human input. Never inflate a follow-up into a blocker, and never bury a real blocker under Suggestions.
+
 ## Handling Review Feedback
 
 When the posted review comment contains a **Blocking** finding or any change the review says must be made, Claude Code does **not** stop and wait for the human. It drives the fix loop:
