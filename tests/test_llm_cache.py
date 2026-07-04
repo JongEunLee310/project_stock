@@ -1,7 +1,10 @@
+from datetime import UTC, datetime, tzinfo
 from typing import ClassVar
 
+import pytest
 from pydantic import BaseModel
 
+from app.adapters.llm import cache as cache_module
 from app.adapters.llm.cache import LLMResponseCache
 from app.adapters.llm.privacy import CloudSafePayload
 from app.adapters.llm.types import LLMTaskType, SensitivityLevel
@@ -69,7 +72,50 @@ def test_build_key_is_deterministic_for_same_inputs() -> None:
     second = build_key(cache)
 
     assert first == second
-    assert first.startswith("llm:cache:PORTFOLIO_BRIEFING:")
+    assert first.startswith("llm:cache:v1:PORTFOLIO_BRIEFING:")
+
+
+def test_build_key_changes_when_cache_schema_version_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache = make_cache()
+
+    first = build_key(cache)
+    monkeypatch.setattr(cache_module, "CACHE_SCHEMA_VERSION", "v2")
+    second = build_key(cache)
+
+    assert first != second
+    assert second.startswith("llm:cache:v2:PORTFOLIO_BRIEFING:")
+
+
+def test_build_key_preserves_digest_material_boundaries() -> None:
+    cache = make_cache()
+
+    assert build_key(cache, system_prompt="ab", model_name="c") != build_key(
+        cache,
+        system_prompt="a",
+        model_name="bc",
+    )
+
+
+def test_build_key_changes_when_utc_date_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache = make_cache()
+
+    class FixedDateTime:
+        current = datetime(2026, 7, 4, tzinfo=UTC)
+
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> datetime:
+            return cls.current
+
+    monkeypatch.setattr(cache_module, "datetime", FixedDateTime)
+    first = build_key(cache)
+    FixedDateTime.current = datetime(2026, 7, 5, tzinfo=UTC)
+    second = build_key(cache)
+
+    assert first != second
 
 
 def test_build_key_changes_when_payload_changes() -> None:

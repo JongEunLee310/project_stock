@@ -121,6 +121,18 @@ def test_settings_treat_empty_llm_cache_ttl_as_none(
     assert settings.LLM_CACHE_TTL_SECONDS is None
 
 
+@pytest.mark.parametrize("ttl_seconds", ["0", "-1"])
+def test_settings_reject_non_positive_llm_cache_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+    ttl_seconds: str,
+) -> None:
+    _clear_settings_env(monkeypatch)
+    monkeypatch.setenv("LLM_CACHE_TTL_SECONDS", ttl_seconds)
+
+    with pytest.raises(ValueError, match="LLM_CACHE_TTL_SECONDS"):
+        _settings_without_env_file()
+
+
 def test_settings_reject_wildcard_origin_with_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -387,6 +387,27 @@ def test_gateway_stores_cloud_cache_miss_after_client_call() -> None:
     ]
 
 
+def test_gateway_does_not_store_empty_cloud_output() -> None:
+    cache = SpyResponseCache()
+    cloud_client = SpyLLMClient({})
+    gateway = LLMGateway(
+        {CLOUD: cloud_client},
+        response_cache=cast(LLMResponseCache, cache),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+    )
+
+    assert result.output == {}
+    assert len(cloud_client.calls) == 1
+    assert cache.lookup_calls == ["cache-key"]
+    assert cache.store_calls == []
+
+
 def test_gateway_does_not_lookup_cache_for_local_route() -> None:
     cache = SpyResponseCache(
         CachedCompletion(

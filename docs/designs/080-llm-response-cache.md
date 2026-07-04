@@ -108,6 +108,18 @@ user_id 키 포함(화이트리스트 이탈·게이트웨이 시그니처 변�
 `Accepted`로 올리고, Decision 절에 III·JJJ·KKK의 확정 내용을 반영한다. 미결 질문 3
 (관측 지표)은 `cached` 필드 수준의 초기 대응만 기록하고 본격 메트릭은 후속으로 남긴다.
 
+## 리뷰 반영
+
+블라인드 코드 리뷰(실험 라운드3, `docs/experiments/fable-codex-high-vs-opus-vff-codex-medium.md`)
+적발 사항을 task-147로 반영한다.
+
+- 빈 output(`{}`)은 store하지 않는다 — provider 이상 신호가 TTL 동안 고착되는 것을 방지.
+- `CACHE_SCHEMA_VERSION` 상수를 키 네임스페이스에 포함한다 — 키 재료 밖 코드(메시지
+  조립·provider schema instruction·envelope 형식) 변경 시 수동 bump로 일괄 무효화.
+- digest 재료는 경계가 보존되는 직렬화로 결합한다(연결 경계 이동으로 인한 키 충돌 제거).
+- `LLM_CACHE_TTL_SECONDS`는 양수만 허용한다(0 이하는 기동 시 설정 오류).
+- `lookup`·`store`의 예외 삼킴 지점에 warning 로그를 남긴다(캐시 값은 로그 제외).
+
 ## 테스트
 
 - `LLMResponseCache` 단위: 키 결정성(동일 입력 → 동일 키), 재료 민감도(payload·

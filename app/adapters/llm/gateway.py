@@ -87,7 +87,12 @@ class LLMGateway:
         ]
 
         output = client.complete_json(messages, schema, timeout=self.timeout_seconds)
-        if provider == CLOUD and self.response_cache is not None and cache_key is not None:
+        if (
+            output
+            and provider == CLOUD
+            and self.response_cache is not None
+            and cache_key is not None
+        ):
             self.response_cache.store(
                 cache_key,
                 output,

@@ -44,6 +44,13 @@ class Settings(BaseSettings):
             return None
         return value
 
+    @field_validator("LLM_CACHE_TTL_SECONDS")
+    @classmethod
+    def validate_llm_cache_ttl_seconds(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("LLM_CACHE_TTL_SECONDS must be greater than 0")
+        return value
+
     @model_validator(mode="after")
     def validate_cors_credentials(self) -> "Settings":
         if self.CORS_ALLOW_CREDENTIALS and "*" in self.CORS_ORIGINS:

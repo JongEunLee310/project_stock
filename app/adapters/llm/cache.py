@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -8,6 +9,12 @@ from pydantic import BaseModel
 
 from app.adapters.llm.privacy import CloudSafePayload
 from app.adapters.llm.types import LLMTaskType
+
+
+logger = logging.getLogger(__name__)
+
+# Bump when prompt assembly, provider schema instructions, or cache envelope changes.
+CACHE_SCHEMA_VERSION = "v1"
 
 
 class RedisCacheStore(Protocol):
@@ -36,29 +43,47 @@ class LLMResponseCache:
         model_name: str,
         schema: type[BaseModel],
     ) -> str:
-        payload_json = json.dumps(
-            payload.as_payload(),
+        digest_material = json.dumps(
+            [
+                payload.as_payload(),
+                system_prompt,
+                model_name,
+                schema.model_json_schema(),
+            ],
             sort_keys=True,
             ensure_ascii=False,
+            separators=(",", ":"),
         )
-        schema_json = json.dumps(schema.model_json_schema(), sort_keys=True)
         digest = hashlib.sha256(
-            f"{payload_json}{system_prompt}{model_name}{schema_json}".encode("utf-8")
+            digest_material.encode("utf-8")
         ).hexdigest()
         date_key = datetime.now(UTC).strftime("%Y%m%d")
-        return f"llm:cache:{task_type.value}:{date_key}:{digest}"
+        return (
+            f"llm:cache:{CACHE_SCHEMA_VERSION}:"
+            f"{task_type.value}:{date_key}:{digest}"
+        )
 
     def lookup(self, key: str) -> CachedCompletion | None:
         try:
             raw_value = self.redis.get(key)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "LLM cache lookup failed key=%s error_type=%s",
+                key,
+                type(exc).__name__,
+            )
             return None
         if not raw_value:
             return None
 
         try:
             value = json.loads(raw_value)
-        except (TypeError, ValueError, UnicodeDecodeError):
+        except (TypeError, ValueError, UnicodeDecodeError) as exc:
+            logger.warning(
+                "LLM cache lookup decode failed key=%s error_type=%s",
+                key,
+                type(exc).__name__,
+            )
             return None
 
         if not isinstance(value, dict):
@@ -91,5 +116,10 @@ class LLMResponseCache:
         )
         try:
             self.redis.set(key, value, ex=self.ttl_seconds)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "LLM cache store failed key=%s error_type=%s",
+                key,
+                type(exc).__name__,
+            )
             return
