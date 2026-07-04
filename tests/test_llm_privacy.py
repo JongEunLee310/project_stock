@@ -6,8 +6,10 @@ import pytest
 from app.adapters.llm.exceptions import CloudBoundaryViolationError
 from app.adapters.llm.privacy import (
     CloudSafePayload,
+    NewsSummarySnapshot,
     PortfolioConcentrationSnapshot,
     PrivacyGate,
+    ThesisConflictSnapshot,
     to_concentration_snapshot,
 )
 from app.adapters.llm.types import SensitivityLevel
@@ -69,6 +71,22 @@ def test_guard_returns_public_cloud_safe_projection() -> None:
     payload = PublicPayload(value="market holiday")
 
     assert PrivacyGate().guard(payload) is payload
+
+
+def test_news_and_thesis_snapshots_use_expected_sensitivity() -> None:
+    news = NewsSummarySnapshot(title="Market update", body="Public article body")
+    thesis = ThesisConflictSnapshot(
+        thesis_summary="Durable demand supports earnings growth.",
+        invalidation_conditions="Demand weakens materially.",
+        news_summary="Guidance was cut.",
+        news_positive_factors=["Recurring revenue"],
+        news_negative_factors=["Margin pressure"],
+    )
+
+    assert news.sensitivity == SensitivityLevel.PUBLIC
+    assert thesis.sensitivity == SensitivityLevel.AGGREGATED
+    assert PrivacyGate().guard(news) is news
+    assert PrivacyGate().guard(thesis) is thesis
 
 
 def test_guard_rejects_original_portfolio_entity() -> None:

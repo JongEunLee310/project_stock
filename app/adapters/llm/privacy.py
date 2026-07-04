@@ -32,6 +32,23 @@ class CloudSafePayload(BaseModel):
         return self.model_dump(mode="json")
 
 
+class NewsSummarySnapshot(CloudSafePayload):
+    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.PUBLIC
+
+    title: str
+    body: str
+
+
+class ThesisConflictSnapshot(CloudSafePayload):
+    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
+
+    thesis_summary: str
+    invalidation_conditions: str
+    news_summary: str
+    news_positive_factors: list[str]
+    news_negative_factors: list[str]
+
+
 class PortfolioConcentrationSnapshot(CloudSafePayload):
     sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
 

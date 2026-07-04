@@ -7,12 +7,14 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.adapters.llm.base import LLMMessage
+from app.adapters.llm.gateway import CLOUD, LOCAL, LLMGateway
 from app.adapters.llm.mock import MockLLMClient
-from app.adapters.llm.prompts.news_summary import build_news_summary_messages
+from app.adapters.llm.prompts.news_summary import build_news_summary_system_prompt
 from app.domains.assets.model import Asset
 from app.domains.news.model import NewsItem
 from app.domains.news.service import NewsAnalysisService
 from app.domains.raw_news.model import RawNewsEvent
+
 
 class RecordingLLMClient(MockLLMClient):
     def __init__(self) -> None:
@@ -37,6 +39,10 @@ class RecordingLLMClient(MockLLMClient):
     ) -> dict[str, Any]:
         self.messages = messages
         return super().complete_json(messages, schema, timeout)
+
+
+def make_gateway(client: MockLLMClient) -> LLMGateway:
+    return LLMGateway({CLOUD: client, LOCAL: client})
 
 
 def create_asset(db: Session) -> Asset:
@@ -104,7 +110,7 @@ def test_news_analysis_service_summarize_updates_news_item(db: Session) -> None:
         }
     )
 
-    result = NewsAnalysisService(db, client).summarize(item.id)
+    result = NewsAnalysisService(db, make_gateway(client)).summarize(item.id)
 
     updated = db.get(NewsItem, item.id)
     assert updated is not None
@@ -126,10 +132,12 @@ def test_news_analysis_service_uses_summary_fallback_when_raw_body_is_missing(
     item = create_news_item_without_raw_event(db, raw_news_event_id)
     client = RecordingLLMClient()
 
-    NewsAnalysisService(db, client).summarize(item.id)
+    NewsAnalysisService(db, make_gateway(client)).summarize(item.id)
 
     assert client.messages
-    assert "Stored summary fallback." in client.messages[1].content
+    payload = json.loads(client.messages[1].content)
+    assert payload["title"] == "Apple supplier update"
+    assert payload["body"] == "Stored summary fallback."
 
 
 def test_news_analysis_service_rejects_invalid_llm_response(
@@ -149,7 +157,7 @@ def test_news_analysis_service_rejects_invalid_llm_response(
     )
 
     with pytest.raises(ValidationError):
-        NewsAnalysisService(db, client).summarize(item.id)
+        NewsAnalysisService(db, make_gateway(client)).summarize(item.id)
 
     unchanged = db.get(NewsItem, item.id)
     assert unchanged is not None
@@ -164,18 +172,13 @@ def test_news_analysis_service_raises_for_missing_news_item(db: Session) -> None
     client = MockLLMClient()
 
     with pytest.raises(ValueError, match="news item not found"):
-        NewsAnalysisService(db, client).summarize(999)
+        NewsAnalysisService(db, make_gateway(client)).summarize(999)
 
 
-def test_build_news_summary_messages_includes_title_and_body() -> None:
-    messages = build_news_summary_messages(
-        "Apple supplier expands production",
-        "Full article text",
-    )
+def test_build_news_summary_system_prompt_includes_schema() -> None:
+    prompt = build_news_summary_system_prompt()
 
-    assert len(messages) == 2
-    assert messages[0].role == "system"
-    assert "JSON Schema" in messages[0].content
-    assert messages[1].role == "user"
-    assert "Apple supplier expands production" in messages[1].content
-    assert "Full article text" in messages[1].content
+    assert "You are a stock news analyst." in prompt
+    assert "JSON Schema" in prompt
+    assert "positive_factors" in prompt
+    assert "negative_factors" in prompt

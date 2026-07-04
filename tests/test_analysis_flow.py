@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.adapters.llm.gateway import CLOUD, LOCAL, LLMGateway
 from app.adapters.llm.mock import MockLLMClient
 from app.adapters.news.base import NewsAdapter, NewsAdapterResult
 from app.core.exceptions import AppException
@@ -76,7 +77,7 @@ def db() -> Generator[Session, None, None]:
 @pytest.fixture(autouse=True)
 def patch_worker_session(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(analysis, "SessionLocal", TestingSessionLocal)
-    monkeypatch.setattr(analysis, "get_llm_client", lambda: llm_client())
+    monkeypatch.setattr(analysis, "get_llm_gateway", lambda: llm_gateway())
 
 
 def llm_client(
@@ -99,6 +100,14 @@ def llm_client(
             },
         }
     )
+
+
+def llm_gateway(
+    conflict_status: Literal["SUPPORTS", "NEUTRAL", "CONFLICTS"] = "NEUTRAL",
+    invalidation_triggered: bool = False,
+) -> LLMGateway:
+    client = llm_client(conflict_status, invalidation_triggered)
+    return LLMGateway({CLOUD: client, LOCAL: client})
 
 
 def news_result(symbol: str, index: int = 1) -> NewsAdapterResult:
@@ -166,11 +175,11 @@ def run_service(
     db: Session,
     watchlist_id: int,
     adapter: NewsAdapter,
-    client: MockLLMClient | None = None,
+    gateway: LLMGateway | None = None,
 ) -> AnalysisFlowResult:
     return WatchlistAnalysisService(
         db,
-        client or llm_client(),
+        gateway or llm_gateway(),
         adapter,
     ).run(watchlist_id)
 
@@ -228,7 +237,7 @@ def test_watchlist_analysis_flow_routes_conflict_to_signal_and_alert(
         db,
         watchlist.id,
         adapter,
-        llm_client(conflict_status="CONFLICTS"),
+        llm_gateway(conflict_status="CONFLICTS"),
     )
 
     signal = db.scalars(select(Signal)).one()

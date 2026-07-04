@@ -123,6 +123,22 @@ def test_recent_news_maps_nullable_fields_with_safe_defaults(db: Session) -> Non
     assert recent_news.trust_level == "unknown"
 
 
+def test_recent_news_uses_stored_trust_level(db: Session) -> None:
+    user = _create_user(db)
+    asset = _create_asset(db, symbol="AAPL", name="Apple Inc.", market="NASDAQ")
+    _create_news_item(
+        db,
+        asset_id=asset.id,
+        title="Apple trust signal",
+        trust_level="high",
+    )
+
+    symbol_card = ContextBuilder(db).build_symbol_context(user.id, "AAPL", "NASDAQ")
+
+    assert len(symbol_card.recent_news) == 1
+    assert symbol_card.recent_news[0].trust_level == "high"
+
+
 def test_signals_map_active_items_and_exclude_expired(db: Session) -> None:
     user = _create_user(db)
     asset = _create_asset(db, symbol="AAPL", name="Apple Inc.", market="NASDAQ")
@@ -305,6 +321,7 @@ def _create_news_item(
     title: str,
     summary: str | None = "Sales momentum remains stable.",
     published_at: datetime | None = datetime(2026, 6, 30, tzinfo=UTC),
+    trust_level: str | None = None,
 ) -> NewsItem:
     news_item = NewsItem(
         asset_id=asset_id,
@@ -313,6 +330,7 @@ def _create_news_item(
         source="test-wire",
         published_at=published_at,
         summary=summary,
+        trust_level=trust_level,
         created_at=datetime(2026, 7, 1, tzinfo=UTC),
     )
     db.add(news_item)

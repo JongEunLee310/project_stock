@@ -282,7 +282,11 @@ def _recent_news_item_from_model(news_item: NewsItem) -> RecentNewsItem:
         summary=news_item.summary or "",
         source=news_item.source,
         published_at=news_item.published_at or news_item.created_at,
-        trust_level=_DEFAULT_NEWS_TRUST_LEVEL,
+        trust_level=(
+            news_item.trust_level
+            if news_item.trust_level is not None
+            else _DEFAULT_NEWS_TRUST_LEVEL
+        ),
     )
 
 

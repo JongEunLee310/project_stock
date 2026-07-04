@@ -24,6 +24,8 @@ class NewsItemCreate(BaseModel):
     summary: str | None = None
     sentiment: str | None = Field(default=None, max_length=20)
     impact_level: str | None = Field(default=None, max_length=20)
+    trust_level: str | None = Field(default=None, max_length=20)
+    content_hash: str | None = Field(default=None, max_length=64)
     positive_factors: str | None = None
     negative_factors: str | None = None
 
@@ -41,6 +43,8 @@ class NewsItemResponse(BaseModel):
     summary: str | None
     sentiment: str | None
     impact_level: str | None
+    trust_level: str | None
+    content_hash: str | None
     positive_factors: str | None
     negative_factors: str | None
     created_at: UtcDatetime

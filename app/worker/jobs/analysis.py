@@ -1,6 +1,6 @@
 import logging
 
-from app.adapters.factory import get_llm_client, get_news_adapter
+from app.adapters.factory import get_llm_gateway, get_news_adapter
 from app.db.session import SessionLocal
 from app.domains.analysis.service import WatchlistAnalysisService
 from app.domains.jobs.model import JobRun
@@ -20,7 +20,7 @@ def analyze_watchlist_job(watchlist_id: int) -> None:
         job_run_id = job_run.id
         result = WatchlistAnalysisService(
             db,
-            get_llm_client(),
+            get_llm_gateway(),
             get_news_adapter(),
         ).run(watchlist_id)
         if result.failures:
