@@ -28,6 +28,16 @@ DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
         "summary": "Mock watchlist observation summary.",
         "items": [{"symbol": "AAPL", "note": "Mock watchlist observation note."}],
     },
+    "LLMAnalysisResult": {
+        "summary": "Mock LLM analysis summary.",
+        "risk_level": "LOW",
+        "suggested_action": "hold",
+        "reasons": ["Mock analysis reason"],
+        "watch_points": ["Mock watch point"],
+        "counter_arguments": ["Mock counter argument"],
+        "data_limitations": ["Mock data limitation"],
+        "confidence": 0.7,
+    },
 }
 
 

@@ -7,8 +7,9 @@ from pydantic import BaseModel
 
 from app.adapters.llm.base import LLMMessage
 from app.adapters.llm.exceptions import LLMCallError, LLMTimeoutError
-from app.adapters.llm.mock import MockLLMClient
+from app.adapters.llm.mock import DEFAULT_MOCK_RESPONSES, MockLLMClient
 from app.adapters.llm.openai import OpenAIClient
+from app.domains.llm_analysis.schema import LLMAnalysisResult
 
 
 class ExampleResponse(BaseModel):
@@ -49,6 +50,14 @@ def test_mock_llm_client_complete_json_wraps_non_dict_response() -> None:
     )
 
     assert result == {"response": "plain response"}
+
+
+def test_default_mock_llm_analysis_response_matches_schema() -> None:
+    result = LLMAnalysisResult.model_validate(
+        DEFAULT_MOCK_RESPONSES["LLMAnalysisResult"]
+    )
+
+    assert result.summary == "Mock LLM analysis summary."
 
 
 def test_openai_client_complete_returns_response() -> None:
