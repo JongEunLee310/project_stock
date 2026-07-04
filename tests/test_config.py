@@ -32,6 +32,7 @@ def test_settings_use_defaults_without_env_file(monkeypatch: pytest.MonkeyPatch)
     assert settings.LLM_TIMEOUT_SECONDS == 30
     assert settings.LLM_PROVIDER == "cloud"
     assert settings.LLM_DAILY_CALL_LIMIT is None
+    assert settings.LLM_CACHE_TTL_SECONDS is None
     assert settings.MARKET_PROVIDER == "mock"
     assert settings.NEWS_PROVIDER == "mock"
     assert "{query}" in settings.NEWS_QUERY_URL_TEMPLATE
@@ -53,6 +54,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "12")
     monkeypatch.setenv("LLM_PROVIDER", "local")
     monkeypatch.setenv("LLM_DAILY_CALL_LIMIT", "25")
+    monkeypatch.setenv("LLM_CACHE_TTL_SECONDS", "600")
     monkeypatch.setenv("MARKET_PROVIDER", "real")
     monkeypatch.setenv("NEWS_PROVIDER", "real")
     monkeypatch.setenv("NEWS_QUERY_URL_TEMPLATE", "https://example.com/rss?q={query}")
@@ -73,6 +75,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     assert settings.LLM_TIMEOUT_SECONDS == 12
     assert settings.LLM_PROVIDER == "local"
     assert settings.LLM_DAILY_CALL_LIMIT == 25
+    assert settings.LLM_CACHE_TTL_SECONDS == 600
     assert settings.MARKET_PROVIDER == "real"
     assert settings.NEWS_PROVIDER == "real"
     assert settings.NEWS_QUERY_URL_TEMPLATE == "https://example.com/rss?q={query}"
@@ -105,6 +108,29 @@ def test_settings_treat_empty_llm_daily_call_limit_as_none(
     settings = _settings_without_env_file()
 
     assert settings.LLM_DAILY_CALL_LIMIT is None
+
+
+def test_settings_treat_empty_llm_cache_ttl_as_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_settings_env(monkeypatch)
+    monkeypatch.setenv("LLM_CACHE_TTL_SECONDS", "")
+
+    settings = _settings_without_env_file()
+
+    assert settings.LLM_CACHE_TTL_SECONDS is None
+
+
+@pytest.mark.parametrize("ttl_seconds", ["0", "-1"])
+def test_settings_reject_non_positive_llm_cache_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+    ttl_seconds: str,
+) -> None:
+    _clear_settings_env(monkeypatch)
+    monkeypatch.setenv("LLM_CACHE_TTL_SECONDS", ttl_seconds)
+
+    with pytest.raises(ValueError, match="LLM_CACHE_TTL_SECONDS"):
+        _settings_without_env_file()
 
 
 def test_settings_reject_wildcard_origin_with_credentials(

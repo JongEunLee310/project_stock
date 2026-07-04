@@ -6,6 +6,7 @@ import app.adapters.factory as factory
 from app.adapters.factory import get_llm_client, get_llm_gateway
 from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.base import LLMMessage
+from app.adapters.llm.cache import LLMResponseCache
 from app.adapters.llm.gateway import CLOUD, LOCAL
 from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import MockLLMClient
@@ -87,6 +88,12 @@ class FakeRedis:
     def expire(self, name: str, time: int) -> bool:
         return True
 
+    def get(self, name: str) -> str | bytes | None:
+        return None
+
+    def set(self, name: str, value: str, ex: int) -> bool:
+        return True
+
 
 def test_get_llm_gateway_attaches_budget_for_cloud_with_limit(
     monkeypatch: pytest.MonkeyPatch,
@@ -94,6 +101,7 @@ def test_get_llm_gateway_attaches_budget_for_cloud_with_limit(
     redis = FakeRedis()
     monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", 7)
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", None)
     monkeypatch.setattr(settings, "LLM_TIMEOUT_SECONDS", 3)
     monkeypatch.setattr(factory, "get_redis_connection", lambda: redis)
     monkeypatch.setattr(
@@ -115,6 +123,7 @@ def test_get_llm_gateway_skips_budget_for_cloud_without_limit(
 ) -> None:
     monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", None)
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", None)
     monkeypatch.setattr(
         factory,
         "get_redis_connection",
@@ -129,6 +138,52 @@ def test_get_llm_gateway_skips_budget_for_cloud_without_limit(
     gateway = get_llm_gateway()
 
     assert gateway.call_budget is None
+    assert gateway.response_cache is None
+
+
+def test_get_llm_gateway_attaches_cache_for_cloud_with_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
+    monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", None)
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", 600)
+    monkeypatch.setattr(factory, "get_redis_connection", lambda: redis)
+    monkeypatch.setattr(
+        factory,
+        "get_llm_client",
+        lambda provider: MockLLMClient({"default": {"summary": provider}}),
+    )
+
+    gateway = get_llm_gateway()
+
+    assert gateway.call_budget is None
+    assert isinstance(gateway.response_cache, LLMResponseCache)
+    assert gateway.response_cache.redis is redis
+    assert gateway.response_cache.ttl_seconds == 600
+
+
+def test_get_llm_gateway_skips_cache_for_cloud_without_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
+    monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", None)
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", None)
+    monkeypatch.setattr(
+        factory,
+        "get_redis_connection",
+        lambda: pytest.fail("redis should not be created without cache or budget"),
+    )
+    monkeypatch.setattr(
+        factory,
+        "get_llm_client",
+        lambda provider: MockLLMClient({"default": {"summary": provider}}),
+    )
+
+    gateway = get_llm_gateway()
+
+    assert gateway.call_budget is None
+    assert gateway.response_cache is None
 
 
 @pytest.mark.parametrize("provider", ["mock", "local"])
@@ -138,6 +193,7 @@ def test_get_llm_gateway_skips_budget_for_non_cloud_providers(
 ) -> None:
     monkeypatch.setattr(settings, "LLM_PROVIDER", provider)
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", 7)
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", 600)
     monkeypatch.setattr(
         factory,
         "get_redis_connection",
@@ -147,6 +203,7 @@ def test_get_llm_gateway_skips_budget_for_non_cloud_providers(
     gateway = get_llm_gateway()
 
     assert gateway.call_budget is None
+    assert gateway.response_cache is None
     if provider == "mock":
         assert isinstance(gateway.clients[CLOUD], MockLLMClient)
         assert gateway.clients[CLOUD] is gateway.clients[LOCAL]

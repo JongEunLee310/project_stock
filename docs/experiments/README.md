@@ -10,6 +10,8 @@
   Sonnet으로 돌지 않아 단가 이득 미실현, Track A 우위.
 - `orchestrator-comparison-round2-vff-sonnet.md` — 라운드2: VFF를 실제 Sonnet 서브에이전트로
   구동. Anthropic 청구 −39%로 결론 역전, 단 Codex 토큰 +42% 트레이드오프.
+- `fable-codex-high-vs-opus-vff-codex-medium.md` — 라운드3: 동일 이슈(BE #138) 양 브랜치
+  병렬 구현·블라인드 채점. Fable 5+Codex(high)가 70 vs 60으로 우세, 단 n=1·축 미분리.
 
 ## 작성 규칙
 

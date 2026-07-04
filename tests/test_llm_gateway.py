@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from app.adapters.factory import get_llm_gateway
 from app.adapters.llm.base import LLMClient, LLMMessage
 from app.adapters.llm.budget import DailyCallBudget
+from app.adapters.llm.cache import CachedCompletion, LLMResponseCache
 from app.adapters.llm.exceptions import CloudBoundaryViolationError
 from app.adapters.llm.gateway import CLOUD, LOCAL, LLMCompletionResult, LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
@@ -75,6 +76,38 @@ class SpyCallBudget:
 
     def consume(self) -> None:
         self.calls += 1
+
+
+class SpyResponseCache:
+    def __init__(self, cached: CachedCompletion | None = None) -> None:
+        self.cached = cached
+        self.build_calls: list[tuple[LLMTaskType, CloudSafePayload, str, str]] = []
+        self.lookup_calls: list[str] = []
+        self.store_calls: list[tuple[str, dict[str, Any], str, str]] = []
+
+    def build_key(
+        self,
+        task_type: LLMTaskType,
+        payload: CloudSafePayload,
+        system_prompt: str,
+        model_name: str,
+        schema: type[BaseModel],
+    ) -> str:
+        self.build_calls.append((task_type, payload, system_prompt, model_name))
+        return "cache-key"
+
+    def lookup(self, key: str) -> CachedCompletion | None:
+        self.lookup_calls.append(key)
+        return self.cached
+
+    def store(
+        self,
+        key: str,
+        output: dict[str, Any],
+        provider: str,
+        model_name: str,
+    ) -> None:
+        self.store_calls.append((key, output, provider, model_name))
 
 
 def make_portfolio() -> Portfolio:
@@ -293,6 +326,151 @@ def test_gateway_consumes_budget_for_cloud_route() -> None:
     )
 
     assert budget.calls == 1
+
+
+def test_gateway_returns_cloud_cache_hit_without_client_or_budget_call() -> None:
+    budget = SpyCallBudget()
+    cloud_client = SpyLLMClient()
+    cache = SpyResponseCache(
+        CachedCompletion(
+            output={"summary": "cached"},
+            provider="openai",
+            model_name="gpt-cached",
+        )
+    )
+    gateway = LLMGateway(
+        {CLOUD: cloud_client},
+        call_budget=cast(DailyCallBudget, budget),
+        response_cache=cast(LLMResponseCache, cache),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+    )
+
+    assert result == LLMCompletionResult(
+        output={"summary": "cached"},
+        provider="openai",
+        model_name="gpt-cached",
+        cached=True,
+    )
+    assert cloud_client.calls == []
+    assert budget.calls == 0
+    assert cache.lookup_calls == ["cache-key"]
+    assert cache.store_calls == []
+
+
+def test_gateway_stores_cloud_cache_miss_after_client_call() -> None:
+    cache = SpyResponseCache()
+    cloud_client = SpyLLMClient({"summary": "live"})
+    gateway = LLMGateway(
+        {CLOUD: cloud_client},
+        response_cache=cast(LLMResponseCache, cache),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+    )
+
+    assert result.cached is False
+    assert result.output == {"summary": "live"}
+    assert len(cloud_client.calls) == 1
+    assert cache.lookup_calls == ["cache-key"]
+    assert cache.store_calls == [
+        ("cache-key", {"summary": "live"}, "spy", "spy-model")
+    ]
+
+
+def test_gateway_does_not_store_empty_cloud_output() -> None:
+    cache = SpyResponseCache()
+    cloud_client = SpyLLMClient({})
+    gateway = LLMGateway(
+        {CLOUD: cloud_client},
+        response_cache=cast(LLMResponseCache, cache),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+    )
+
+    assert result.output == {}
+    assert len(cloud_client.calls) == 1
+    assert cache.lookup_calls == ["cache-key"]
+    assert cache.store_calls == []
+
+
+def test_gateway_does_not_lookup_cache_for_local_route() -> None:
+    cache = SpyResponseCache(
+        CachedCompletion(
+            output={"summary": "cached"},
+            provider="openai",
+            model_name="gpt-cached",
+        )
+    )
+    local_client = SpyLLMClient({"summary": "local"})
+    router = LLMRouter(
+        {
+            LLMTaskType.PORTFOLIO_BRIEFING: TaskRoute(
+                launch=LOCAL,
+                future_primary=CLOUD,
+            )
+        }
+    )
+    gateway = LLMGateway(
+        {CLOUD: SpyLLMClient(), LOCAL: local_client},
+        router=router,
+        response_cache=cast(LLMResponseCache, cache),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+    )
+
+    assert result.output == {"summary": "local"}
+    assert result.cached is False
+    assert cache.build_calls == []
+    assert cache.lookup_calls == []
+    assert len(local_client.calls) == 1
+
+
+class RaisingRedisCache:
+    def get(self, name: str) -> str | bytes | None:
+        raise RuntimeError("redis get failed")
+
+    def set(self, name: str, value: str, ex: int) -> object:
+        raise RuntimeError("redis set failed")
+
+
+def test_gateway_falls_back_to_live_cloud_call_when_cache_redis_errors() -> None:
+    cloud_client = SpyLLMClient({"summary": "live"})
+    cache = LLMResponseCache(RaisingRedisCache(), ttl_seconds=300)
+    gateway = LLMGateway({CLOUD: cloud_client}, response_cache=cache)
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+    )
+
+    assert result == LLMCompletionResult(
+        output={"summary": "live"},
+        provider="spy",
+        model_name="spy-model",
+    )
+    assert len(cloud_client.calls) == 1
 
 
 def test_gateway_does_not_consume_budget_for_local_route() -> None:

@@ -2,6 +2,7 @@ from app.adapters.disclosure.base import DisclosureProvider
 from app.adapters.disclosure.mock import MockDisclosureProvider
 from app.adapters.llm.base import LLMClient
 from app.adapters.llm.budget import DailyCallBudget
+from app.adapters.llm.cache import LLMResponseCache
 from app.adapters.llm.gateway import CLOUD, LOCAL, LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import DEFAULT_MOCK_RESPONSES, MockLLMClient
@@ -88,9 +89,20 @@ def get_llm_gateway() -> LLMGateway:
             timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
         )
     if settings.LLM_PROVIDER == "cloud":
-        call_budget = (
-            DailyCallBudget(get_redis_connection(), settings.LLM_DAILY_CALL_LIMIT)
+        redis = (
+            get_redis_connection()
             if settings.LLM_DAILY_CALL_LIMIT is not None
+            or settings.LLM_CACHE_TTL_SECONDS is not None
+            else None
+        )
+        call_budget = (
+            DailyCallBudget(redis, settings.LLM_DAILY_CALL_LIMIT)
+            if redis is not None and settings.LLM_DAILY_CALL_LIMIT is not None
+            else None
+        )
+        response_cache = (
+            LLMResponseCache(redis, settings.LLM_CACHE_TTL_SECONDS)
+            if redis is not None and settings.LLM_CACHE_TTL_SECONDS is not None
             else None
         )
         return LLMGateway(
@@ -100,6 +112,7 @@ def get_llm_gateway() -> LLMGateway:
             },
             timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
             call_budget=call_budget,
+            response_cache=response_cache,
         )
     if settings.LLM_PROVIDER == "local":
         local_client = get_llm_client("local")
