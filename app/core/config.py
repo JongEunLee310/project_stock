@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     LLM_TIMEOUT_SECONDS: int = 30
     LLM_PROVIDER: Literal["cloud", "local", "mock"] = "cloud"
     LLM_DAILY_CALL_LIMIT: int | None = None
+    LLM_CACHE_TTL_SECONDS: int | None = None
     MARKET_PROVIDER: Literal["mock", "real", "yfinance"] = "mock"
     NEWS_PROVIDER: Literal["mock", "real", "rss"] = "mock"
     NEWS_QUERY_URL_TEMPLATE: str = (
@@ -36,7 +37,7 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
-    @field_validator("LLM_DAILY_CALL_LIMIT", mode="before")
+    @field_validator("LLM_DAILY_CALL_LIMIT", "LLM_CACHE_TTL_SECONDS", mode="before")
     @classmethod
     def parse_optional_int(cls, value: Any) -> int | None | Any:
         if value == "":

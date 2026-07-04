@@ -1,12 +1,11 @@
-# ADR-011: LLM Cache Policy (Phase 2, deferred)
+# ADR-011: LLM Cache Policy
 
 ## Status
 
-Proposed — Deferred
+Accepted
 
-이 ADR은 결정을 지금 확정하지 않는다. 무엇을 결정해야 하는지, 왜 지금이 아닌지, 어떤 신호가
-오면 확정해야 하는지를 기록한다. 풀구현 트리거가 충족되면 본 문서를 갱신해 Status를
-`Proposed`(이후 `Accepted`)로 올린다.
+브리핑 기능이 구현되어 동일 입력에 대한 반복 cloud LLM 호출 경로가 생겼으므로 캐시 정책을
+확정한다.
 
 ## Context
 
@@ -20,35 +19,34 @@ Proposed — Deferred
 3. **무효화.** 프롬프트나 모델 버전이 바뀌면 과거 결과를 더는 신뢰할 수 없으므로 무효화해야
    한다.
 
-지금 풀로 설계하지 않는 이유는 캐시할 대상 자체가 아직 없기 때문이다. 캐시는 "무엇을 키로
-삼을 입력인가", "결과가 얼마나 오래 유효한가"를 알아야 설계되는데, 이 둘은 소비 기능
-(브리핑)의 입력 스냅샷 모양과 갱신 주기가 정해져야 구체화된다. 기능 없이 캐시 계층을 먼저
-넣으면 사용처 없는 인프라가 된다(Epic #141의 Phase 분리 근거). 현재 게이트웨이 경로에는
-캐시할 만한 반복 클라우드 호출 작업이 아직 없다.
+과거에는 캐시할 대상 자체가 아직 없어 결정을 보류했다. 이후 포트폴리오·대시보드 브리핑과
+watchlist 관찰 생성처럼 동일 스냅샷을 반복 분석할 수 있는 경로가 생겼고, 모든 호출이
+`LLMGateway.complete_json(task_type, payload, schema, system_prompt)`로 수렴되었다. payload는
+`CloudSafePayload` projection이므로 캐시 키도 이 projection 범위 안에서 산출한다.
 
 ## Decision
 
-지금은 확정하지 않는다. 대신 풀구현 시점에 지켜야 할 제약과 트리거만 고정한다.
+캐시는 `LLMGateway` 내부의 cloud 경로에만 둔다. 호출부는 캐시 존재를 알 필요가 없다.
 
-1. **풀구현 트리거.** 동일 입력에 동일 결과를 반복 생성하며 호출 비용·지연이 사용자 경험에
-   영향을 주는 작업이 등장할 때 — 사실상 포트폴리오·대시보드 브리핑 기능 설계 착수 시점이다.
-2. **확정 시 지켜야 할 제약.**
-   - 캐시 키는 단방향 해시이고 클라우드로 전송되지 않으므로 ADR-009의 프라이버시 경계를
-     직접 위반하는 경로는 아니다. 그럼에도 키 산출 입력은 클라우드로 나가는 페이로드
-     (CloudSafe projection)와 같은 화이트리스트 범위로 제한한다. 근거는 프라이버시가 아니라
-     일관성과 단순성이다 — 키 재료와 전송 페이로드가 같아야 "같은 입력이면 같은 캐시 항목"이
-     명료해지고, 원본 entity를 키에 끌어들였다가 로깅·디버깅 경로로 새는 부수 위험도 없앤다.
-   - 무효화는 프롬프트 버전과 모델 버전을 키의 일부로 포함하거나 명시적 버전 태그로 처리한다.
-     버전이 바뀌면 과거 항목이 자동으로 빗나가야 한다. 조용히 stale 결과를 반환하지 않는다.
-   - 캐시는 게이트웨이 내부 관심사로 둔다. 호출부가 캐시 존재를 알 필요가 없다(ADR-007의
-     계층 분리와 일관).
-   - 저장 매체(인메모리 / DB / 외부 스토어)는 트리거 시점의 규모와 갱신 주기를 보고 정한다.
-     지금 고르지 않는다.
-3. **확정해야 할 미결 질문.**
-   - snapshot hash의 정확한 입력 범위 — task_type, projection 내용, 프롬프트·모델 버전을
-     어디까지 포함하는가.
-   - TTL을 작업별로 둘지 전역으로 둘지, 시간 기반인지 이벤트 기반(스냅샷 변경) 무효화인지.
-   - 캐시 적중·미스의 관측 지표.
+캐시 키는 `llm:cache:{task_type}:{YYYYMMDD}:{digest}` 형식이다. 날짜는 UTC 기준이고,
+`digest`는 `CloudSafePayload.as_payload()`의 canonical JSON, `system_prompt`,
+라우팅된 client의 `model_name`, `schema.model_json_schema()` JSON을 이어붙인 문자열의
+`sha256` hexdigest다. `user_id` 같은 내부 식별자는 키 재료에 넣지 않는다. 사용자별 차이는
+이미 전송 projection에 반영되어야 하며, 키 재료를 CloudSafe projection과 동일한
+화이트리스트로 제한하는 편이 privacy boundary와 계층 책임이 명확하다.
+
+무효화는 별도 version 상수가 아니라 본문 해시로 처리한다. payload, 프롬프트, 모델명, schema가
+바뀌면 digest가 바뀌므로 과거 항목은 자동으로 빗나간다. UTC 날짜도 키에 포함해 자정 경계에서
+새 캐시 항목을 쓰게 한다.
+
+저장 매체는 Redis다. `LLM_CACHE_TTL_SECONDS` 전역 단일 TTL을 두고, 값이 `None`이면 캐시를
+부착하지 않는다. 작업별 TTL이나 수동 무효화 API는 필요 신호가 생기면 후속으로 다룬다.
+
+cloud 경로 순서는 `privacy_gate.guard` → cache lookup → cache miss 시 `DailyCallBudget.consume`
+→ client 호출 → cache store다. 캐시 hit는 cloud 호출이 아니므로 budget을 소비하지 않고,
+`LLMCompletionResult.cached=True`로 복원한다. Redis `get`/`set` 예외, 역직렬화 실패, 필수 필드
+결손은 모두 miss로 취급해 실제 호출로 진행한다. local 라우팅과 mock provider 팩토리 경로에는
+캐시를 적용하지 않는다.
 
 ## Alternatives
 
@@ -62,19 +60,19 @@ Proposed — Deferred
 
 ## Consequences
 
-- 보류의 효과: 게이트웨이는 캐시 없이 매 호출을 수행한다. 현재 호출량에서는 비용·지연
-  문제가 없다.
-- 리스크: 브리핑 기능이 잦은 반복 호출을 만들면 비용이 늘 수 있다. 트리거를 명시해 두어
-  도입 시점을 놓치지 않게 관리한다.
-- 코드·DB 변경 없음. 본 문서는 결정 보류 기록이다.
+- 동일 입력의 반복 cloud 호출은 Redis hit 시 client 호출과 budget 소비 없이 복원된다.
+- `LLM_CACHE_TTL_SECONDS`를 비워 두면 기존 동작이 유지된다.
+- 캐시 장애는 LLM 호출 실패로 전파되지 않지만, 장애 동안 비용 절감 효과는 사라진다.
+- DB schema 변경은 없다.
 
 ## Follow-up
 
-- 브리핑 기능 설계(Phase 2) — 캐시 입력 스냅샷과 갱신 주기를 확정하는 선행 의존성.
-- #138 — LLM Cache 구현. 본 ADR이 확정된 뒤 착수한다.
+- #138 — LLM Cache 구현 완료.
+- hit/miss 메트릭, 작업별 TTL, 수동 무효화 API는 운영 필요가 확인되면 별도 이슈로 다룬다.
 
 ## Related Documents
 
 - `JongEunLee310/project_stock#137`(본 ADR), Epic `#141`
+- `docs/designs/080-llm-response-cache.md`
 - `docs/decisions/ADR-007-llm-provider-abstraction.md`(게이트웨이 계층 분리)
 - `docs/decisions/ADR-009-cloud-data-boundary-cloudsafe-projection.md`(캐시 키가 지켜야 할 경계)
