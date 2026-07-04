@@ -60,8 +60,8 @@ def test_run_analysis_persists_input_and_successful_output(
     ] == 100.0
     assert run.output_json == VALID_ANALYSIS_RESPONSE
     assert run.prompt_version == ANALYSIS_PROMPT_VERSION
-    assert run.model_name is None
-    assert run.provider is None
+    assert run.model_name == "mock"
+    assert run.provider == "mock"
 
 
 def test_run_analysis_records_failed_status_on_schema_error(

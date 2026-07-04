@@ -18,6 +18,14 @@ class OpenAIClient(LLMClient):
         self.model = model
         self.client = openai.OpenAI(api_key=api_key)
 
+    @property
+    def provider_name(self) -> str:
+        return "openai"
+
+    @property
+    def model_name(self) -> str:
+        return self.model
+
     def complete(
         self, messages: list[LLMMessage], timeout: float | None = None
     ) -> str:

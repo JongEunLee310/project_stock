@@ -46,20 +46,20 @@ class LLMAnalysisService:
         )
 
         try:
-            output = self.gateway.complete_json(
+            completion = self.gateway.complete_json(
                 task_type,
                 to_context_bundle_snapshot(bundle),
                 LLMAnalysisResult,
                 build_analysis_system_prompt(),
             )
-            result = LLMAnalysisResult.model_validate(output)
+            result = LLMAnalysisResult.model_validate(completion.output)
         except Exception as exc:
             return self.repository.mark_failed(run.id, str(exc))
 
         return self.repository.mark_succeeded(
             run.id,
             output_json=result.model_dump(mode="json"),
-            model_name=None,
+            model_name=completion.model_name,
             prompt_version=ANALYSIS_PROMPT_VERSION,
-            provider=None,
+            provider=completion.provider,
         )

@@ -70,7 +70,7 @@ def get_llm_client(provider: str | None = None) -> LLMClient:
         api_key = settings.OPENAI_API_KEY
         if api_key is None or not api_key.strip():
             raise RuntimeError("OPENAI_API_KEY is required when LLM_PROVIDER=cloud")
-        return OpenAIClient(api_key=api_key)
+        return OpenAIClient(api_key=api_key, model=settings.OPENAI_MODEL)
     if selected_provider == "local":
         return LocalLLMProvider()
     if selected_provider == "mock":
@@ -81,15 +81,22 @@ def get_llm_client(provider: str | None = None) -> LLMClient:
 def get_llm_gateway() -> LLMGateway:
     if settings.LLM_PROVIDER == "mock":
         mock_client = get_llm_client("mock")
-        return LLMGateway({CLOUD: mock_client, LOCAL: mock_client})
+        return LLMGateway(
+            {CLOUD: mock_client, LOCAL: mock_client},
+            timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
+        )
     if settings.LLM_PROVIDER == "cloud":
         return LLMGateway(
             {
                 CLOUD: get_llm_client("cloud"),
                 LOCAL: get_llm_client("local"),
-            }
+            },
+            timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
         )
     if settings.LLM_PROVIDER == "local":
         local_client = get_llm_client("local")
-        return LLMGateway({LOCAL: local_client, CLOUD: local_client})
+        return LLMGateway(
+            {LOCAL: local_client, CLOUD: local_client},
+            timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
+        )
     raise NotImplementedError(f"llm provider 미구현: {settings.LLM_PROVIDER}")

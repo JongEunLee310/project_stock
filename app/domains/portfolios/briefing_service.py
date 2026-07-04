@@ -62,7 +62,7 @@ class PortfolioBriefingService:
                 snapshot,
                 BriefingResult,
                 PORTFOLIO_BRIEFING_SYSTEM_PROMPT,
-            )
+            ).output
         )
         return PortfolioBriefingResponse(
             **result.model_dump(),

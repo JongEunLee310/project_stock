@@ -35,6 +35,14 @@ class MockLLMClient(LLMClient):
     def __init__(self, responses: dict[str, Any] | None = None) -> None:
         self.responses = responses or {}
 
+    @property
+    def provider_name(self) -> str:
+        return "mock"
+
+    @property
+    def model_name(self) -> str:
+        return "mock"
+
     def complete(
         self, messages: list[LLMMessage], timeout: float | None = None
     ) -> str:

@@ -6,6 +6,14 @@ from app.adapters.llm.base import LLMClient, LLMMessage
 
 
 class LocalLLMProvider(LLMClient):
+    @property
+    def provider_name(self) -> str:
+        return "local"
+
+    @property
+    def model_name(self) -> str:
+        return "local-stub"
+
     def complete(
         self, messages: list[LLMMessage], timeout: float | None = None
     ) -> str:

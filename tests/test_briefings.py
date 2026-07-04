@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.adapters.llm.exceptions import CloudBoundaryViolationError
-from app.adapters.llm.gateway import LLMGateway
+from app.adapters.llm.gateway import LLMCompletionResult, LLMGateway
 from app.adapters.llm.privacy import (
     CloudSafePayload,
     DashboardBriefingSnapshot,
@@ -57,14 +57,18 @@ class RecordingGateway(LLMGateway):
         payload: CloudSafePayload,
         schema: type[BaseModel],
         system_prompt: str,
-    ) -> dict[str, Any]:
+    ) -> LLMCompletionResult:
         self.calls.append((task_type, payload, schema, system_prompt))
-        return {
-            "headline": "Portfolio needs review",
-            "body": "Concentration and cash weight should be checked.",
-            "risk_headline": "Before buying",
-            "risk_checks": ["Review concentration"],
-        }
+        return LLMCompletionResult(
+            output={
+                "headline": "Portfolio needs review",
+                "body": "Concentration and cash weight should be checked.",
+                "risk_headline": "Before buying",
+                "risk_checks": ["Review concentration"],
+            },
+            provider="mock",
+            model_name="mock",
+        )
 
 
 def make_summary() -> PortfolioSummaryResponse:

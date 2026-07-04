@@ -52,7 +52,7 @@ class WatchlistObservationsService:
                 snapshot,
                 ObservationsResult,
                 WATCHLIST_OBSERVATION_SYSTEM_PROMPT,
-            )
+            ).output
         )
         return WatchlistObservationsResponse(
             **result.model_dump(),
