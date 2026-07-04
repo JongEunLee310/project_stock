@@ -8,6 +8,7 @@ from app.db.base import Base
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOMAIN_ROOT = REPO_ROOT / "app" / "domains"
 ALEMBIC_ENV = REPO_ROOT / "alembic" / "env.py"
+MODEL_REGISTRY = REPO_ROOT / "app" / "db" / "models.py"
 
 
 def _domain_model_modules() -> set[str]:
@@ -27,8 +28,22 @@ def _alembic_env_imports() -> set[str]:
     }
 
 
-def test_alembic_env_imports_all_domain_models() -> None:
-    assert _domain_model_modules() <= _alembic_env_imports()
+def _model_registry_imports() -> set[str]:
+    parsed = ast.parse(MODEL_REGISTRY.read_text())
+    return {
+        alias.name
+        for node in ast.walk(parsed)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+
+
+def test_alembic_env_imports_model_registry() -> None:
+    assert "app.db.models" in _alembic_env_imports()
+
+
+def test_model_registry_imports_all_domain_models() -> None:
+    assert _domain_model_modules() <= _model_registry_imports()
 
 
 def test_domain_models_register_tables_in_base_metadata() -> None:
