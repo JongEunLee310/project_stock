@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"
     LLM_TIMEOUT_SECONDS: int = 30
     LLM_PROVIDER: Literal["cloud", "local", "mock"] = "cloud"
+    LLM_DAILY_CALL_LIMIT: int | None = None
     MARKET_PROVIDER: Literal["mock", "real", "yfinance"] = "mock"
     NEWS_PROVIDER: Literal["mock", "real", "rss"] = "mock"
     NEWS_QUERY_URL_TEMPLATE: str = (
@@ -33,6 +34,13 @@ class Settings(BaseSettings):
     def parse_cors_origins(cls, value: Any) -> list[str] | Any:
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("LLM_DAILY_CALL_LIMIT", mode="before")
+    @classmethod
+    def parse_optional_int(cls, value: Any) -> int | None | Any:
+        if value == "":
+            return None
         return value
 
     @model_validator(mode="after")

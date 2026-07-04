@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.adapters.llm.base import LLMClient, LLMMessage
+from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.exceptions import LLMRoutingError
 from app.adapters.llm.privacy import CloudSafePayload, PrivacyGate
 from app.adapters.llm.router import LLMRouter
@@ -30,11 +31,13 @@ class LLMGateway:
         router: LLMRouter | None = None,
         privacy_gate: PrivacyGate | None = None,
         timeout_seconds: float | None = None,
+        call_budget: DailyCallBudget | None = None,
     ) -> None:
         self.clients = clients
         self.router = LLMRouter() if router is None else router
         self.privacy_gate = PrivacyGate() if privacy_gate is None else privacy_gate
         self.timeout_seconds = timeout_seconds
+        self.call_budget = call_budget
 
     def complete_json(
         self,
@@ -51,6 +54,8 @@ class LLMGateway:
         safe_payload = (
             self.privacy_gate.guard(payload) if provider == CLOUD else payload
         )
+        if provider == CLOUD and self.call_budget is not None:
+            self.call_budget.consume()
         messages = [
             LLMMessage(role="system", content=system_prompt),
             LLMMessage(
