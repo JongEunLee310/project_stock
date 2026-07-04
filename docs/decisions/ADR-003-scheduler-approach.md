@@ -48,7 +48,7 @@ RQ 자체에는 시간 트리거가 없으므로, 주기 실행을 위해서는 
 
 ## Follow-up
 
-- 실제 주기 등록·운영 적용(후속 버전).
+- 실제 주기 등록은 RQ 내장 cron(`app/scheduler/cron_config.py`)으로 구체화됨.
 - 설계 044에 본 결정(rq-scheduler 채택) 반영.
 
 ## Related Documents
