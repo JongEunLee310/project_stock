@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 
 from app.scheduler.interface import FunctionSchedulerJob, SchedulerJob
-from app.scheduler.jobs import run_mock_collection_job
+from app.worker.jobs.news import collect_news_job
+from app.worker.jobs.prices import collect_prices_job
 
 
 @dataclass(frozen=True)
@@ -26,11 +27,19 @@ default_scheduler_registry = SchedulerRegistry(
     [
         ScheduleDefinition(
             job=FunctionSchedulerJob(
-                name="mock_collection",
-                func=run_mock_collection_job,
+                name="price_collection",
+                func=collect_prices_job,
             ),
-            cron="*/15 * * * *",
+            cron="10 22 * * 1-5",
             enabled=True,
-        )
+        ),
+        ScheduleDefinition(
+            job=FunctionSchedulerJob(
+                name="news_collection",
+                func=collect_news_job,
+            ),
+            cron="0 * * * *",
+            enabled=True,
+        ),
     ]
 )

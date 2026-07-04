@@ -52,6 +52,7 @@ curl http://127.0.0.1:8000/api/v1/health/readiness
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | 로그인 token 만료 시간. |
 | `OPENAI_API_KEY` | empty / `None` | mock-only 로컬 흐름에서는 비워둘 수 있다. |
 | `LLM_TIMEOUT_SECONDS` | `30` | LLM 호출 timeout. |
+| `LLM_DAILY_CALL_LIMIT` | empty / `None` | `LLM_PROVIDER=cloud`에서만 적용되는 일일 cloud LLM 호출 상한. 비우면 무제한이다. |
 | `MARKET_PROVIDER` | `mock` | `mock` 또는 `real`. |
 | `NEWS_PROVIDER` | `mock` | `mock` 또는 `real`. |
 | `DISCLOSURE_PROVIDER` | `mock` | `mock` 또는 `real`. |
@@ -127,14 +128,24 @@ curl -X POST http://127.0.0.1:8000/api/v1/assets \
 curl http://127.0.0.1:8000/api/v1/assets/1/detail
 ```
 
-작업 enqueue와 scheduler 수동 실행은 `/api/v1/worker` 아래에 있다. RQ 작업 enqueue에는 Redis가 필요하다.
+작업 enqueue와 scheduler 수동 실행은 `/api/v1/worker` 아래에 있다. RQ 작업 enqueue에는
+`REDIS_URL`로 지정한 Redis가 필요하다.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/worker/jobs/news \
   -H "Content-Type: application/json" \
   -d '{"symbols":["AAPL"]}'
 
-curl -X POST http://127.0.0.1:8000/api/v1/worker/scheduler/jobs/mock_collection/run
+curl -X POST http://127.0.0.1:8000/api/v1/worker/scheduler/jobs/price_collection/run
+curl -X POST http://127.0.0.1:8000/api/v1/worker/scheduler/jobs/news_collection/run
+```
+
+주기 실행은 RQ 내장 cron 프로세스를 별도로 띄운다. 이 프로세스는
+`app/scheduler/cron_config.py`를 임포트하면서 `price_collection`과 `news_collection`을
+등록한다.
+
+```bash
+uv run rq cron app/scheduler/cron_config.py -u $REDIS_URL
 ```
 
 ## Domain Map
@@ -148,7 +159,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/worker/scheduler/jobs/mock_collection/
 | News and analysis | news adapters, raw/news items, reports, thesis conflict flow | [010](designs/010-news-adapter.md), [014](designs/014-news-ai-summary.md), [015](designs/015-thesis-conflict-analysis.md), [019](designs/019-watchlist-analysis-flow.md) |
 | Signals and alerts | `/api/v1/signals`, `/api/v1/alerts`, `/api/v1/alert-candidates` | [017](designs/017-signal-domain.md), [018](designs/018-alert-domain.md), [035](designs/035-alert-candidate-api.md) |
 | Portfolios | `/api/v1/portfolios`, concentration check | [021](designs/021-portfolio-domain.md), [022](designs/022-portfolio-concentration.md), [034](designs/034-portfolio-summary-api.md) |
-| Jobs and scheduler | `/api/v1/job-runs`, `/api/v1/worker/*`, scheduler skeleton | [011](designs/011-worker-background-job.md), [012](designs/012-job-runs-domain.md), [044](designs/044-scheduler-skeleton.md) |
+| Jobs and scheduler | `/api/v1/job-runs`, `/api/v1/worker/*`, RQ cron scheduler | [011](designs/011-worker-background-job.md), [012](designs/012-job-runs-domain.md), [044](designs/044-scheduler-skeleton.md) |
 
 ## Frontend Notes
 

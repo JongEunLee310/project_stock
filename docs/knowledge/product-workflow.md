@@ -23,7 +23,7 @@ deterministic mock이다. `market`은 `mock` / `yfinance`(일봉 실수집) / `r
 ```mermaid
 flowchart LR
     subgraph trigger["트리거"]
-        SCHED["스케줄러<br/>(mock_collection)"]
+        SCHED["스케줄러<br/>(price_collection/news_collection)"]
         WJOB["워커 잡 enqueue<br/>(news / analysis)"]
     end
 
@@ -139,10 +139,12 @@ LLM을 호출하지 않는다 — 산출물은 `prices`·`raw_prices` 적재까�
 
 ## 스케줄러
 
-스케줄러는 현재 스켈레톤이다. 레지스트리에 등록된 잡(`mock_collection`, cron
-`*/15 * * * *`)을 실제 주기 트리거 없이 수동 실행하는 경로만 제공한다
-(`POST /api/v1/worker/scheduler/jobs/{job_name}/run`). 실제 주기 실행 연결은 후속 범위다.
-설계 배경은 [ADR-003](../decisions/ADR-003-scheduler-approach.md)을 참고한다.
+스케줄러는 RQ 내장 cron으로 수집 잡을 큐에 적재한다. 레지스트리에는 `price_collection`
+(`10 22 * * 1-5`)과 `news_collection`(`0 * * * *`)이 등록되어 있으며, 스케줄러
+프로세스는 `uv run rq cron app/scheduler/cron_config.py -u $REDIS_URL`로 실행한다.
+수동 실행 경로(`POST /api/v1/worker/scheduler/jobs/{job_name}/run`)도 같은 RQ enqueue
+경로를 사용하며, 응답의 `job_id`는 RQ job id다. 설계 배경은
+[ADR-003](../decisions/ADR-003-scheduler-approach.md)을 참고한다.
 
 ## JobRun 생명주기
 

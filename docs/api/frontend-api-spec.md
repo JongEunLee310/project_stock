@@ -964,14 +964,14 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 #### `POST /api/v1/worker/scheduler/jobs/{job_name}/run`
 
 - Auth: Not required
-- Request: path `job_name` (현재 등록된 job: `mock_collection`)
+- Request: path `job_name` (현재 등록된 job: `price_collection`, `news_collection`)
 - Success `200`:
 
 ```json
-{ "data": { "job_name": "mock_collection", "job_run_id": 1, "status": "success" }, "message": null, "error": null, "meta": null }
+{ "data": { "job_name": "price_collection", "job_id": "rq-job-id", "status": "queued" }, "message": null, "error": null, "meta": null }
 ```
 
-- Notes: 등록된 scheduler job을 실제 주기 트리거 등록 없이 한 번 즉시 실행한다. Redis 없이 동작한다.
+- Notes: 등록된 scheduler job을 RQ 큐에 즉시 적재한다. Redis가 필요하다.
 - Representative error `404`: unknown job name. `409`: disabled job.
 
 ### Health

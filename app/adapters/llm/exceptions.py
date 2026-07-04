@@ -12,3 +12,7 @@ class LLMTimeoutError(LLMCallError):
 
 class LLMRoutingError(LLMCallError):
     """Raised when an LLM task cannot be mapped to a provider."""
+
+
+class LLMBudgetExceededError(LLMCallError):
+    """Raised when the daily LLM call budget is exceeded."""

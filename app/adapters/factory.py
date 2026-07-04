@@ -1,6 +1,7 @@
 from app.adapters.disclosure.base import DisclosureProvider
 from app.adapters.disclosure.mock import MockDisclosureProvider
 from app.adapters.llm.base import LLMClient
+from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.gateway import CLOUD, LOCAL, LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import DEFAULT_MOCK_RESPONSES, MockLLMClient
@@ -22,6 +23,7 @@ from app.adapters.news.rss import RSSNewsAdapter
 from app.adapters.portfolio.base import PortfolioProvider
 from app.adapters.portfolio.mock import MockPortfolioProvider
 from app.core.config import settings
+from app.worker.connection import get_redis_connection
 
 
 def get_market_provider() -> MarketDataProvider:
@@ -86,12 +88,18 @@ def get_llm_gateway() -> LLMGateway:
             timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
         )
     if settings.LLM_PROVIDER == "cloud":
+        call_budget = (
+            DailyCallBudget(get_redis_connection(), settings.LLM_DAILY_CALL_LIMIT)
+            if settings.LLM_DAILY_CALL_LIMIT is not None
+            else None
+        )
         return LLMGateway(
             {
                 CLOUD: get_llm_client("cloud"),
                 LOCAL: get_llm_client("local"),
             },
             timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
+            call_budget=call_budget,
         )
     if settings.LLM_PROVIDER == "local":
         local_client = get_llm_client("local")

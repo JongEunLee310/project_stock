@@ -1,14 +1,11 @@
 from pydantic import BaseModel, Field
 from rq import Queue
-from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.v1.deps import get_current_user
-from app.core.response import ApiResponse, success
-from app.db.session import get_db
 from app.adapters.llm.types import LLMTaskType
-from app.domains.jobs.service import JobRunService
+from app.core.response import ApiResponse, success
 from app.domains.users.model import User
 from app.scheduler.registry import default_scheduler_registry
 from app.scheduler.runner import (
@@ -49,8 +46,13 @@ class JobQueuedResponse(BaseModel):
 
 class SchedulerJobRunResponse(BaseModel):
     job_name: str
-    job_run_id: int
+    job_id: str
     status: str
+
+
+def get_scheduler_runner() -> ManualSchedulerRunner:
+    queue = Queue("default", connection=get_redis_connection())
+    return ManualSchedulerRunner(default_scheduler_registry, queue)
 
 
 @router.post(
@@ -105,14 +107,10 @@ def enqueue_llm_analysis_job(
 )
 def run_scheduler_job_once(
     job_name: str,
-    db: Session = Depends(get_db),
+    runner: ManualSchedulerRunner = Depends(get_scheduler_runner),
 ) -> ApiResponse[SchedulerJobRunResponse]:
-    runner = ManualSchedulerRunner(
-        default_scheduler_registry,
-        JobRunService(db),
-    )
     try:
-        result = runner.run_once(job_name)
+        result = runner.run(job_name)
     except SchedulerJobNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -126,7 +124,7 @@ def run_scheduler_job_once(
     return success(
         SchedulerJobRunResponse(
             job_name=result.job_name,
-            job_run_id=result.job_run_id,
+            job_id=result.job_id,
             status=result.status,
         )
     )

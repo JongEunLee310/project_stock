@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.adapters.factory import get_llm_gateway
 from app.adapters.llm.base import LLMClient, LLMMessage
+from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.exceptions import CloudBoundaryViolationError
 from app.adapters.llm.gateway import CLOUD, LOCAL, LLMCompletionResult, LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
@@ -66,6 +67,14 @@ class SpyLLMClient(LLMClient):
         self.calls.append(messages)
         self.timeouts.append(timeout)
         return self.response
+
+
+class SpyCallBudget:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def consume(self) -> None:
+        self.calls += 1
 
 
 def make_portfolio() -> Portfolio:
@@ -267,6 +276,49 @@ def test_gateway_passes_configured_timeout_to_client() -> None:
 
     assert result.output == {"summary": "ok"}
     assert cloud_client.timeouts == [12.5]
+
+
+def test_gateway_consumes_budget_for_cloud_route() -> None:
+    budget = SpyCallBudget()
+    gateway = LLMGateway(
+        {CLOUD: SpyLLMClient()},
+        call_budget=cast(DailyCallBudget, budget),
+    )
+
+    gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+    )
+
+    assert budget.calls == 1
+
+
+def test_gateway_does_not_consume_budget_for_local_route() -> None:
+    budget = SpyCallBudget()
+    router = LLMRouter(
+        {
+            LLMTaskType.PORTFOLIO_BRIEFING: TaskRoute(
+                launch=LOCAL,
+                future_primary=CLOUD,
+            )
+        }
+    )
+    gateway = LLMGateway(
+        {CLOUD: SpyLLMClient(), LOCAL: SpyLLMClient()},
+        router=router,
+        call_budget=cast(DailyCallBudget, budget),
+    )
+
+    gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+    )
+
+    assert budget.calls == 0
 
 
 def test_get_llm_gateway_maps_mock_client_to_both_slots(
