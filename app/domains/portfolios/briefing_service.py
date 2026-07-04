@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.adapters.llm import CachePolicy
 from app.adapters.factory import get_market_provider
 from app.adapters.llm.gateway import LLMGateway
 from app.adapters.llm.privacy import to_briefing_snapshot
@@ -62,6 +63,8 @@ class PortfolioBriefingService:
                 snapshot,
                 BriefingResult,
                 PORTFOLIO_BRIEFING_SYSTEM_PROMPT,
+                cache_policy=CachePolicy.READ_WRITE,
+                user_id=user_id,
             ).output
         )
         return PortfolioBriefingResponse(

@@ -19,7 +19,7 @@ from app.adapters.llm.privacy import (
     to_dashboard_snapshot,
 )
 from app.adapters.llm.schema import BriefingResult
-from app.adapters.llm.types import LLMTaskType, SensitivityLevel
+from app.adapters.llm.types import CachePolicy, LLMTaskType, SensitivityLevel
 from app.adapters.market.base import QuoteResult
 from app.core.config import settings
 from app.core.exceptions import AppException
@@ -48,7 +48,14 @@ from tests.conftest import api_data, set_current_user
 class RecordingGateway(LLMGateway):
     def __init__(self) -> None:
         self.calls: list[
-            tuple[LLMTaskType, CloudSafePayload, type[BaseModel], str]
+            tuple[
+                LLMTaskType,
+                CloudSafePayload,
+                type[BaseModel],
+                str,
+                CachePolicy,
+                int | None,
+            ]
         ] = []
 
     def complete_json(
@@ -57,8 +64,10 @@ class RecordingGateway(LLMGateway):
         payload: CloudSafePayload,
         schema: type[BaseModel],
         system_prompt: str,
+        cache_policy: CachePolicy = CachePolicy.BYPASS,
+        user_id: int | None = None,
     ) -> LLMCompletionResult:
-        self.calls.append((task_type, payload, schema, system_prompt))
+        self.calls.append((task_type, payload, schema, system_prompt, cache_policy, user_id))
         return LLMCompletionResult(
             output={
                 "headline": "Portfolio needs review",
@@ -272,10 +281,12 @@ def test_portfolio_briefing_service_maps_gateway_result(db: Session) -> None:
     assert result.headline == "Portfolio needs review"
     assert result.risk_checks == ["Review concentration"]
     assert len(gateway.calls) == 1
-    task_type, payload, schema, _prompt = gateway.calls[0]
+    task_type, payload, schema, _prompt, cache_policy, cache_user_id = gateway.calls[0]
     assert task_type == LLMTaskType.PORTFOLIO_BRIEFING
     assert isinstance(payload, PortfolioBriefingSnapshot)
     assert schema is BriefingResult
+    assert cache_policy == CachePolicy.READ_WRITE
+    assert cache_user_id == 1
 
 
 def test_portfolio_briefing_service_raises_404_for_missing_portfolio(
@@ -295,11 +306,13 @@ def test_dashboard_briefing_service_maps_gateway_result_without_highlights(
     result = DashboardBriefingService(db, gateway).generate(user_id=1)
 
     assert result.body == "Concentration and cash weight should be checked."
-    task_type, payload, schema, _prompt = gateway.calls[0]
+    task_type, payload, schema, _prompt, cache_policy, cache_user_id = gateway.calls[0]
     assert task_type == LLMTaskType.DASHBOARD_BRIEFING
     assert isinstance(payload, DashboardBriefingSnapshot)
     assert payload.watchlist_highlights == []
     assert schema is BriefingResult
+    assert cache_policy == CachePolicy.READ_WRITE
+    assert cache_user_id == 1
 
 
 def test_dashboard_briefing_service_builds_watchlist_highlights(
@@ -373,7 +386,7 @@ def test_dashboard_briefing_service_builds_watchlist_highlights(
 
     DashboardBriefingService(db, gateway).generate(user_id=1)
 
-    _task_type, payload, _schema, _prompt = gateway.calls[0]
+    _task_type, payload, _schema, _prompt, _cache_policy, _cache_user_id = gateway.calls[0]
     assert isinstance(payload, DashboardBriefingSnapshot)
     assert [highlight.symbol for highlight in payload.watchlist_highlights] == [
         "AAPL",

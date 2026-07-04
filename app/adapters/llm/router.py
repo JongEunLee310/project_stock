@@ -4,6 +4,9 @@ from app.adapters.llm.exceptions import LLMRoutingError
 from app.adapters.llm.types import LLMTaskType
 
 
+LLM_MODEL_POLICY_VERSION: str = "v1"
+
+
 @dataclass(frozen=True)
 class TaskRoute:
     launch: str

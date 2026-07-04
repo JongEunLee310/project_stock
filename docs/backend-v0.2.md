@@ -53,6 +53,7 @@ curl http://127.0.0.1:8000/api/v1/health/readiness
 | `OPENAI_API_KEY` | empty / `None` | mock-only 로컬 흐름에서는 비워둘 수 있다. |
 | `LLM_TIMEOUT_SECONDS` | `30` | LLM 호출 timeout. |
 | `LLM_DAILY_CALL_LIMIT` | empty / `None` | `LLM_PROVIDER=cloud`에서만 적용되는 일일 cloud LLM 호출 상한. 비우면 무제한이다. |
+| `LLM_CACHE_TTL_SECONDS` | empty / `None` | 비우면 LLM 캐시 비활성. 값이 있으면 `LLM_PROVIDER!=mock`에서 Redis에 브리핑 LLM 결과를 TTL 초 동안 저장한다. |
 | `MARKET_PROVIDER` | `mock` | `mock` 또는 `real`. |
 | `NEWS_PROVIDER` | `mock` | `mock` 또는 `real`. |
 | `DISCLOSURE_PROVIDER` | `mock` | `mock` 또는 `real`. |

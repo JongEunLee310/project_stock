@@ -18,7 +18,7 @@ from app.adapters.llm.privacy import (
     to_concentration_snapshot,
 )
 from app.adapters.llm.router import LLMRouter, TaskRoute
-from app.adapters.llm.types import LLMTaskType, SensitivityLevel
+from app.adapters.llm.types import CachePolicy, LLMTaskType, SensitivityLevel
 from app.core.config import settings
 from app.domains.portfolios.model import Portfolio, Position
 
@@ -75,6 +75,33 @@ class SpyCallBudget:
 
     def consume(self) -> None:
         self.calls += 1
+
+
+class SpyLLMCache:
+    def __init__(self, cached_value: str | None = None) -> None:
+        self.cached_value = cached_value
+        self.compute_key_calls = 0
+        self.get_calls: list[str] = []
+        self.put_calls: list[tuple[str, str]] = []
+
+    def compute_key(
+        self,
+        task_type: LLMTaskType,
+        user_id: int | None,
+        payload: CloudSafePayload,
+        system_prompt: str,
+        schema: type[BaseModel],
+        model_policy_version: str,
+    ) -> str:
+        self.compute_key_calls += 1
+        return "llm:cache:spy"
+
+    def get_cached(self, key: str) -> str | None:
+        self.get_calls.append(key)
+        return self.cached_value
+
+    def put(self, key: str, value: str) -> None:
+        self.put_calls.append((key, value))
 
 
 def make_portfolio() -> Portfolio:
@@ -319,6 +346,207 @@ def test_gateway_does_not_consume_budget_for_local_route() -> None:
     )
 
     assert budget.calls == 0
+
+
+def test_gateway_bypass_policy_does_not_read_cache() -> None:
+    cache = SpyLLMCache()
+    cloud_client = SpyLLMClient()
+    gateway = LLMGateway({CLOUD: cloud_client}, cache=cast(Any, cache))
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+        cache_policy=CachePolicy.BYPASS,
+        user_id=7,
+    )
+
+    assert result.cache_hit is False
+    assert cache.get_calls == []
+    assert len(cloud_client.calls) == 1
+
+
+def test_gateway_read_write_miss_calls_client_and_stores_result() -> None:
+    cache = SpyLLMCache()
+    cloud_client = SpyLLMClient()
+    gateway = LLMGateway({CLOUD: cloud_client}, cache=cast(Any, cache))
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+        cache_policy=CachePolicy.READ_WRITE,
+        user_id=7,
+    )
+
+    assert result.cache_hit is False
+    assert len(cloud_client.calls) == 1
+    assert cache.get_calls == ["llm:cache:spy"]
+    assert len(cache.put_calls) == 1
+    key, stored = cache.put_calls[0]
+    assert key == "llm:cache:spy"
+    assert json.loads(stored) == {
+        "output": {"summary": "ok"},
+        "provider": "spy",
+        "model_name": "spy-model",
+    }
+
+
+def test_gateway_read_write_hit_restores_cached_envelope_without_call_or_budget() -> None:
+    cache = SpyLLMCache(
+        json.dumps(
+            {
+                "output": {"summary": "cached"},
+                "provider": "cached-provider",
+                "model_name": "cached-model",
+            }
+        )
+    )
+    cloud_client = SpyLLMClient()
+    budget = SpyCallBudget()
+    gateway = LLMGateway(
+        {CLOUD: cloud_client},
+        call_budget=cast(DailyCallBudget, budget),
+        cache=cast(Any, cache),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+        cache_policy=CachePolicy.READ_WRITE,
+        user_id=7,
+    )
+
+    assert result == LLMCompletionResult(
+        output={"summary": "cached"},
+        provider="cached-provider",
+        model_name="cached-model",
+        cache_hit=True,
+    )
+    assert cloud_client.calls == []
+    assert budget.calls == 0
+    assert cache.put_calls == []
+
+
+def test_gateway_read_only_hit_does_not_call_client_budget_or_put() -> None:
+    cache = SpyLLMCache(
+        json.dumps(
+            {
+                "output": {"summary": "cached"},
+                "provider": "cached-provider",
+                "model_name": "cached-model",
+            }
+        )
+    )
+    cloud_client = SpyLLMClient()
+    budget = SpyCallBudget()
+    gateway = LLMGateway(
+        {CLOUD: cloud_client},
+        call_budget=cast(DailyCallBudget, budget),
+        cache=cast(Any, cache),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+        cache_policy=CachePolicy.READ_ONLY,
+        user_id=7,
+    )
+
+    assert result.cache_hit is True
+    assert cloud_client.calls == []
+    assert budget.calls == 0
+    assert cache.put_calls == []
+
+
+def test_gateway_read_only_miss_calls_client_without_storing() -> None:
+    cache = SpyLLMCache()
+    cloud_client = SpyLLMClient()
+    gateway = LLMGateway({CLOUD: cloud_client}, cache=cast(Any, cache))
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+        cache_policy=CachePolicy.READ_ONLY,
+        user_id=7,
+    )
+
+    assert result.cache_hit is False
+    assert len(cloud_client.calls) == 1
+    assert cache.get_calls == ["llm:cache:spy"]
+    assert cache.put_calls == []
+
+
+def test_gateway_cache_hit_does_not_consume_budget() -> None:
+    cache = SpyLLMCache(
+        json.dumps(
+            {
+                "output": {"summary": "cached"},
+                "provider": "cached-provider",
+                "model_name": "cached-model",
+            }
+        )
+    )
+    budget = SpyCallBudget()
+    gateway = LLMGateway(
+        {CLOUD: SpyLLMClient()},
+        call_budget=cast(DailyCallBudget, budget),
+        cache=cast(Any, cache),
+    )
+
+    gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+        cache_policy=CachePolicy.READ_WRITE,
+        user_id=7,
+    )
+
+    assert budget.calls == 0
+
+
+def test_gateway_rejects_cloud_payload_before_cache_lookup() -> None:
+    cache = SpyLLMCache()
+    gateway = LLMGateway({CLOUD: SpyLLMClient()}, cache=cast(Any, cache))
+
+    with pytest.raises(CloudBoundaryViolationError):
+        gateway.complete_json(
+            LLMTaskType.PORTFOLIO_BRIEFING,
+            RawPayload(value="raw"),
+            ExampleResponse,
+            "brief portfolio",
+            cache_policy=CachePolicy.READ_WRITE,
+            user_id=7,
+        )
+
+    assert cache.get_calls == []
+    assert cache.compute_key_calls == 0
+
+
+def test_gateway_read_write_without_cache_preserves_existing_flow() -> None:
+    cloud_client = SpyLLMClient()
+    gateway = LLMGateway({CLOUD: cloud_client}, cache=None)
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+        cache_policy=CachePolicy.READ_WRITE,
+        user_id=7,
+    )
+
+    assert result.cache_hit is False
+    assert len(cloud_client.calls) == 1
 
 
 def test_get_llm_gateway_maps_mock_client_to_both_slots(

@@ -17,7 +17,7 @@ from app.adapters.llm.privacy import (
     to_watchlist_observation_snapshot,
 )
 from app.adapters.llm.schema import ObservationsResult
-from app.adapters.llm.types import LLMTaskType, SensitivityLevel
+from app.adapters.llm.types import CachePolicy, LLMTaskType, SensitivityLevel
 from app.adapters.market.base import QuoteResult
 from app.core.config import settings
 from app.core.exceptions import AppException
@@ -43,6 +43,8 @@ class ObservationRecordingGateway(LLMGateway):
         payload: CloudSafePayload,
         schema: type[BaseModel],
         system_prompt: str,
+        cache_policy: CachePolicy = CachePolicy.BYPASS,
+        user_id: int | None = None,
     ) -> LLMCompletionResult:
         self.calls.append((task_type, payload, schema, system_prompt))
         return LLMCompletionResult(

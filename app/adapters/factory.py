@@ -1,7 +1,10 @@
+from typing import cast
+
 from app.adapters.disclosure.base import DisclosureProvider
 from app.adapters.disclosure.mock import MockDisclosureProvider
 from app.adapters.llm.base import LLMClient
 from app.adapters.llm.budget import DailyCallBudget
+from app.adapters.llm.cache import LLMCache, RedisCache
 from app.adapters.llm.gateway import CLOUD, LOCAL, LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import DEFAULT_MOCK_RESPONSES, MockLLMClient
@@ -81,6 +84,15 @@ def get_llm_client(provider: str | None = None) -> LLMClient:
 
 
 def get_llm_gateway() -> LLMGateway:
+    cache = (
+        LLMCache(
+            cast(RedisCache, get_redis_connection()),
+            settings.LLM_CACHE_TTL_SECONDS,
+        )
+        if settings.LLM_PROVIDER != "mock"
+        and settings.LLM_CACHE_TTL_SECONDS is not None
+        else None
+    )
     if settings.LLM_PROVIDER == "mock":
         mock_client = get_llm_client("mock")
         return LLMGateway(
@@ -100,11 +112,13 @@ def get_llm_gateway() -> LLMGateway:
             },
             timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
             call_budget=call_budget,
+            cache=cache,
         )
     if settings.LLM_PROVIDER == "local":
         local_client = get_llm_client("local")
         return LLMGateway(
             {LOCAL: local_client, CLOUD: local_client},
             timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
+            cache=cache,
         )
     raise NotImplementedError(f"llm provider 미구현: {settings.LLM_PROVIDER}")

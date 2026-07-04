@@ -5,6 +5,7 @@ import pytest
 import app.adapters.factory as factory
 from app.adapters.factory import get_llm_client, get_llm_gateway
 from app.adapters.llm.budget import DailyCallBudget
+from app.adapters.llm.cache import LLMCache
 from app.adapters.llm.base import LLMMessage
 from app.adapters.llm.gateway import CLOUD, LOCAL
 from app.adapters.llm.local import LocalLLMProvider
@@ -81,6 +82,12 @@ def test_get_llm_client_uses_settings_provider_when_provider_is_none(
 
 
 class FakeRedis:
+    def get(self, name: str) -> str | None:
+        return None
+
+    def setex(self, name: str, time: int, value: str) -> bool:
+        return True
+
     def incr(self, name: str) -> int:
         return 1
 
@@ -94,6 +101,7 @@ def test_get_llm_gateway_attaches_budget_for_cloud_with_limit(
     redis = FakeRedis()
     monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", 7)
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", None)
     monkeypatch.setattr(settings, "LLM_TIMEOUT_SECONDS", 3)
     monkeypatch.setattr(factory, "get_redis_connection", lambda: redis)
     monkeypatch.setattr(
@@ -115,6 +123,7 @@ def test_get_llm_gateway_skips_budget_for_cloud_without_limit(
 ) -> None:
     monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", None)
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", None)
     monkeypatch.setattr(
         factory,
         "get_redis_connection",
@@ -138,6 +147,7 @@ def test_get_llm_gateway_skips_budget_for_non_cloud_providers(
 ) -> None:
     monkeypatch.setattr(settings, "LLM_PROVIDER", provider)
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", 7)
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", None)
     monkeypatch.setattr(
         factory,
         "get_redis_connection",
@@ -152,3 +162,40 @@ def test_get_llm_gateway_skips_budget_for_non_cloud_providers(
         assert gateway.clients[CLOUD] is gateway.clients[LOCAL]
     else:
         assert isinstance(gateway.clients[LOCAL], LocalLLMProvider)
+
+
+def test_get_llm_gateway_attaches_cache_for_cloud_with_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
+    monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", None)
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", 600)
+    monkeypatch.setattr(factory, "get_redis_connection", lambda: redis)
+    monkeypatch.setattr(
+        factory,
+        "get_llm_client",
+        lambda provider: MockLLMClient({"default": {"summary": provider}}),
+    )
+
+    gateway = get_llm_gateway()
+
+    assert isinstance(gateway.cache, LLMCache)
+    assert gateway.cache.redis is redis
+    assert gateway.cache.ttl == 600
+
+
+def test_get_llm_gateway_skips_cache_for_mock_with_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "mock")
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", 600)
+    monkeypatch.setattr(
+        factory,
+        "get_redis_connection",
+        lambda: pytest.fail("redis should not be created for mock cache"),
+    )
+
+    gateway = get_llm_gateway()
+
+    assert gateway.cache is None

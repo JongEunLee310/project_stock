@@ -1,4 +1,5 @@
 from app.adapters.llm.base import LLMClient, LLMMessage
+from app.adapters.llm.cache import LLMCache
 from app.adapters.llm.exceptions import (
     CloudBoundaryViolationError,
     LLMCallError,
@@ -44,6 +45,7 @@ __all__ = [
     "ContextBundleSnapshot",
     "DashboardBriefingSnapshot",
     "LLMCallError",
+    "LLMCache",
     "LLMClient",
     "LLMGateway",
     "LLMMessage",
