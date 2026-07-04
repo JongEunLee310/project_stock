@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.adapters.llm.exceptions import CloudBoundaryViolationError
-from app.adapters.llm.gateway import LLMGateway
+from app.adapters.llm.gateway import LLMCompletionResult, LLMGateway
 from app.adapters.llm.privacy import (
     CloudSafePayload,
     PrivacyGate,
@@ -43,15 +43,19 @@ class ObservationRecordingGateway(LLMGateway):
         payload: CloudSafePayload,
         schema: type[BaseModel],
         system_prompt: str,
-    ) -> dict[str, Any]:
+    ) -> LLMCompletionResult:
         self.calls.append((task_type, payload, schema, system_prompt))
-        return {
-            "summary": "Two names need review.",
-            "items": [
-                {"symbol": "AAPL", "note": "Risk signal is active."},
-                {"symbol": "MSFT", "note": "No active signal."},
-            ],
-        }
+        return LLMCompletionResult(
+            output={
+                "summary": "Two names need review.",
+                "items": [
+                    {"symbol": "AAPL", "note": "Risk signal is active."},
+                    {"symbol": "MSFT", "note": "No active signal."},
+                ],
+            },
+            provider="mock",
+            model_name="mock",
+        )
 
 
 def create_asset(db: Session, symbol: str) -> int:

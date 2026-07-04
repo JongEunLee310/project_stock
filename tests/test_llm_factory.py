@@ -44,11 +44,13 @@ def test_get_llm_client_returns_cloud_client_when_api_key_is_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setattr(settings, "OPENAI_MODEL", "gpt-test-model")
 
     with patch("app.adapters.llm.openai.openai.OpenAI", return_value=Mock()):
         client = get_llm_client("cloud")
 
     assert isinstance(client, OpenAIClient)
+    assert client.model == "gpt-test-model"
 
 
 @pytest.mark.parametrize("api_key", [None, "", "   "])

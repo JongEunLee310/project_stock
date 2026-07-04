@@ -12,6 +12,16 @@ class LLMMessage:
 
 
 class LLMClient(ABC):
+    @property
+    @abstractmethod
+    def provider_name(self) -> str:
+        """Return the concrete provider identifier used for execution metadata."""
+
+    @property
+    @abstractmethod
+    def model_name(self) -> str:
+        """Return the concrete model identifier used for execution metadata."""
+
     @abstractmethod
     def complete(
         self, messages: list[LLMMessage], timeout: float | None = None

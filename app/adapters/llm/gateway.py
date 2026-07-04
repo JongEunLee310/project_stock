@@ -1,5 +1,6 @@
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel
@@ -15,16 +16,25 @@ CLOUD = "cloud"
 LOCAL = "local"
 
 
+@dataclass(frozen=True)
+class LLMCompletionResult:
+    output: dict[str, Any]
+    provider: str
+    model_name: str
+
+
 class LLMGateway:
     def __init__(
         self,
         clients: Mapping[str, LLMClient],
         router: LLMRouter | None = None,
         privacy_gate: PrivacyGate | None = None,
+        timeout_seconds: float | None = None,
     ) -> None:
         self.clients = clients
         self.router = LLMRouter() if router is None else router
         self.privacy_gate = PrivacyGate() if privacy_gate is None else privacy_gate
+        self.timeout_seconds = timeout_seconds
 
     def complete_json(
         self,
@@ -32,7 +42,7 @@ class LLMGateway:
         payload: CloudSafePayload,
         schema: type[BaseModel],
         system_prompt: str,
-    ) -> dict[str, Any]:
+    ) -> LLMCompletionResult:
         provider = self.router.resolve(task_type)
         client = self.clients.get(provider)
         if client is None:
@@ -49,4 +59,9 @@ class LLMGateway:
             ),
         ]
 
-        return client.complete_json(messages, schema)
+        output = client.complete_json(messages, schema, timeout=self.timeout_seconds)
+        return LLMCompletionResult(
+            output=output,
+            provider=client.provider_name,
+            model_name=client.model_name,
+        )

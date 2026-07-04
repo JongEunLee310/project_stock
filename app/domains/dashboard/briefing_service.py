@@ -39,7 +39,7 @@ class DashboardBriefingService:
                 snapshot,
                 BriefingResult,
                 DASHBOARD_BRIEFING_SYSTEM_PROMPT,
-            )
+            ).output
         )
         return DashboardBriefingResponse(
             **result.model_dump(),

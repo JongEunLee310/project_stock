@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from app.adapters.factory import get_llm_gateway
 from app.adapters.llm.base import LLMClient, LLMMessage
 from app.adapters.llm.exceptions import CloudBoundaryViolationError
-from app.adapters.llm.gateway import CLOUD, LOCAL, LLMGateway
+from app.adapters.llm.gateway import CLOUD, LOCAL, LLMCompletionResult, LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import MockLLMClient
 from app.adapters.llm.privacy import (
@@ -42,6 +42,15 @@ class SpyLLMClient(LLMClient):
     def __init__(self, response: dict[str, Any] | None = None) -> None:
         self.response = {"summary": "ok"} if response is None else response
         self.calls: list[list[LLMMessage]] = []
+        self.timeouts: list[float | None] = []
+
+    @property
+    def provider_name(self) -> str:
+        return "spy"
+
+    @property
+    def model_name(self) -> str:
+        return "spy-model"
 
     def complete(
         self, messages: list[LLMMessage], timeout: float | None = None
@@ -55,6 +64,7 @@ class SpyLLMClient(LLMClient):
         timeout: float | None = None,
     ) -> dict[str, Any]:
         self.calls.append(messages)
+        self.timeouts.append(timeout)
         return self.response
 
 
@@ -149,7 +159,9 @@ def test_gateway_sends_only_cloudsafe_payload_body_to_transport() -> None:
         "brief portfolio",
     )
 
-    assert result == {"summary": "ok"}
+    assert result.output == {"summary": "ok"}
+    assert result.provider == "spy"
+    assert result.model_name == "spy-model"
     assert len(cloud_client.calls) == 1
     messages = cloud_client.calls[0]
     assert messages[0] == LLMMessage(role="system", content="brief portfolio")
@@ -197,7 +209,9 @@ def test_gateway_selects_provider_through_router() -> None:
         "brief portfolio",
     )
 
-    assert result == {"summary": "local"}
+    assert result.output == {"summary": "local"}
+    assert result.provider == "spy"
+    assert result.model_name == "spy-model"
     assert cloud_client.calls == []
     assert len(local_client.calls) == 1
 
@@ -218,7 +232,7 @@ def test_default_routes_do_not_call_local_provider(task_type: LLMTaskType) -> No
         "brief portfolio",
     )
 
-    assert result == {"summary": "ok"}
+    assert result.output == {"summary": "ok"}
 
 
 def test_gateway_runs_with_mock_client_in_cloud_slot() -> None:
@@ -233,7 +247,26 @@ def test_gateway_runs_with_mock_client_in_cloud_slot() -> None:
         "brief portfolio",
     )
 
-    assert result == {"summary": "mocked"}
+    assert result == LLMCompletionResult(
+        output={"summary": "mocked"},
+        provider="mock",
+        model_name="mock",
+    )
+
+
+def test_gateway_passes_configured_timeout_to_client() -> None:
+    cloud_client = SpyLLMClient()
+    gateway = LLMGateway({CLOUD: cloud_client}, timeout_seconds=12.5)
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+    )
+
+    assert result.output == {"summary": "ok"}
+    assert cloud_client.timeouts == [12.5]
 
 
 def test_get_llm_gateway_maps_mock_client_to_both_slots(
