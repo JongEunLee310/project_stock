@@ -1,7 +1,9 @@
 from sqlalchemy.orm import Session
 
-from app.adapters.llm.base import LLMClient
-from app.adapters.llm.prompts.news_summary import build_news_summary_messages
+from app.adapters.llm.gateway import LLMGateway
+from app.adapters.llm.privacy import NewsSummarySnapshot
+from app.adapters.llm.prompts.news_summary import build_news_summary_system_prompt
+from app.adapters.llm.types import LLMTaskType
 from app.domains.news.model import NewsItem
 from app.domains.news.repository import NewsItemRepository
 from app.domains.news.schema import NewsSummaryResult
@@ -9,9 +11,9 @@ from app.domains.raw_news.model import RawNewsEvent
 
 
 class NewsAnalysisService:
-    def __init__(self, db: Session, llm_client: LLMClient) -> None:
+    def __init__(self, db: Session, gateway: LLMGateway) -> None:
         self.db = db
-        self.llm_client = llm_client
+        self.gateway = gateway
         self.repository = NewsItemRepository(db)
 
     def summarize(self, news_item_id: int) -> NewsSummaryResult:
@@ -19,12 +21,16 @@ class NewsAnalysisService:
         if news_item is None:
             raise ValueError("news item not found")
 
-        messages = build_news_summary_messages(
-            news_item.title,
-            self._body_for(news_item),
+        completion = self.gateway.complete_json(
+            LLMTaskType.NEWS_SUMMARY,
+            NewsSummarySnapshot(
+                title=news_item.title,
+                body=self._body_for(news_item),
+            ),
+            NewsSummaryResult,
+            build_news_summary_system_prompt(),
         )
-        raw_result = self.llm_client.complete_json(messages, NewsSummaryResult)
-        result = NewsSummaryResult.model_validate(raw_result)
+        result = NewsSummaryResult.model_validate(completion.output)
         self.repository.update_summary(news_item_id, result)
         return result
 

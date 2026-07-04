@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.adapters.llm.base import LLMClient
+from app.adapters.llm.gateway import LLMGateway
 from app.adapters.news.base import NewsAdapter, NewsAdapterResult
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
@@ -33,19 +33,19 @@ class WatchlistAnalysisService:
     def __init__(
         self,
         db: Session,
-        llm_client: LLMClient,
+        gateway: LLMGateway,
         news_adapter: NewsAdapter,
     ) -> None:
         self.db = db
-        self.llm_client = llm_client
+        self.gateway = gateway
         self.news_adapter = news_adapter
         self.watchlist_repo = WatchlistRepository(db)
         self.watchlist_item_repo = WatchlistItemRepository(db)
         self.raw_news_repo = RawNewsEventRepository(db)
         self.news_item_repo = NewsItemRepository(db)
         self.thesis_repo = ThesisRepository(db)
-        self.news_analysis = NewsAnalysisService(db, llm_client)
-        self.thesis_analysis = ThesisAnalysisService(db, llm_client)
+        self.news_analysis = NewsAnalysisService(db, gateway)
+        self.thesis_analysis = ThesisAnalysisService(db, gateway)
         self.report_service = ResearchReportService(db)
         self.alert_service = AlertService(db)
 

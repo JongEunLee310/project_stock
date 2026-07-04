@@ -7,8 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.llm.base import LLMMessage
+from app.adapters.llm.gateway import CLOUD, LOCAL, LLMGateway
 from app.adapters.llm.mock import MockLLMClient
-from app.adapters.llm.prompts.thesis_conflict import build_thesis_conflict_messages
+from app.adapters.llm.prompts.thesis_conflict import (
+    build_thesis_conflict_system_prompt,
+)
 from app.domains.assets.model import Asset
 from app.domains.news.model import NewsItem
 from app.domains.theses.conflict_model import ThesisConflictAnalysis
@@ -30,6 +33,10 @@ class RecordingLLMClient(MockLLMClient):
     ) -> dict[str, Any]:
         self.messages = messages
         return super().complete_json(messages, schema, timeout)
+
+
+def make_gateway(client: MockLLMClient) -> LLMGateway:
+    return LLMGateway({CLOUD: client, LOCAL: client})
 
 
 def create_user(db: Session) -> User:
@@ -94,12 +101,18 @@ def test_thesis_analysis_service_analyze_conflict_saves_result(
         }
     )
 
-    result = ThesisAnalysisService(db, client).analyze_conflict(item.id, thesis.id)
+    result = ThesisAnalysisService(db, make_gateway(client)).analyze_conflict(
+        item.id,
+        thesis.id,
+    )
 
     assert result.status == "SUPPORTS"
     assert result.invalidation_triggered is False
-    assert "Apple can compound earnings" in client.messages[1].content
-    assert "Services growth accelerated" in client.messages[1].content
+    payload = json.loads(client.messages[1].content)
+    assert payload["thesis_summary"] == (
+        "Apple can compound earnings through services growth."
+    )
+    assert payload["news_positive_factors"] == ["Services growth accelerated"]
     saved = db.scalars(select(ThesisConflictAnalysis)).all()
     assert len(saved) == 1
     assert saved[0].news_item_id == item.id
@@ -116,7 +129,10 @@ def test_thesis_analysis_service_raises_when_news_summary_missing(
     item = create_news_item(db, asset.id, None)
 
     with pytest.raises(ValueError, match="뉴스 요약 없음"):
-        ThesisAnalysisService(db, MockLLMClient()).analyze_conflict(item.id, thesis.id)
+        ThesisAnalysisService(db, make_gateway(MockLLMClient())).analyze_conflict(
+            item.id,
+            thesis.id,
+        )
 
 
 def test_thesis_analysis_service_rejects_invalid_llm_response_without_saving(
@@ -137,27 +153,19 @@ def test_thesis_analysis_service_rejects_invalid_llm_response_without_saving(
     )
 
     with pytest.raises(ValidationError):
-        ThesisAnalysisService(db, client).analyze_conflict(item.id, thesis.id)
+        ThesisAnalysisService(db, make_gateway(client)).analyze_conflict(
+            item.id,
+            thesis.id,
+        )
 
     saved = db.scalars(select(ThesisConflictAnalysis)).all()
     assert saved == []
 
 
-def test_build_thesis_conflict_messages_includes_thesis_and_news_content() -> None:
-    messages = build_thesis_conflict_messages(
-        thesis_summary="Margins expand through services mix.",
-        invalidation_conditions="Services growth turns negative.",
-        news_summary="Services revenue accelerated.",
-        news_positive_factors=["Higher recurring revenue"],
-        news_negative_factors=["FX headwind"],
-    )
+def test_build_thesis_conflict_system_prompt_includes_schema() -> None:
+    prompt = build_thesis_conflict_system_prompt()
 
-    assert len(messages) == 2
-    assert messages[0].role == "system"
-    assert "JSON Schema" in messages[0].content
-    assert messages[1].role == "user"
-    assert "Margins expand through services mix." in messages[1].content
-    assert "Services growth turns negative." in messages[1].content
-    assert "Services revenue accelerated." in messages[1].content
-    assert "Higher recurring revenue" in messages[1].content
-    assert "FX headwind" in messages[1].content
+    assert "You are an investment thesis conflict analyst." in prompt
+    assert "JSON Schema" in prompt
+    assert "invalidation_triggered" in prompt
+    assert "status" in prompt
