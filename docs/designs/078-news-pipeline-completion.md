@@ -1,6 +1,6 @@
 # 078 · 뉴스 파이프라인 완성 — 신뢰도 컬럼·LLM 게이트웨이 수렴
 
-Status: Draft
+Status: Accepted
 작성: Claude Code (orchestrator)
 관련: BE #205(신뢰도 컬럼), BE #206(게이트웨이 수렴), Epic BE #141, PR #201 리뷰 S2 후속.
 지침 근거: `docs/knowledge/llm-data-pipeline.md` §5.4(신뢰도 컬럼), §18(게이트웨이 단일 진입점).
