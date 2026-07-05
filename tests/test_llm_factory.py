@@ -7,6 +7,7 @@ from app.adapters.factory import get_llm_client, get_llm_gateway
 from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.base import LLMMessage
 from app.adapters.llm.cache import LLMResponseCache
+from app.adapters.llm.escalation import EscalationPolicy
 from app.adapters.llm.gateway import CLOUD, LOCAL
 from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import MockLLMClient
@@ -102,6 +103,8 @@ def test_get_llm_gateway_attaches_budget_for_cloud_with_limit(
     monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", 7)
     monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", None)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_ENABLED", False)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_CONFIDENCE_THRESHOLD", None)
     monkeypatch.setattr(settings, "LLM_TIMEOUT_SECONDS", 3)
     monkeypatch.setattr(factory, "get_redis_connection", lambda: redis)
     monkeypatch.setattr(
@@ -124,6 +127,8 @@ def test_get_llm_gateway_skips_budget_for_cloud_without_limit(
     monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", None)
     monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", None)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_ENABLED", False)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_CONFIDENCE_THRESHOLD", None)
     monkeypatch.setattr(
         factory,
         "get_redis_connection",
@@ -148,6 +153,8 @@ def test_get_llm_gateway_attaches_cache_for_cloud_with_ttl(
     monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", None)
     monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", 600)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_ENABLED", False)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_CONFIDENCE_THRESHOLD", None)
     monkeypatch.setattr(factory, "get_redis_connection", lambda: redis)
     monkeypatch.setattr(
         factory,
@@ -169,6 +176,8 @@ def test_get_llm_gateway_skips_cache_for_cloud_without_ttl(
     monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", None)
     monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", None)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_ENABLED", False)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_CONFIDENCE_THRESHOLD", None)
     monkeypatch.setattr(
         factory,
         "get_redis_connection",
@@ -194,6 +203,8 @@ def test_get_llm_gateway_skips_budget_for_non_cloud_providers(
     monkeypatch.setattr(settings, "LLM_PROVIDER", provider)
     monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", 7)
     monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", 600)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_ENABLED", True)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_CONFIDENCE_THRESHOLD", 0.8)
     monkeypatch.setattr(
         factory,
         "get_redis_connection",
@@ -204,8 +215,48 @@ def test_get_llm_gateway_skips_budget_for_non_cloud_providers(
 
     assert gateway.call_budget is None
     assert gateway.response_cache is None
+    assert gateway.escalation_policy is None
     if provider == "mock":
         assert isinstance(gateway.clients[CLOUD], MockLLMClient)
         assert gateway.clients[CLOUD] is gateway.clients[LOCAL]
     else:
         assert isinstance(gateway.clients[LOCAL], LocalLLMProvider)
+
+
+def test_get_llm_gateway_attaches_escalation_policy_for_cloud_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
+    monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", None)
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", None)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_ENABLED", True)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_CONFIDENCE_THRESHOLD", 0.8)
+    monkeypatch.setattr(
+        factory,
+        "get_llm_client",
+        lambda provider: MockLLMClient({"default": {"summary": provider}}),
+    )
+
+    gateway = get_llm_gateway()
+
+    assert isinstance(gateway.escalation_policy, EscalationPolicy)
+    assert gateway.escalation_policy.confidence_threshold == 0.8
+
+
+def test_get_llm_gateway_skips_escalation_policy_by_default_for_cloud(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "cloud")
+    monkeypatch.setattr(settings, "LLM_DAILY_CALL_LIMIT", None)
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL_SECONDS", None)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_ENABLED", False)
+    monkeypatch.setattr(settings, "LLM_ESCALATION_CONFIDENCE_THRESHOLD", 0.8)
+    monkeypatch.setattr(
+        factory,
+        "get_llm_client",
+        lambda provider: MockLLMClient({"default": {"summary": provider}}),
+    )
+
+    gateway = get_llm_gateway()
+
+    assert gateway.escalation_policy is None

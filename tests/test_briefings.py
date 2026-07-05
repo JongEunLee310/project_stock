@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.adapters.llm.exceptions import CloudBoundaryViolationError
+from app.adapters.llm.escalation import EscalationSignal
 from app.adapters.llm.gateway import LLMCompletionResult, LLMGateway
 from app.adapters.llm.privacy import (
     CloudSafePayload,
@@ -57,6 +58,7 @@ class RecordingGateway(LLMGateway):
         payload: CloudSafePayload,
         schema: type[BaseModel],
         system_prompt: str,
+        escalation_signal: EscalationSignal | None = None,
     ) -> LLMCompletionResult:
         self.calls.append((task_type, payload, schema, system_prompt))
         return LLMCompletionResult(

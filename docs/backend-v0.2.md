@@ -51,9 +51,13 @@ curl http://127.0.0.1:8000/api/v1/health/readiness
 | `ALGORITHM` | `HS256` | JWT signing algorithm. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | 로그인 token 만료 시간. |
 | `OPENAI_API_KEY` | empty / `None` | mock-only 로컬 흐름에서는 비워둘 수 있다. |
+| `OPENAI_MODEL` | `gpt-4o-mini` | `LLM_PROVIDER=cloud`에서 사용할 OpenAI model. |
 | `LLM_TIMEOUT_SECONDS` | `30` | LLM 호출 timeout. |
+| `LLM_PROVIDER` | `cloud` | `cloud`, `local`, `mock` 중 하나. 로컬 예시는 `mock`을 사용한다. |
 | `LLM_DAILY_CALL_LIMIT` | empty / `None` | `LLM_PROVIDER=cloud`에서만 적용되는 일일 cloud LLM 호출 상한. 비우면 무제한이다. |
 | `LLM_CACHE_TTL_SECONDS` | empty / `None` | `LLM_PROVIDER=cloud`에서만 적용되는 Redis LLM 응답 캐시 TTL. 비우면 캐시를 비활성화한다. |
+| `LLM_ESCALATION_ENABLED` | `false` | `LLM_PROVIDER=cloud`에서만 `EscalationPolicy`를 게이트웨이에 부착한다. |
+| `LLM_ESCALATION_CONFIDENCE_THRESHOLD` | empty / `None` | post-call cloud 검증을 발화할 confidence 임계치. 비우면 confidence 조건은 비활성이다. 값은 `0.0` 초과 `1.0` 이하여야 한다. |
 | `MARKET_PROVIDER` | `mock` | `mock` 또는 `real`. |
 | `NEWS_PROVIDER` | `mock` | `mock` 또는 `real`. |
 | `DISCLOSURE_PROVIDER` | `mock` | `mock` 또는 `real`. |
