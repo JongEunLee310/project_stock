@@ -3,6 +3,7 @@ from app.adapters.disclosure.mock import MockDisclosureProvider
 from app.adapters.llm.base import LLMClient
 from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.cache import LLMResponseCache
+from app.adapters.llm.escalation import EscalationPolicy
 from app.adapters.llm.gateway import CLOUD, LOCAL, LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import DEFAULT_MOCK_RESPONSES, MockLLMClient
@@ -105,6 +106,11 @@ def get_llm_gateway() -> LLMGateway:
             if redis is not None and settings.LLM_CACHE_TTL_SECONDS is not None
             else None
         )
+        escalation_policy = (
+            EscalationPolicy(settings.LLM_ESCALATION_CONFIDENCE_THRESHOLD)
+            if settings.LLM_ESCALATION_ENABLED
+            else None
+        )
         return LLMGateway(
             {
                 CLOUD: get_llm_client("cloud"),
@@ -113,6 +119,7 @@ def get_llm_gateway() -> LLMGateway:
             timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
             call_budget=call_budget,
             response_cache=response_cache,
+            escalation_policy=escalation_policy,
         )
     if settings.LLM_PROVIDER == "local":
         local_client = get_llm_client("local")

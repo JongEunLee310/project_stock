@@ -1,4 +1,5 @@
 import json
+import logging
 from decimal import Decimal
 from typing import Any, ClassVar, cast
 
@@ -9,6 +10,7 @@ from app.adapters.factory import get_llm_gateway
 from app.adapters.llm.base import LLMClient, LLMMessage
 from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.cache import CachedCompletion, LLMResponseCache
+from app.adapters.llm.escalation import EscalationPolicy, EscalationSignal
 from app.adapters.llm.exceptions import CloudBoundaryViolationError
 from app.adapters.llm.gateway import CLOUD, LOCAL, LLMCompletionResult, LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
@@ -19,13 +21,18 @@ from app.adapters.llm.privacy import (
     to_concentration_snapshot,
 )
 from app.adapters.llm.router import LLMRouter, TaskRoute
-from app.adapters.llm.types import LLMTaskType, SensitivityLevel
+from app.adapters.llm.types import LLMTaskType, RiskLevel, SensitivityLevel
 from app.core.config import settings
 from app.domains.portfolios.model import Portfolio, Position
 
 
 class ExampleResponse(BaseModel):
     summary: str
+
+
+class ConfidenceExampleResponse(BaseModel):
+    summary: str
+    confidence: float
 
 
 class RawPayload(CloudSafePayload):
@@ -41,18 +48,25 @@ class SemiPayload(CloudSafePayload):
 
 
 class SpyLLMClient(LLMClient):
-    def __init__(self, response: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        response: dict[str, Any] | None = None,
+        provider_name: str = "spy",
+        model_name: str = "spy-model",
+    ) -> None:
         self.response = {"summary": "ok"} if response is None else response
+        self._provider_name = provider_name
+        self._model_name = model_name
         self.calls: list[list[LLMMessage]] = []
         self.timeouts: list[float | None] = []
 
     @property
     def provider_name(self) -> str:
-        return "spy"
+        return self._provider_name
 
     @property
     def model_name(self) -> str:
-        return "spy-model"
+        return self._model_name
 
     def complete(
         self, messages: list[LLMMessage], timeout: float | None = None
@@ -68,6 +82,18 @@ class SpyLLMClient(LLMClient):
         self.calls.append(messages)
         self.timeouts.append(timeout)
         return self.response
+
+
+class RaisingLLMClient(SpyLLMClient):
+    def complete_json(
+        self,
+        messages: list[LLMMessage],
+        schema: type[BaseModel],
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        self.calls.append(messages)
+        self.timeouts.append(timeout)
+        raise RuntimeError("provider failed")
 
 
 class SpyCallBudget:
@@ -258,6 +284,88 @@ def test_gateway_selects_provider_through_router() -> None:
     assert len(local_client.calls) == 1
 
 
+def test_gateway_pre_call_escalates_local_route_to_cloud() -> None:
+    cloud_client = SpyLLMClient(
+        {"summary": "cloud"},
+        provider_name="cloud-spy",
+        model_name="cloud-model",
+    )
+    local_client = SpyLLMClient(
+        {"summary": "local"},
+        provider_name="local-spy",
+        model_name="local-model",
+    )
+    router = LLMRouter(
+        {
+            LLMTaskType.PORTFOLIO_BRIEFING: TaskRoute(
+                launch=LOCAL,
+                future_primary=CLOUD,
+            )
+        }
+    )
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=router,
+        escalation_policy=EscalationPolicy(),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+        escalation_signal=EscalationSignal(risk_level=RiskLevel.HIGH),
+    )
+
+    assert result.output == {"summary": "cloud"}
+    assert result.provider == "cloud-spy"
+    assert result.model_name == "cloud-model"
+    assert result.escalated is True
+    assert len(cloud_client.calls) == 1
+    assert local_client.calls == []
+    payload_body = json.loads(cloud_client.calls[0][1].content)
+    assert payload_body == make_snapshot().as_payload()
+
+
+def test_gateway_does_not_escalate_without_signal() -> None:
+    cloud_client = SpyLLMClient(
+        {"summary": "cloud"},
+        provider_name="cloud-spy",
+        model_name="cloud-model",
+    )
+    local_client = SpyLLMClient(
+        {"summary": "local"},
+        provider_name="local-spy",
+        model_name="local-model",
+    )
+    router = LLMRouter(
+        {
+            LLMTaskType.PORTFOLIO_BRIEFING: TaskRoute(
+                launch=LOCAL,
+                future_primary=CLOUD,
+            )
+        }
+    )
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=router,
+        escalation_policy=EscalationPolicy(),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ExampleResponse,
+        "brief portfolio",
+    )
+
+    assert result.output == {"summary": "local"}
+    assert result.provider == "local-spy"
+    assert result.escalated is False
+    assert cloud_client.calls == []
+    assert len(local_client.calls) == 1
+
+
 @pytest.mark.parametrize("task_type", list(LLMTaskType))
 def test_default_routes_do_not_call_local_provider(task_type: LLMTaskType) -> None:
     gateway = LLMGateway(
@@ -442,6 +550,221 @@ def test_gateway_does_not_lookup_cache_for_local_route() -> None:
     assert result.cached is False
     assert cache.build_calls == []
     assert cache.lookup_calls == []
+    assert len(local_client.calls) == 1
+
+
+def test_gateway_post_call_cloud_verification_replaces_low_confidence_result() -> None:
+    budget = SpyCallBudget()
+    cache = SpyResponseCache()
+    local_client = SpyLLMClient(
+        {"summary": "local", "confidence": 0.1},
+        provider_name="local-spy",
+        model_name="local-model",
+    )
+    cloud_client = SpyLLMClient(
+        {"summary": "cloud", "confidence": 0.9},
+        provider_name="cloud-spy",
+        model_name="cloud-model",
+    )
+    router = LLMRouter(
+        {
+            LLMTaskType.PORTFOLIO_BRIEFING: TaskRoute(
+                launch=LOCAL,
+                future_primary=CLOUD,
+            )
+        }
+    )
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=router,
+        call_budget=cast(DailyCallBudget, budget),
+        response_cache=cast(LLMResponseCache, cache),
+        escalation_policy=EscalationPolicy(confidence_threshold=0.5),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ConfidenceExampleResponse,
+        "brief portfolio",
+    )
+
+    assert result.output == {"summary": "cloud", "confidence": 0.9}
+    assert result.provider == "cloud-spy"
+    assert result.model_name == "cloud-model"
+    assert result.escalated is True
+    assert len(local_client.calls) == 1
+    assert len(cloud_client.calls) == 1
+    assert budget.calls == 1
+    assert cache.build_calls == []
+    assert cache.lookup_calls == []
+    assert cache.store_calls == []
+
+
+def test_gateway_post_call_verification_returns_original_when_cloud_schema_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    local_client = SpyLLMClient(
+        {"summary": "local", "confidence": 0.1},
+        provider_name="local-spy",
+        model_name="local-model",
+    )
+    cloud_client = SpyLLMClient(
+        {},
+        provider_name="cloud-spy",
+        model_name="cloud-model",
+    )
+    router = LLMRouter(
+        {
+            LLMTaskType.PORTFOLIO_BRIEFING: TaskRoute(
+                launch=LOCAL,
+                future_primary=CLOUD,
+            )
+        }
+    )
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=router,
+        escalation_policy=EscalationPolicy(confidence_threshold=0.5),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = gateway.complete_json(
+            LLMTaskType.PORTFOLIO_BRIEFING,
+            make_snapshot(),
+            ConfidenceExampleResponse,
+            "brief portfolio",
+        )
+
+    assert result.output == {"summary": "local", "confidence": 0.1}
+    assert result.provider == "local-spy"
+    assert result.escalated is True
+    assert len(cloud_client.calls) == 1
+    assert "llm cloud verification returned schema-invalid output" in caplog.text
+
+
+def test_gateway_post_call_verification_returns_original_when_cloud_raises(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    local_client = SpyLLMClient(
+        {"summary": "local", "confidence": 0.1},
+        provider_name="local-spy",
+        model_name="local-model",
+    )
+    cloud_client = RaisingLLMClient(
+        provider_name="cloud-spy",
+        model_name="cloud-model",
+    )
+    router = LLMRouter(
+        {
+            LLMTaskType.PORTFOLIO_BRIEFING: TaskRoute(
+                launch=LOCAL,
+                future_primary=CLOUD,
+            )
+        }
+    )
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=router,
+        escalation_policy=EscalationPolicy(confidence_threshold=0.5),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = gateway.complete_json(
+            LLMTaskType.PORTFOLIO_BRIEFING,
+            make_snapshot(),
+            ConfidenceExampleResponse,
+            "brief portfolio",
+        )
+
+    assert result.output == {"summary": "local", "confidence": 0.1}
+    assert result.provider == "local-spy"
+    assert result.escalated is True
+    assert len(cloud_client.calls) == 1
+    assert "llm cloud verification failed" in caplog.text
+
+
+def test_gateway_post_call_verification_skips_when_cloud_client_missing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    local_client = SpyLLMClient(
+        {"summary": "local", "confidence": 0.1},
+        provider_name="local-spy",
+        model_name="local-model",
+    )
+    router = LLMRouter(
+        {
+            LLMTaskType.PORTFOLIO_BRIEFING: TaskRoute(
+                launch=LOCAL,
+                future_primary=CLOUD,
+            )
+        }
+    )
+    gateway = LLMGateway(
+        {LOCAL: local_client},
+        router=router,
+        escalation_policy=EscalationPolicy(confidence_threshold=0.5),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = gateway.complete_json(
+            LLMTaskType.PORTFOLIO_BRIEFING,
+            make_snapshot(),
+            ConfidenceExampleResponse,
+            "brief portfolio",
+        )
+
+    assert result.output == {"summary": "local", "confidence": 0.1}
+    assert result.provider == "local-spy"
+    assert result.escalated is False
+    assert "llm cloud verification skipped because client is not configured" in caplog.text
+
+
+def test_gateway_does_not_verify_again_after_first_cloud_call() -> None:
+    cloud_client = SpyLLMClient({"summary": "cloud", "confidence": 0.1})
+    gateway = LLMGateway(
+        {CLOUD: cloud_client},
+        escalation_policy=EscalationPolicy(confidence_threshold=0.5),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ConfidenceExampleResponse,
+        "brief portfolio",
+    )
+
+    assert result.output == {"summary": "cloud", "confidence": 0.1}
+    assert result.escalated is False
+    assert len(cloud_client.calls) == 1
+
+
+def test_gateway_without_policy_preserves_existing_local_behavior() -> None:
+    cloud_client = SpyLLMClient({"summary": "cloud", "confidence": 0.9})
+    local_client = SpyLLMClient({"summary": "local", "confidence": 0.1})
+    router = LLMRouter(
+        {
+            LLMTaskType.PORTFOLIO_BRIEFING: TaskRoute(
+                launch=LOCAL,
+                future_primary=CLOUD,
+            )
+        }
+    )
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=router,
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ConfidenceExampleResponse,
+        "brief portfolio",
+    )
+
+    assert result.output == {"summary": "local", "confidence": 0.1}
+    assert result.escalated is False
+    assert cloud_client.calls == []
     assert len(local_client.calls) == 1
 
 

@@ -5,6 +5,7 @@ from app.adapters.llm.exceptions import (
     LLMRoutingError,
     LLMTimeoutError,
 )
+from app.adapters.llm.escalation import EscalationPolicy, EscalationSignal
 from app.adapters.llm.gateway import LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import MockLLMClient
@@ -43,6 +44,8 @@ __all__ = [
     "CloudSafePayload",
     "ContextBundleSnapshot",
     "DashboardBriefingSnapshot",
+    "EscalationPolicy",
+    "EscalationSignal",
     "LLMCallError",
     "LLMClient",
     "LLMGateway",
