@@ -19,7 +19,7 @@ from app.adapters.llm.privacy import (
     to_dashboard_snapshot,
 )
 from app.adapters.llm.schema import BriefingResult
-from app.adapters.llm.types import LLMTaskType, SensitivityLevel
+from app.adapters.llm.types import LLMTaskType, RiskLevel, SensitivityLevel
 from app.adapters.market.base import QuoteResult
 from app.core.config import settings
 from app.core.exceptions import AppException
@@ -57,6 +57,8 @@ class RecordingGateway(LLMGateway):
         payload: CloudSafePayload,
         schema: type[BaseModel],
         system_prompt: str,
+        *,
+        risk_level: RiskLevel = RiskLevel.LOW,
     ) -> LLMCompletionResult:
         self.calls.append((task_type, payload, schema, system_prompt))
         return LLMCompletionResult(

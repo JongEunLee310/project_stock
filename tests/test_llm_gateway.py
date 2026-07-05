@@ -9,6 +9,7 @@ from app.adapters.factory import get_llm_gateway
 from app.adapters.llm.base import LLMClient, LLMMessage
 from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.cache import CachedCompletion, LLMResponseCache
+from app.adapters.llm.escalation import EscalationPolicy, EscalationTrigger
 from app.adapters.llm.exceptions import CloudBoundaryViolationError
 from app.adapters.llm.gateway import CLOUD, LOCAL, LLMCompletionResult, LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
@@ -19,13 +20,18 @@ from app.adapters.llm.privacy import (
     to_concentration_snapshot,
 )
 from app.adapters.llm.router import LLMRouter, TaskRoute
-from app.adapters.llm.types import LLMTaskType, SensitivityLevel
+from app.adapters.llm.types import LLMTaskType, RiskLevel, SensitivityLevel
 from app.core.config import settings
 from app.domains.portfolios.model import Portfolio, Position
 
 
 class ExampleResponse(BaseModel):
     summary: str
+
+
+class ConfidenceResponse(BaseModel):
+    summary: str
+    confidence: float
 
 
 class RawPayload(CloudSafePayload):
@@ -499,6 +505,167 @@ def test_gateway_does_not_consume_budget_for_local_route() -> None:
     assert budget.calls == 0
 
 
+def test_gateway_pre_call_escalates_high_risk_local_route_to_cloud() -> None:
+    budget = SpyCallBudget()
+    cloud_client = SpyLLMClient({"summary": "cloud", "confidence": 0.9})
+    local_client = SpyLLMClient({"summary": "local", "confidence": 0.9})
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=_local_router(),
+        call_budget=cast(DailyCallBudget, budget),
+        escalation_policy=EscalationPolicy(confidence_threshold=0.7),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ConfidenceResponse,
+        "brief portfolio",
+        risk_level=RiskLevel.HIGH,
+    )
+
+    assert result.output == {"summary": "cloud", "confidence": 0.9}
+    assert result.escalated is True
+    assert result.escalation_trigger == EscalationTrigger.HIGH_RISK_INPUT.value
+    assert local_client.calls == []
+    assert len(cloud_client.calls) == 1
+    assert budget.calls == 1
+
+
+def test_gateway_post_call_escalates_low_confidence_local_result_to_cloud() -> None:
+    cloud_client = SpyLLMClient({"summary": "cloud", "confidence": 0.91})
+    local_client = SpyLLMClient({"summary": "local", "confidence": 0.2})
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=_local_router(),
+        escalation_policy=EscalationPolicy(confidence_threshold=0.7),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ConfidenceResponse,
+        "brief portfolio",
+    )
+
+    assert result.output == {"summary": "cloud", "confidence": 0.91}
+    assert result.escalated is True
+    assert result.escalation_trigger == EscalationTrigger.LOW_CONFIDENCE.value
+    assert len(local_client.calls) == 1
+    assert len(cloud_client.calls) == 1
+
+
+def test_gateway_post_call_escalates_invalid_local_schema_to_cloud() -> None:
+    cloud_client = SpyLLMClient({"summary": "cloud", "confidence": 0.91})
+    local_client = SpyLLMClient({"confidence": 0.9})
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=_local_router(),
+        escalation_policy=EscalationPolicy(confidence_threshold=0.7),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ConfidenceResponse,
+        "brief portfolio",
+    )
+
+    assert result.output == {"summary": "cloud", "confidence": 0.91}
+    assert result.escalated is True
+    assert result.escalation_trigger == EscalationTrigger.SCHEMA_VALIDATION_FAILED.value
+    assert len(local_client.calls) == 1
+    assert len(cloud_client.calls) == 1
+
+
+def test_gateway_keeps_valid_local_result_without_escalation() -> None:
+    cloud_client = SpyLLMClient({"summary": "cloud", "confidence": 0.91})
+    local_client = SpyLLMClient({"summary": "local", "confidence": 0.8})
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=_local_router(),
+        escalation_policy=EscalationPolicy(confidence_threshold=0.7),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ConfidenceResponse,
+        "brief portfolio",
+    )
+
+    assert result.output == {"summary": "local", "confidence": 0.8}
+    assert result.escalated is False
+    assert result.escalation_trigger is None
+    assert len(local_client.calls) == 1
+    assert cloud_client.calls == []
+
+
+def test_gateway_does_not_escalate_cloud_unsafe_high_risk_payload() -> None:
+    cloud_client = SpyLLMClient({"summary": "cloud"})
+    local_client = SpyLLMClient({"summary": "local"})
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=_local_router(),
+        escalation_policy=EscalationPolicy(confidence_threshold=0.7),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        RawPayload(value="private"),
+        ExampleResponse,
+        "brief portfolio",
+        risk_level=RiskLevel.HIGH,
+    )
+
+    assert result.output == {"summary": "local"}
+    assert result.escalated is False
+    assert len(local_client.calls) == 1
+    assert cloud_client.calls == []
+
+
+def test_gateway_does_not_apply_escalation_policy_to_cloud_route() -> None:
+    cloud_client = SpyLLMClient({"summary": "cloud", "confidence": 0.1})
+    gateway = LLMGateway(
+        {CLOUD: cloud_client},
+        escalation_policy=EscalationPolicy(confidence_threshold=0.7),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ConfidenceResponse,
+        "brief portfolio",
+        risk_level=RiskLevel.HIGH,
+    )
+
+    assert result.output == {"summary": "cloud", "confidence": 0.1}
+    assert result.escalated is False
+    assert len(cloud_client.calls) == 1
+
+
+def test_gateway_without_policy_preserves_local_route_behavior_for_high_risk() -> None:
+    cloud_client = SpyLLMClient({"summary": "cloud", "confidence": 0.91})
+    local_client = SpyLLMClient({"summary": "local", "confidence": 0.2})
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=_local_router(),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        make_snapshot(),
+        ConfidenceResponse,
+        "brief portfolio",
+        risk_level=RiskLevel.HIGH,
+    )
+
+    assert result.output == {"summary": "local", "confidence": 0.2}
+    assert result.escalated is False
+    assert len(local_client.calls) == 1
+    assert cloud_client.calls == []
+
+
 def test_get_llm_gateway_maps_mock_client_to_both_slots(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -508,3 +675,14 @@ def test_get_llm_gateway_maps_mock_client_to_both_slots(
 
     assert isinstance(gateway.clients[CLOUD], MockLLMClient)
     assert gateway.clients[CLOUD] is gateway.clients[LOCAL]
+
+
+def _local_router() -> LLMRouter:
+    return LLMRouter(
+        {
+            LLMTaskType.PORTFOLIO_BRIEFING: TaskRoute(
+                launch=LOCAL,
+                future_primary=CLOUD,
+            )
+        }
+    )

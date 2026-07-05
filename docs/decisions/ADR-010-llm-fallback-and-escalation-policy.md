@@ -1,12 +1,8 @@
-# ADR-010: LLM Fallback and Escalation Policy (Phase 2, deferred)
+# ADR-010: LLM Fallback and Escalation Policy
 
 ## Status
 
-Proposed — Deferred
-
-이 ADR은 결정을 지금 확정하지 않는다. 무엇을 결정해야 하는지, 왜 지금이 아닌지, 그리고
-어떤 신호가 오면 확정해야 하는지를 기록한다. 풀구현 트리거가 충족되면 본 문서를 갱신해
-Status를 `Proposed`(이후 `Accepted`)로 올린다.
+Accepted
 
 ## Context
 
@@ -22,68 +18,74 @@ Status를 `Proposed`(이후 `Accepted`)로 올린다.
    (ADR-008)이 정한 provider보다 더 강한 백엔드로 런타임에 승격하는 문제다. 예를 들어
    로컬 primary 작업을 클라우드로 올린다.
 
-이 세 가지를 지금 풀로 설계하지 않는 이유는 소비처가 아직 없기 때문이다. 폴백과 escalation은
-"어떤 결과가 충분히 좋은가", "어떤 입력이 고위험인가"라는 판단을 요구하는데, 그 판단 기준은
-실제 소비 기능(포트폴리오·대시보드 브리핑)이 무엇을 보여줄지가 정해져야 구체화된다. 기능
-없이 정책을 고정하면 투기적 추상화가 된다(Epic #141의 Phase 분리 근거).
+최초 제안 시점에는 소비 기능이 충분히 구체화되지 않았고 로컬 백엔드도 stub뿐이라 결정을
+보류했다. 이후 포트폴리오·대시보드 브리핑 기능 설계와 구현이 진행되었고, 선행 작업인
+클라우드 경계(ADR-009)와 응답 캐시(ADR-011)가 자리 잡아 위험도 escalation 정책을
+게이트웨이에 고정할 수 있게 되었다.
 
-또한 출시 시점에는 로컬 백엔드가 stub뿐이라(ADR-008) 로컬→클라우드 escalation을 실제로
-검증할 대상 자체가 없다.
-
-**현재 상태.** 게이트웨이에는 폴백·escalation이 없다. LLM을 쓰는 유일한 영속화 경로인 뉴스
-요약(`app/domains/news/service.py`)은 호출 실패나 검증 실패 시 safe template 없이 예외를
-전파한다. 워커 잡 맥락에서는 이 동작이 의도된 것이다 — 사용자 대면 응답이 아니라 배경 작업이라
-실패가 잡 로그로 드러나면 충분하다. 폴백이 필요해지는 것은 사용자에게 즉시 결과를 보여주는
-기능이 생길 때다.
+**현재 상태.** 게이트웨이는 `app/adapters/llm/gateway.py`의 단일 경로에서 라우팅과
+클라우드 경계를 소유한다. CLOUD 경로는 `privacy_gate.guard` → cache lookup →
+`call_budget.consume` → provider 호출 → cache store 순서를 따른다. LOCAL 경로는
+guard·cache·budget 없이 provider를 호출한다. 모든 launch route는 아직 `cloud`이므로
+escalation 엔진은 LOCAL 라우트가 등장하기 전까지 dormant하지만, LOCAL 전환 시 호출부가
+provider를 직접 바꾸지 않도록 정책을 지금 게이트웨이에 둔다.
 
 ## Decision
 
-지금은 확정하지 않는다. 대신 풀구현 시점에 지켜야 할 제약(guardrail)과 트리거만 고정한다.
+위험도 escalation은 게이트웨이 단일 지점의 라우팅 오버라이드로 구현한다.
 
-1. **풀구현 트리거.** 다음 중 먼저 도래하는 것이 신호다.
-   - 포트폴리오 또는 대시보드 브리핑 기능 설계가 착수되어, "이 작업이 실패하면 사용자에게
-     무엇을 보여줄지"라는 폴백 요구가 구체화될 때.
-   - 어떤 작업의 `future_primary`가 로컬로 전환되어(ADR-008), 고위험 입력의 클라우드
-     escalation이 가상의 시나리오가 아니게 될 때.
-2. **확정 시 지켜야 할 제약.**
-   - escalation은 ADR-009의 프라이버시 경계를 우회할 수 없다. 로컬→클라우드 승격은 해당
-     작업의 페이로드가 CloudSafe projection으로 표현 가능할 때만 허용된다. 표현 불가능한
-     `RAW` 작업은 escalation 대상이 아니다.
-   - 모든 폴백·escalation 판단은 게이트웨이라는 단일 choke point 안에서 일어난다. 호출부가
-     자체적으로 재시도하거나 백엔드를 바꾸지 않는다.
-   - 품질 폴백의 종착지는 ADR-012의 safe template과 일치시킨다. 같은 "신뢰할 수 없는 결과"를
-     두 ADR이 다르게 처리하지 않도록 한다.
-   - 폴백 발생은 관측 가능해야 한다(로깅·메트릭). 조용한 성능 저하를 만들지 않는다.
-3. **확정해야 할 미결 질문.**
-   - 기술적 폴백의 단계: 단순 재시도인지, 대체 transport인지, 즉시 safe template인지.
-   - escalation 트리거를 무엇으로 측정하는가 — `Risk` enum(#133) 입력값인지, 모델이 보고한
-     신뢰도인지, 둘 다인지.
-   - escalation의 비용·지연 상한.
+1. **Pre-call escalation.** 라우터가 LOCAL을 반환했고 `EscalationPolicy`가 부착되어
+   있으며 입력 `risk_level`이 `RiskLevel.HIGH`이면, LOCAL provider를 호출하지 않고
+   CLOUD 경로로 실행한다. 이때 결과에는 `escalated=True`,
+   `escalation_trigger="HIGH_RISK_INPUT"`을 기록한다.
+2. **Post-call escalation.** LOCAL 호출 결과가 스키마 검증에 실패하거나 출력 dict의
+   `confidence`가 설정 임계값 미만이면 CLOUD 경로로 1회 재호출한다. 트리거는 각각
+   `SCHEMA_VALIDATION_FAILED`, `LOW_CONFIDENCE`다. CLOUD 결과에 대한 재평가는 하지 않는다.
+3. **CloudSafe boundary.** escalation은 ADR-009의 프라이버시 경계를 우회할 수 없다.
+   승격 시도 시 `PrivacyGate.guard`가 실패하면 pre-call은 LOCAL 경로를 그대로 진행하고,
+   post-call은 원 LOCAL 결과를 그대로 반환해 호출부 검증이 기존 방식으로 실패를 처리하게
+   한다. 원래 라우트가 CLOUD인 경우의 guard 예외는 기존대로 전파한다.
+4. **Cloud path parity.** 승격된 호출은 기존 CLOUD 경로와 동일하게 guard, cache, budget,
+   provider 호출, cache store를 적용한다. 승격 호출도 `DailyCallBudget`을 소비하며 예산
+   초과 예외는 전파한다.
+5. **Trigger ownership.** 게이트웨이는 도메인 스키마를 해석하지 않는다. 호출부 평가기
+   `derive_risk_level(bundle)`이 `LLMContextBundle`의 high severity signal 또는 손실 임계
+   이하 `unrealized_return`을 `RiskLevel.HIGH`로 환산하고, 게이트웨이는 `RiskLevel`만
+   소비한다.
+6. **CLOUD route.** 이미 CLOUD로 라우팅된 작업에는 escalation 정책을 적용하지 않는다.
+   CLOUD 결과의 품질 폴백과 safe template 저장 게이트는 ADR-012의 소관이다.
+7. **Technical fallback.** provider 오류, timeout, rate limit 같은 기술적 실패에는 현재
+   폴백을 두지 않고 예외 전파를 유지한다. 현재 영속화 소비처는 배경 작업 중심이라 잡 실패
+   기록으로 충분하며, 사용자 대면 즉시 응답 경로가 생기면 재검토한다.
 
 ## Alternatives
 
-지금 평가하지 않고, 확정 시 비교할 후보로만 기록한다.
-
 - **폴백 없이 실패를 그대로 전파.** 호출부가 LLM 장애를 직접 본다. 단순하지만 브리핑류
-  기능에는 사용자 경험상 부적합할 수 있다.
-- **기술적 폴백만 두고 escalation은 영구 보류.** 로컬 전환이 실제로 일어날 때까지 escalation은
-  죽은 코드이므로, 로컬 성숙 전까지 의도적으로 빼는 선택.
-- **호출부별 폴백 정책.** 기각 방향이 유력하다. ADR-007/008과 같은 이유로 정책을 흩뜨리고
-  프라이버시 경계 우회 위험을 만든다.
+  기능에는 사용자 경험상 부적합할 수 있다. 기술적 실패에 대해서는 현행 결정으로 채택하지만,
+  품질 폴백의 최종 사용자 경험은 ADR-012에서 다룬다.
+- **기술적 폴백만 두고 escalation은 영구 보류.** 로컬 전환 전까지 dormant 코드가 될 수
+  있으나, LOCAL 전환 시 정책이 호출부로 흩어지는 위험이 더 크다.
+- **호출부별 폴백 정책.** 기각한다. ADR-007/008과 같은 이유로 정책을 흩뜨리고 프라이버시
+  경계 우회 위험을 만든다.
+- **Cloud verification attachment.** 로컬 결과를 클라우드가 검증하는 별도 verify 모드는
+  채택하지 않는다. 검증 프롬프트·판정 스키마가 별도로 필요하고 비용이 이중으로 들며, 현재
+  요구는 LOCAL→CLOUD 승격으로 충분하다.
 
 ## Consequences
 
-- 보류의 효과: 게이트웨이는 현재 폴백·escalation 없이 동작하며, 실패는 예외로 호출부에
-  전파된다. 배경 워커 잡인 뉴스 요약에는 당장 문제가 되지 않는다.
-- 리스크: 브리핑 기능을 설계할 때 폴백 요구가 뒤늦게 드러나면 게이트웨이에 후행 작업이
-  몰릴 수 있다. 트리거를 명시해 두는 것으로 이 리스크를 관리한다.
-- 코드·DB 변경 없음. 본 문서는 결정 보류 기록이다.
+- `LLMGateway`가 LOCAL 라우트에서 pre-call·post-call escalation을 수행한다.
+- `LLMAnalysisService`는 `derive_risk_level(bundle)` 결과를 게이트웨이에 전달한다.
+- 정책은 설정 임계값이 있을 때만 cloud mode factory에서 부착된다. mock·local mode의 기존
+  동작은 유지한다.
+- DB 스키마 변경은 없다.
+- 품질 폴백의 safe template 및 저장 게이트는 ADR-012와 후속 작업에 남는다.
 
 ## Follow-up
 
-- 브리핑 기능 설계(Phase 2) — 폴백 요구를 확정하는 선행 의존성.
-- #139 / #140 — 위험도 escalation 엔진 구현. 본 ADR이 확정된 뒤 착수한다.
-- ADR-012 — 품질 폴백의 종착지(safe template)를 공유한다.
+- #139 — 위험도 escalation 엔진 구현으로 본 ADR의 escalation 결정을 반영한다.
+- #140 / ADR-012 — 품질 폴백의 종착지(safe template)와 저장 게이트를 확정한다.
+- 사용자 대면 즉시 응답 경로가 생기면 기술적 폴백의 재시도·대체 transport 필요성을
+  재검토한다.
 
 ## Related Documents
 

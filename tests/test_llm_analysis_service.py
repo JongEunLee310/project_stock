@@ -2,16 +2,18 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.adapters.llm.gateway import LLMGateway
+from app.adapters.llm.gateway import LLMCompletionResult, LLMGateway
 from app.adapters.llm.mock import MockLLMClient
 from app.adapters.llm.privacy import (
+    CloudSafePayload,
     PrivacyGate,
     to_context_bundle_snapshot,
 )
 from app.adapters.llm.prompts.analysis import ANALYSIS_PROMPT_VERSION
-from app.adapters.llm.types import LLMTaskType, SensitivityLevel
+from app.adapters.llm.types import LLMTaskType, RiskLevel, SensitivityLevel
 from app.adapters.market.base import QuoteResult
 from app.domains.assets.model import Asset
 from app.domains.llm_analysis.repository import LLMAnalysisRunRepository
@@ -36,6 +38,27 @@ VALID_ANALYSIS_RESPONSE = {
     "data_limitations": ["Mock data only."],
     "confidence": 0.72,
 }
+
+
+class RecordingGateway(LLMGateway):
+    def __init__(self) -> None:
+        self.risk_levels: list[RiskLevel] = []
+
+    def complete_json(
+        self,
+        task_type: LLMTaskType,
+        payload: CloudSafePayload,
+        schema: type[BaseModel],
+        system_prompt: str,
+        *,
+        risk_level: RiskLevel = RiskLevel.LOW,
+    ) -> LLMCompletionResult:
+        self.risk_levels.append(risk_level)
+        return LLMCompletionResult(
+            output=VALID_ANALYSIS_RESPONSE,
+            provider="recording",
+            model_name="recording-model",
+        )
 
 
 def test_run_analysis_persists_input_and_successful_output(
@@ -84,6 +107,27 @@ def test_run_analysis_records_failed_status_on_schema_error(
     assert "risk_level" in run.error_message
     assert run.input_context_json["symbols"] == ["AAPL"]
     assert run.output_json is None
+
+
+def test_run_analysis_passes_derived_high_risk_level_to_gateway(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = _create_user(db)
+    asset = _create_asset(db, symbol="AAPL", name="Apple Inc.", market="NASDAQ")
+    _create_price_bars(db, symbol="AAPL", market="NASDAQ", count=252)
+    _create_portfolio(db, user_id=user.id, asset_id=asset.id)
+    _mock_quotes(monkeypatch, {"AAPL": Decimal("80")})
+    gateway = RecordingGateway()
+
+    run = LLMAnalysisService(db, gateway).run_analysis(
+        LLMTaskType.WATCHLIST_NOTE,
+        user.id,
+        [(asset.symbol, asset.market)],
+    )
+
+    assert run.status == RunStatus.SUCCEEDED.value
+    assert gateway.risk_levels == [RiskLevel.HIGH]
 
 
 def test_context_bundle_projection_is_cloud_safe_without_avg_buy_price(

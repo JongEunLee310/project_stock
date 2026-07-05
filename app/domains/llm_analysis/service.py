@@ -15,6 +15,7 @@ from app.domains.llm_analysis.schema import (
     RunStatus,
 )
 from app.domains.llm_context.context_builder import ContextBuilder
+from app.domains.llm_context.risk import derive_risk_level
 
 
 class LLMAnalysisService:
@@ -51,6 +52,7 @@ class LLMAnalysisService:
                 to_context_bundle_snapshot(bundle),
                 LLMAnalysisResult,
                 build_analysis_system_prompt(),
+                risk_level=derive_risk_level(bundle),
             )
             result = LLMAnalysisResult.model_validate(completion.output)
         except Exception as exc:
