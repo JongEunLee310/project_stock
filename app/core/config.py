@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     LLM_PROVIDER: Literal["cloud", "local", "mock"] = "cloud"
     LLM_DAILY_CALL_LIMIT: int | None = None
     LLM_CACHE_TTL_SECONDS: int | None = None
+    LLM_ESCALATION_ENABLED: bool = False
+    LLM_ESCALATION_CONFIDENCE_THRESHOLD: float | None = None
     MARKET_PROVIDER: Literal["mock", "real", "yfinance"] = "mock"
     NEWS_PROVIDER: Literal["mock", "real", "rss"] = "mock"
     NEWS_QUERY_URL_TEMPLATE: str = (
@@ -37,9 +39,14 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
-    @field_validator("LLM_DAILY_CALL_LIMIT", "LLM_CACHE_TTL_SECONDS", mode="before")
+    @field_validator(
+        "LLM_DAILY_CALL_LIMIT",
+        "LLM_CACHE_TTL_SECONDS",
+        "LLM_ESCALATION_CONFIDENCE_THRESHOLD",
+        mode="before",
+    )
     @classmethod
-    def parse_optional_int(cls, value: Any) -> int | None | Any:
+    def parse_optional_number(cls, value: Any) -> int | float | None | Any:
         if value == "":
             return None
         return value
@@ -49,6 +56,19 @@ class Settings(BaseSettings):
     def validate_llm_cache_ttl_seconds(cls, value: int | None) -> int | None:
         if value is not None and value <= 0:
             raise ValueError("LLM_CACHE_TTL_SECONDS must be greater than 0")
+        return value
+
+    @field_validator("LLM_ESCALATION_CONFIDENCE_THRESHOLD")
+    @classmethod
+    def validate_llm_escalation_confidence_threshold(
+        cls,
+        value: float | None,
+    ) -> float | None:
+        if value is not None and (value <= 0.0 or value > 1.0):
+            raise ValueError(
+                "LLM_ESCALATION_CONFIDENCE_THRESHOLD must be greater than 0.0 "
+                "and less than or equal to 1.0"
+            )
         return value
 
     @model_validator(mode="after")

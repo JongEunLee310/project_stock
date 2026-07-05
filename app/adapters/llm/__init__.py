@@ -1,4 +1,5 @@
 from app.adapters.llm.base import LLMClient, LLMMessage
+from app.adapters.llm.escalation import EscalationPolicy, EscalationSignal
 from app.adapters.llm.exceptions import (
     CloudBoundaryViolationError,
     LLMCallError,
@@ -43,6 +44,8 @@ __all__ = [
     "CloudSafePayload",
     "ContextBundleSnapshot",
     "DashboardBriefingSnapshot",
+    "EscalationPolicy",
+    "EscalationSignal",
     "LLMCallError",
     "LLMClient",
     "LLMGateway",
