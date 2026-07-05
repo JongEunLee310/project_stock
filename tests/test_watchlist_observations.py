@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.adapters.llm.exceptions import CloudBoundaryViolationError
 from app.adapters.llm.escalation import EscalationSignal
+from app.adapters.llm.exceptions import CloudBoundaryViolationError
 from app.adapters.llm.gateway import LLMCompletionResult, LLMGateway
 from app.adapters.llm.privacy import (
     CloudSafePayload,

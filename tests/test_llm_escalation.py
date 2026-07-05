@@ -9,6 +9,7 @@ from app.adapters.llm.base import LLMClient, LLMMessage
 from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.cache import LLMResponseCache
 from app.adapters.llm.escalation import EscalationPolicy, EscalationSignal
+from app.adapters.llm.exceptions import LLMBudgetExceededError
 from app.adapters.llm.gateway import CLOUD, LOCAL, LLMGateway
 from app.adapters.llm.privacy import CloudSafePayload
 from app.adapters.llm.router import LLMRouter, TaskRoute
@@ -26,6 +27,12 @@ class ConfidenceResponse(BaseModel):
 
 class PublicPayload(CloudSafePayload):
     sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.PUBLIC
+
+    value: str
+
+
+class RawPayload(CloudSafePayload):
+    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.RAW
 
     value: str
 
@@ -79,6 +86,15 @@ class SpyCallBudget:
 
     def consume(self) -> None:
         self.calls += 1
+
+
+class FailingCallBudget:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def consume(self) -> None:
+        self.calls += 1
+        raise LLMBudgetExceededError("daily cloud LLM call limit exceeded")
 
 
 class SpyResponseCache:
@@ -276,6 +292,33 @@ def test_gateway_pre_call_override_uses_cloud_path_and_marks_escalated() -> None
     assert json.loads(cloud_client.calls[0][1].content) == {"value": "safe"}
 
 
+def test_gateway_pre_call_override_skips_payload_that_is_not_cloudsafe(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    cloud_client = SpyLLMClient([{"summary": "cloud"}], provider_name="cloud-spy")
+    local_client = SpyLLMClient([{"summary": "local"}], provider_name="local-spy")
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=local_router(),
+        escalation_policy=EscalationPolicy(),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        RawPayload(value="raw"),
+        ExampleResponse,
+        "brief",
+        escalation_signal=EscalationSignal(risk_level=RiskLevel.HIGH),
+    )
+
+    assert result.output == {"summary": "local"}
+    assert result.provider == "local-spy"
+    assert result.escalated is False
+    assert cloud_client.calls == []
+    assert len(local_client.calls) == 1
+    assert "reason=cloud_boundary" in caplog.text
+
+
 def test_gateway_does_not_override_when_signal_is_none() -> None:
     cloud_client = SpyLLMClient([{"summary": "cloud"}], provider_name="cloud-spy")
     local_client = SpyLLMClient([{"summary": "local"}], provider_name="local-spy")
@@ -394,6 +437,73 @@ def test_gateway_post_call_verification_exception_returns_original_with_warning(
 
     assert result.output == {"summary": "local", "confidence": 0.2}
     assert result.escalated is True
+    assert "reason=exception" in caplog.text
+
+
+def test_gateway_post_call_verification_budget_failure_keeps_escalated_false(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    local_client = SpyLLMClient(
+        [{"summary": "local", "confidence": 0.2}],
+        provider_name="local-spy",
+    )
+    cloud_client = SpyLLMClient(
+        [{"summary": "cloud", "confidence": 0.95}],
+        provider_name="cloud-spy",
+    )
+    budget = FailingCallBudget()
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=local_router(),
+        call_budget=cast(DailyCallBudget, budget),
+        escalation_policy=EscalationPolicy(confidence_threshold=0.7),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        PublicPayload(value="safe"),
+        ConfidenceResponse,
+        "brief",
+    )
+
+    assert result.output == {"summary": "local", "confidence": 0.2}
+    assert result.provider == "local-spy"
+    assert result.escalated is False
+    assert len(local_client.calls) == 1
+    assert cloud_client.calls == []
+    assert budget.calls == 1
+    assert "reason=exception" in caplog.text
+
+
+def test_gateway_post_call_verification_boundary_failure_keeps_escalated_false(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    local_client = SpyLLMClient(
+        [{"summary": "local", "confidence": 0.2}],
+        provider_name="local-spy",
+    )
+    cloud_client = SpyLLMClient(
+        [{"summary": "cloud", "confidence": 0.95}],
+        provider_name="cloud-spy",
+    )
+    gateway = LLMGateway(
+        {CLOUD: cloud_client, LOCAL: local_client},
+        router=local_router(),
+        escalation_policy=EscalationPolicy(confidence_threshold=0.7),
+    )
+
+    result = gateway.complete_json(
+        LLMTaskType.PORTFOLIO_BRIEFING,
+        RawPayload(value="raw"),
+        ConfidenceResponse,
+        "brief",
+    )
+
+    assert result.output == {"summary": "local", "confidence": 0.2}
+    assert result.provider == "local-spy"
+    assert result.escalated is False
+    assert len(local_client.calls) == 1
+    assert cloud_client.calls == []
     assert "reason=exception" in caplog.text
 
 

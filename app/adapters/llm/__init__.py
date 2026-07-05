@@ -1,11 +1,11 @@
 from app.adapters.llm.base import LLMClient, LLMMessage
+from app.adapters.llm.escalation import EscalationPolicy, EscalationSignal
 from app.adapters.llm.exceptions import (
     CloudBoundaryViolationError,
     LLMCallError,
     LLMRoutingError,
     LLMTimeoutError,
 )
-from app.adapters.llm.escalation import EscalationPolicy, EscalationSignal
 from app.adapters.llm.gateway import LLMGateway
 from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import MockLLMClient

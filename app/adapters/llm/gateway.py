@@ -10,7 +10,7 @@ from app.adapters.llm.base import LLMClient, LLMMessage
 from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.cache import LLMResponseCache
 from app.adapters.llm.escalation import EscalationPolicy, EscalationSignal
-from app.adapters.llm.exceptions import LLMRoutingError
+from app.adapters.llm.exceptions import CloudBoundaryViolationError, LLMRoutingError
 from app.adapters.llm.privacy import CloudSafePayload, PrivacyGate
 from app.adapters.llm.router import LLMRouter
 from app.adapters.llm.types import LLMTaskType
@@ -28,6 +28,13 @@ class LLMCompletionResult:
     model_name: str
     cached: bool = False
     escalated: bool = False
+
+
+@dataclass(frozen=True)
+class _CloudVerificationResult:
+    output: dict[str, Any] | None
+    client: LLMClient
+    attempted: bool
 
 
 class LLMGateway:
@@ -67,15 +74,26 @@ class LLMGateway:
                 provider,
             )
         ):
-            logger.info(
-                "llm escalation provider override: task_type=%s from_provider=%s "
-                "to_provider=%s",
-                task_type.value,
-                provider,
-                CLOUD,
-            )
-            provider = CLOUD
-            escalated = True
+            try:
+                self.privacy_gate.guard(payload)
+            except CloudBoundaryViolationError:
+                logger.warning(
+                    "llm escalation provider override skipped: task_type=%s "
+                    "from_provider=%s reason=cloud_boundary",
+                    task_type.value,
+                    provider,
+                    exc_info=True,
+                )
+            else:
+                logger.info(
+                    "llm escalation provider override: task_type=%s from_provider=%s "
+                    "to_provider=%s",
+                    task_type.value,
+                    provider,
+                    CLOUD,
+                )
+                provider = CLOUD
+                escalated = True
         client = self.clients.get(provider)
         if client is None:
             raise LLMRoutingError(f"LLM client is not configured: {provider}")
@@ -145,9 +163,10 @@ class LLMGateway:
                     schema,
                     system_prompt,
                 )
-                escalated = True
-                if verification is not None:
-                    output, client = verification
+                escalated = escalated or verification.attempted
+                if verification.output is not None:
+                    output = verification.output
+                    client = verification.client
         return LLMCompletionResult(
             output=output,
             provider=client.provider_name,
@@ -162,18 +181,31 @@ class LLMGateway:
         payload: CloudSafePayload,
         schema: type[BaseModel],
         system_prompt: str,
-    ) -> tuple[dict[str, Any], LLMClient] | None:
+    ) -> _CloudVerificationResult:
         try:
             safe_payload = self.privacy_gate.guard(payload)
             if self.call_budget is not None:
                 self.call_budget.consume()
-            messages = [
-                LLMMessage(role="system", content=system_prompt),
-                LLMMessage(
-                    role="user",
-                    content=json.dumps(safe_payload.as_payload(), ensure_ascii=False),
-                ),
-            ]
+        except Exception:
+            logger.warning(
+                "llm escalation cloud verification failed: task_type=%s "
+                "reason=exception",
+                task_type.value,
+                exc_info=True,
+            )
+            return _CloudVerificationResult(
+                output=None,
+                client=cloud_client,
+                attempted=False,
+            )
+        messages = [
+            LLMMessage(role="system", content=system_prompt),
+            LLMMessage(
+                role="user",
+                content=json.dumps(safe_payload.as_payload(), ensure_ascii=False),
+            ),
+        ]
+        try:
             output = cloud_client.complete_json(
                 messages,
                 schema,
@@ -186,7 +218,11 @@ class LLMGateway:
                 "reason=schema_validation",
                 task_type.value,
             )
-            return None
+            return _CloudVerificationResult(
+                output=None,
+                client=cloud_client,
+                attempted=True,
+            )
         except Exception:
             logger.warning(
                 "llm escalation cloud verification failed: task_type=%s "
@@ -194,10 +230,18 @@ class LLMGateway:
                 task_type.value,
                 exc_info=True,
             )
-            return None
+            return _CloudVerificationResult(
+                output=None,
+                client=cloud_client,
+                attempted=True,
+            )
         logger.info(
             "llm escalation cloud verification completed: task_type=%s provider=%s",
             task_type.value,
             cloud_client.provider_name,
         )
-        return output, cloud_client
+        return _CloudVerificationResult(
+            output=output,
+            client=cloud_client,
+            attempted=True,
+        )

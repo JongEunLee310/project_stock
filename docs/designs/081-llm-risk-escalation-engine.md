@@ -14,10 +14,11 @@ Draft
 
 현재 `LLMGateway.complete_json`은 `LLMRouter.resolve`가 확정한 provider를 그대로 사용한다.
 `LLM_TASK_ROUTES`의 모든 `launch`가 `"cloud"`이므로 pre-call 에스컬레이션은 실질적으로
-동작할 대상이 없다(ADR-010의 "죽은 코드" 인식과 일관). 그럼에도 엔진 골격을 지금 도입하는
-이유는 두 가지다. 첫째, `future_primary`가 `"local"`인 작업이 실제로 전환되는 시점에
-게이트웨이 재설계 없이 pre-call 경로가 자동으로 활성화된다. 둘째, post-call cloud 검증
-(confidence 낮음·schema validation 실패)은 현재 cloud 라우팅에서도 즉시 작동한다.
+동작할 대상이 없다(ADR-010의 "죽은 코드" 인식과 일관). post-call cloud 검증도 1차 provider가
+`CLOUD`가 아닌 경우에만 발화하므로, 현재 launch cloud-only 라우팅에서는 실질적으로 휴면
+상태다. 그럼에도 엔진 골격을 지금 도입하는 이유는 `future_primary`가 `"local"`인 작업이 실제로
+전환되는 시점에 게이트웨이 재설계 없이 pre-call 승격과 post-call 검증 경로가 함께 활성화되기
+때문이다.
 
 트리거를 두 부류로 나눈다. **Pre-call 트리거**(입력 신호 기반): 리스크 급등·손실률 급증·
 뉴스 감성 급변·실적/공시 이벤트·매수매도 질문 — 호출 전에 알 수 있는 신호다. **Post-call
