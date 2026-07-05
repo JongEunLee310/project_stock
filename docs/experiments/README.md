@@ -12,6 +12,11 @@
   구동. Anthropic 청구 −39%로 결론 역전, 단 Codex 토큰 +42% 트레이드오프.
 - `fable-codex-high-vs-opus-vff-codex-medium.md` — 라운드3: 동일 이슈(BE #138) 양 브랜치
   병렬 구현·블라인드 채점. Fable 5+Codex(high)가 70 vs 60으로 우세, 단 n=1·축 미분리.
+- `orchestrator-comparison-round4-plan.md` — 라운드4 계획: BE #139, codex effort medium
+  고정으로 오케스트레이터 축 단독 분리, 팔별 토큰 격리, 이중 판정(Fable 5 + codex xhigh).
+- `orchestrator-comparison-round4.md` — 라운드4 결과: 이중 블라인드 판정 일치로
+  Opus+VFF+Codex(medium) 우세(J1 86:80, J2 65:62). 라운드3 effort 통제 실패 정정 포함.
+  결합 결론: 조합 전환 근거 없음, 기존 표준 유지.
 
 ## 작성 규칙
 

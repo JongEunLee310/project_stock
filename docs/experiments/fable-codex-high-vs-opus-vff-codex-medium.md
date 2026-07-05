@@ -141,3 +141,18 @@ Blocking 1 vs 3이며, 남은 결함의 실패 방향도 B가 안전하다. 시�
 - 조합 B: `experiment/138-llm-cache-fable` 브랜치 (설계
   `docs/designs/080-llm-response-cache.md`, 구현 `55ff839`) — 리뷰 반영 후 PR 제출.
 - 블라인드 리뷰 프롬프트·루브릭: 본 문서 §2. 리뷰 원문은 세션 산출물로만 존재한다.
+
+## 9. 정정 (2026-07-05)
+
+라운드4 준비 중 `~/.codex/config.toml`에 `model_reasoning_effort = "high"` 전역 설정이
+2026-07-04 11:03부터 존재했음이 확인됐다. 이에 따라 **조합 A의 codex(16:14 세션)도
+medium이 아니라 high로 실행됐다**(codex 세션 로그로 확인). 본 문서의 전제 "A=medium
+vs B=high"는 틀렸으며, 실제로는 **양 팔 모두 high**였다.
+
+- §6 한계 6(축 미분리)은 결과적으로 성립하지 않는다 — 라운드3은 의도치 않게 codex
+  effort가 통제된 **오케스트레이터 축 단독 비교**였고, 70 vs 60 우세는 effort가 아니라
+  오케스트레이터(설계 주체) 차이에서 왔다.
+- codex 토큰 +35%(121.5k vs 163.5k)를 "high effort 비용"으로 해석한 부분도 정정한다 —
+  동일 effort였으므로 이 차이는 핸드오프 상세도·범위 차이다.
+- 문서 제목의 "codex-high-vs-…-codex-medium"은 당시 의도를 반영한 것으로 파일명은
+  유지하되, 실측은 본 절을 기준으로 읽어야 한다. 상세는 `orchestrator-comparison-round4.md` §4.
