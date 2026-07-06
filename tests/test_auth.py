@@ -3,7 +3,7 @@ from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 
 from app.core.config import settings
 from tests.conftest import api_data, api_error

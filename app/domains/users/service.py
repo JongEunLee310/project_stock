@@ -53,11 +53,11 @@ class UserService:
         )
 
     def refresh(self, refresh_token: str) -> Token:
-        from jose import JWTError
+        from jwt import PyJWTError
 
         try:
             payload = decode_token(refresh_token)
-        except JWTError:
+        except PyJWTError:
             raise _INVALID_TOKEN_EXC
 
         if payload.get("type") != "refresh":
