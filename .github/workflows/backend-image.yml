@@ -1,39 +1,27 @@
 name: Backend Image
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
     branches:
       - main
 
 jobs:
   build-push:
     runs-on: ubuntu-latest
+    # CI(lint/type/test)가 성공했을 때만 빌드한다. 검증은 CI에서 이미 수행하므로 중복하지 않는다.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     env:
       IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Lint
-        run: uv run ruff check .
-
-      - name: Typecheck
-        run: uv run mypy .
-
-      - name: Test
-        run: uv run pytest
+          # CI가 통과시킨 정확한 커밋을 빌드한다.
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Decide image tags
         id: tags
