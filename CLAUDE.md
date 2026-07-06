@@ -22,7 +22,7 @@ enum 값)는 영어로 유지한다. 상세는 `docs/harness/design-record-polic
 
 ## Branch Rule
 
-Before handing off any task, verify that Codex will work on a feature branch created from the latest `main`. If the current branch is behind `main`, instruct Codex to pull and rebase before starting implementation.
+Before handing off any task, verify that Codex will work on a feature branch created from the latest `dev`, and that the PR will target `dev` (not `main`). If the current branch is behind `dev`, instruct Codex to pull and rebase before starting implementation. `main` is the release/deploy branch — merges to it build and push the Docker image — and is updated only by promoting `dev` through a release PR. See `docs/harness/branch-strategy.md`.
 
 ## Required Context
 
