@@ -43,7 +43,12 @@ No SQL queries, no business logic code, no full class bodies.
 - Style or documentation changes.
 - Bug fixes that do not alter schema or domain boundaries.
 
+설계 문서의 데이터 계약 리터럴(enum 값·필드 형식·경계값·키 스킴)에는 출처를 명시하고,
+출처를 댈 수 없는 값은 "가정"으로 표기한다. 상세는 `quality-process-policy.md`의 Design
+Fact Grounding을 따른다.
+
 ## Related
 
 - `docs/decisions/` — for ADRs when an approach is chosen over alternatives.
 - `docs/knowledge/workflow.md` — step 2a of the default workflow.
+- `quality-process-policy.md` — 리터럴 계약의 출처 명시와 셀프 검토 체크포인트.

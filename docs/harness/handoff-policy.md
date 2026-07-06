@@ -4,6 +4,9 @@ Claude Code hands implementation work to Codex using `.codex/task-template.md`.
 
 When the change introduces a new domain, table, external dependency, or architectural decision, a design record must exist before handoff, per `design-record-policy.md`. Reference it from the handoff task.
 
+핸드오프에 앞서 이슈의 요구 불릿을 수용 기준으로 번역하고, 설계 문서에서 "가정"으로 표기된
+리터럴은 구현 전 검증을 요구한다. 상세는 `quality-process-policy.md`를 따른다.
+
 ## Output Location
 
 Completed handoffs are written to `.codex/tasks/task-<NNN>-<slug>.md`, using `.codex/task-template.md` as the section template. `<NNN>` is a zero-padded sequence number and `<slug>` is a short kebab-case summary. One file per handoff.
