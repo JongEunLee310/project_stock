@@ -1,25 +1,25 @@
 services:
-  api:
+  backend:
     build: .
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/stock_db
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/stock_db
       REDIS_URL: redis://redis:6379/0
     env_file:
       - path: .env
         required: false
     depends_on:
-      db:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
       - .:/app
       - /app/.venv
-    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  db:
+  postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: postgres
