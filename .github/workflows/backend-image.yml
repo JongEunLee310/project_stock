@@ -1,0 +1,85 @@
+name: Backend Image
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Typecheck
+        run: uv run mypy .
+
+      - name: Test
+        run: uv run pytest
+
+      - name: Decide image tags
+        id: tags
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Docker Hub JWT 발급 (비공개 저장소 태그 조회용)
+          JWT=$(curl -sf -H "Content-Type: application/json" \
+            -X POST "https://hub.docker.com/v2/users/login/" \
+            -d "{\"username\": \"${DOCKERHUB_USERNAME}\", \"password\": \"${DOCKERHUB_TOKEN}\"}" \
+            | jq -r .token)
+
+          # 기존 vMAJOR.MINOR.PATCH 태그만 수집 (저장소가 없거나 태그가 없으면 빈 값)
+          EXISTING=$(curl -s -H "Authorization: JWT ${JWT}" \
+            "https://hub.docker.com/v2/repositories/${IMAGE_NAME}/tags?page_size=100" \
+            | jq -r '(.results // [])[].name' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+
+          if [[ -z "${EXISTING}" ]]; then
+            NEXT="v0.1.0"
+          else
+            LATEST=$(printf '%s\n' "${EXISTING}" | sort -V | tail -n1)
+            BASE="${LATEST#v}"
+            MAJOR="${BASE%%.*}"
+            REST="${BASE#*.}"
+            MINOR="${REST%%.*}"
+            PATCH="${REST##*.}"
+            NEXT="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+          fi
+
+          echo "다음 버전 태그: ${NEXT}"
+          echo "tags=${IMAGE_NAME}:staging,${IMAGE_NAME}:${NEXT}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
