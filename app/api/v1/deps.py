@@ -1,6 +1,6 @@
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError
+from jwt import PyJWTError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -35,7 +35,7 @@ def get_current_user(
         if not isinstance(sub, str):
             raise _INVALID_TOKEN_EXC
         user_id = int(sub)
-    except (JWTError, ValueError):
+    except (PyJWTError, ValueError):
         raise _INVALID_TOKEN_EXC
 
     user = db.scalars(select(User).where(User.id == user_id)).first()
