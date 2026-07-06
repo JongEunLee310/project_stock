@@ -23,6 +23,7 @@ This directory defines the AI-assisted engineering harness used by this template
 - `autonomy-levels.md`
 - `orchestration-state-policy.md`
 - `cross-repo-sync-policy.md`
+- `quality-process-policy.md`
 
 ## Writing Rules
 

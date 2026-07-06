@@ -57,6 +57,11 @@ The fixed headers are a skeleton; each section should carry real substance rathe
 - **Final Recommendation with reasoning** — Give the merge-readiness judgment and why: scope held, regression risk, what the added tests cover. Restate the outcome (for example, Blocking none; Suggestions and Questions are follow-up) so the merge decision is unambiguous.
 - **Honest severity** — Keep the Blocking / Suggestions / Questions split truthful. Blocking is a must-change-before-merge item; Suggestions are optional or follow-up; Questions need author or human input. Never inflate a follow-up into a blocker, and never bury a real blocker under Suggestions.
 
+### Cross-Model Review
+
+구현자의 자기 검증과 CI와 별개로, 구현에 관여하지 않은 다른 모델의 독립 리뷰를 로컬
+리뷰에 추가한다. 상세는 `quality-process-policy.md`의 Cross-Model Review를 따른다.
+
 ## Handling Review Feedback
 
 When the posted review comment contains a **Blocking** finding or any change the review says must be made, Claude Code does **not** stop and wait for the human. It drives the fix loop:
