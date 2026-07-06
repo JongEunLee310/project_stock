@@ -9,7 +9,7 @@ jobs:
   build-push:
     runs-on: ubuntu-latest
     env:
-      IMAGE_NAME: ${{ secrets.IMAGE_NAME }}
+      IMAGE_NAME: ${{ vars.IMAGE_NAME }}
 
     steps:
       - name: Checkout
