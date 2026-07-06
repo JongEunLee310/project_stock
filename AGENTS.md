@@ -5,7 +5,7 @@ These instructions apply to all AI coding agents working in this repository.
 ## Working Rules
 
 - Read the relevant documentation before starting work.
-- Before starting work, pull the latest `main` and create a dedicated feature branch (`feat/<topic>`, or `fix/`/`docs/`/`chore/` by change type). Never commit work directly on `main`.
+- Before starting work, pull the latest `dev` and create a dedicated feature branch (`feat/<topic>`, or `fix/`/`docs/`/`chore/` by change type) from it. Feature PRs target `dev`, never `main`; `main` is updated only by promoting `dev` through a release PR (see `docs/harness/branch-strategy.md`). Never commit work directly on `dev` or `main`.
 - Stay within the issue scope and the explicit handoff scope.
 - Distinguish facts, assumptions, and open questions.
 - Do not weaken tests, CI, lint, typecheck, build checks, or verification rules.
