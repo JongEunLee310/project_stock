@@ -7,9 +7,17 @@ from app.adapters.factory import (
     get_news_adapter,
     get_portfolio_provider,
     get_price_series_provider,
+    get_symbol_lookup_provider,
 )
-from app.adapters.market.mock import MockMarketDataProvider, MockPriceSeriesProvider
-from app.adapters.market.yfinance import YFinancePriceProvider
+from app.adapters.market.mock import (
+    MockMarketDataProvider,
+    MockPriceSeriesProvider,
+    MockSymbolLookupProvider,
+)
+from app.adapters.market.yfinance import (
+    YFinancePriceProvider,
+    YFinanceSymbolLookupProvider,
+)
 from app.adapters.news.mock import MockNewsAdapter
 from app.adapters.news.rss import RSSNewsAdapter
 from app.adapters.portfolio.mock import MockPortfolioProvider
@@ -38,6 +46,35 @@ def test_mock_price_series_provider_returns_deterministic_bars() -> None:
     assert first_result[0].symbol == "AAPL"
     assert first_result[0].market == "NASDAQ"
     assert first_result[0].timestamp.tzinfo is not None
+
+
+def test_mock_symbol_lookup_provider_matches_symbol_partially() -> None:
+    provider = MockSymbolLookupProvider()
+
+    results = provider.search("AAP")
+
+    assert [result.symbol for result in results] == ["AAPL"]
+
+
+def test_mock_symbol_lookup_provider_matches_name_case_insensitively() -> None:
+    provider = MockSymbolLookupProvider()
+
+    results = provider.search("microsoft")
+
+    assert [(result.symbol, result.name) for result in results] == [
+        ("MSFT", "Microsoft Corporation")
+    ]
+
+
+def test_mock_symbol_lookup_provider_filters_by_market() -> None:
+    provider = MockSymbolLookupProvider()
+
+    assert [result.symbol for result in provider.search("Visa")] == ["V"]
+    assert provider.search("Visa", market="NASDAQ") == []
+
+
+def test_mock_symbol_lookup_provider_returns_empty_list_for_no_results() -> None:
+    assert MockSymbolLookupProvider().search("not-a-symbol") == []
 
 
 def test_mock_disclosure_provider_returns_deterministic_disclosures() -> None:
@@ -70,6 +107,7 @@ def test_factories_return_mock_providers(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert isinstance(get_market_provider(), MockMarketDataProvider)
     assert isinstance(get_price_series_provider(), MockPriceSeriesProvider)
+    assert isinstance(get_symbol_lookup_provider(), MockSymbolLookupProvider)
     assert isinstance(get_news_adapter(), MockNewsAdapter)
     assert isinstance(get_disclosure_provider(), MockDisclosureProvider)
     assert isinstance(get_portfolio_provider(), MockPortfolioProvider)
@@ -81,6 +119,14 @@ def test_price_series_factory_returns_yfinance_provider(
     monkeypatch.setattr(settings, "MARKET_PROVIDER", "yfinance")
 
     assert isinstance(get_price_series_provider(), YFinancePriceProvider)
+
+
+def test_symbol_lookup_factory_returns_yfinance_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "MARKET_PROVIDER", "yfinance")
+
+    assert isinstance(get_symbol_lookup_provider(), YFinanceSymbolLookupProvider)
 
 
 def test_news_factory_returns_rss_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -102,6 +148,7 @@ def test_news_factory_returns_rss_adapter(monkeypatch: pytest.MonkeyPatch) -> No
     [
         ("MARKET_PROVIDER", "get_market_provider"),
         ("MARKET_PROVIDER", "get_price_series_provider"),
+        ("MARKET_PROVIDER", "get_symbol_lookup_provider"),
         ("NEWS_PROVIDER", "get_news_adapter"),
         ("DISCLOSURE_PROVIDER", "get_disclosure_provider"),
         ("PORTFOLIO_PROVIDER", "get_portfolio_provider"),
@@ -115,6 +162,7 @@ def test_factories_fail_fast_for_real_providers(
     factories = {
         "get_market_provider": get_market_provider,
         "get_price_series_provider": get_price_series_provider,
+        "get_symbol_lookup_provider": get_symbol_lookup_provider,
         "get_news_adapter": get_news_adapter,
         "get_disclosure_provider": get_disclosure_provider,
         "get_portfolio_provider": get_portfolio_provider,

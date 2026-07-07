@@ -9,6 +9,8 @@ from app.adapters.market.base import (
     PriceBarResult,
     PriceSeriesProvider,
     QuoteResult,
+    SymbolLookupProvider,
+    SymbolLookupResult,
 )
 
 _AS_OF = datetime(2026, 6, 19, 0, 0, tzinfo=timezone.utc)
@@ -58,6 +60,19 @@ _SAMPLE_QUOTES: dict[str, QuoteResult] = {
         next_earnings_date="2026-07-23",
     ),
 }
+_SYMBOL_LOOKUP_CATALOG = [
+    SymbolLookupResult("AAPL", "Apple Inc.", "NASDAQ", "Technology"),
+    SymbolLookupResult("MSFT", "Microsoft Corporation", "NASDAQ", "Technology"),
+    SymbolLookupResult("GOOGL", "Alphabet Inc.", "NASDAQ", "Communication Services"),
+    SymbolLookupResult("AMZN", "Amazon.com, Inc.", "NASDAQ", "Consumer Cyclical"),
+    SymbolLookupResult("NVDA", "NVIDIA Corporation", "NASDAQ", "Technology"),
+    SymbolLookupResult("TSLA", "Tesla, Inc.", "NASDAQ", "Consumer Cyclical"),
+    SymbolLookupResult("META", "Meta Platforms, Inc.", "NASDAQ", "Communication Services"),
+    SymbolLookupResult("JPM", "JPMorgan Chase & Co.", "NYSE", "Financial Services"),
+    SymbolLookupResult("V", "Visa Inc.", "NYSE", "Financial Services"),
+    SymbolLookupResult("JNJ", "Johnson & Johnson", "NYSE", "Healthcare"),
+    SymbolLookupResult("005930", "Samsung Electronics Co., Ltd.", "KOSPI", "Technology"),
+]
 
 
 class MockMarketDataProvider(MarketDataProvider):
@@ -130,6 +145,28 @@ class MockPriceSeriesProvider(PriceSeriesProvider):
 class MockIndexQuoteProvider(IndexQuoteProvider):
     def get_quotes(self, symbols: list[str]) -> list[IndexQuoteResult]:
         return [_index_quote(symbol) for symbol in symbols]
+
+
+class MockSymbolLookupProvider(SymbolLookupProvider):
+    def search(
+        self,
+        query: str,
+        market: str | None = None,
+    ) -> list[SymbolLookupResult]:
+        normalized_query = query.strip().upper()
+        normalized_market = market.strip().upper() if market is not None else None
+        if not normalized_query:
+            return []
+
+        return [
+            item
+            for item in _SYMBOL_LOOKUP_CATALOG
+            if (normalized_market is None or item.market == normalized_market)
+            and (
+                normalized_query in item.symbol.upper()
+                or normalized_query in item.name.upper()
+            )
+        ]
 
 
 def _fallback_quote(symbol: str) -> QuoteResult:

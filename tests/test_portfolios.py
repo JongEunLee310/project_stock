@@ -6,7 +6,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.adapters.market.base import MarketDataProvider, QuoteResult
-from tests.conftest import api_data, api_error, api_meta, set_current_user
+from app.domains.assets.model import Asset
+from tests.conftest import (
+    TestingSessionLocal,
+    api_data,
+    api_error,
+    api_meta,
+    set_current_user,
+)
 
 
 def assert_decimal_close(
@@ -18,23 +25,27 @@ def assert_decimal_close(
 
 
 def create_asset(
-    client: TestClient,
+    _client: TestClient,
     symbol: str = "AAPL",
     sector: str | None = None,
 ) -> dict[str, Any]:
-    payload: dict[str, str] = {
-        "symbol": symbol,
-        "name": f"{symbol} Inc.",
-        "market": "NASDAQ",
-    }
-    if sector is not None:
-        payload["sector"] = sector
-    response = client.post(
-        "/api/v1/assets",
-        json=payload,
-    )
-    assert response.status_code == 201
-    return cast(dict[str, Any], api_data(response))
+    with TestingSessionLocal() as db:
+        asset = Asset(
+            symbol=symbol,
+            name=f"{symbol} Inc.",
+            market="NASDAQ",
+            sector=sector,
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        return {
+            "id": asset.id,
+            "symbol": asset.symbol,
+            "name": asset.name,
+            "market": asset.market,
+            "sector": asset.sector,
+        }
 
 
 def create_portfolio(

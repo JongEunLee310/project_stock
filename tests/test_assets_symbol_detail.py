@@ -5,7 +5,8 @@ from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import api_data, api_meta
+from app.domains.assets.model import Asset
+from tests.conftest import TestingSessionLocal, api_data, api_meta
 
 FUNDAMENTAL_FIELDS = (
     "per",
@@ -125,9 +126,14 @@ def test_asset_detail_unknown_symbol_fundamental_fields_are_none(
     client: TestClient,
 ) -> None:
     """mock 데이터가 없는 symbol(fallback)은 펀더멘털 필드를 None으로 반환한다."""
-    asset = create_asset(client, symbol="ZZZZ")
+    with TestingSessionLocal() as db:
+        asset_model = Asset(symbol="ZZZZ", name="Unknown Mock", market="NASDAQ")
+        db.add(asset_model)
+        db.commit()
+        db.refresh(asset_model)
+        asset_id = asset_model.id
 
-    response = client.get(f"/api/v1/assets/{asset['id']}/detail")
+    response = client.get(f"/api/v1/assets/{asset_id}/detail")
 
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))

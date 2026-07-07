@@ -319,7 +319,7 @@ def test_watchlist_recommendations_endpoint_returns_mock_recommendation(
     assert data["recommendations"] == [
         {
             "symbol": "AAPL",
-            "name": "AAPL Inc.",
+            "name": "Apple Inc.",
             "rationale": "Mock recommendation rationale.",
             "reference_metrics": ["Mock metric A", "Mock metric B"],
         }

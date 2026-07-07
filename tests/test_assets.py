@@ -15,11 +15,7 @@ from tests.conftest import (
 def asset_payload(symbol: str = "AAPL", market: str = "NASDAQ") -> dict[str, str]:
     return {
         "symbol": symbol,
-        "name": "Apple Inc.",
         "market": market,
-        "sector": "Technology",
-        "industry": "Consumer Electronics",
-        "description": "Makes devices and services.",
     }
 
 
@@ -36,8 +32,27 @@ def test_register_asset_success(client: TestClient) -> None:
     assert data["symbol"] == "AAPL"
     assert data["name"] == "Apple Inc."
     assert data["market"] == "NASDAQ"
+    assert data["sector"] == "Technology"
     assert data["is_active"] is True
     assert "created_at" in data
+
+
+def test_register_asset_rejects_unknown_market_symbol(client: TestClient) -> None:
+    response = client.post("/api/v1/assets", json=asset_payload(symbol="APPL"))
+
+    assert response.status_code == 422
+    assert api_error(response) == {
+        "code": "ASSET_NOT_IN_MARKET",
+        "message": "시장 데이터에서 확인되지 않은 종목입니다.",
+    }
+
+
+def test_register_asset_normalizes_lowercase_symbol(client: TestClient) -> None:
+    data = create_asset(client, asset_payload(symbol="aapl", market="nasdaq"))
+
+    assert data["symbol"] == "AAPL"
+    assert data["market"] == "NASDAQ"
+    assert data["name"] == "Apple Inc."
 
 
 def test_register_asset_rejects_duplicate_symbol_market(client: TestClient) -> None:
@@ -58,7 +73,6 @@ def test_list_assets(client: TestClient) -> None:
         client,
         {
             "symbol": "MSFT",
-            "name": "Microsoft Corporation",
             "market": "NASDAQ",
         },
     )
@@ -96,7 +110,6 @@ def test_list_assets_uses_page_and_size(client: TestClient) -> None:
         client,
         {
             "symbol": "MSFT",
-            "name": "Microsoft Corporation",
             "market": "NASDAQ",
         },
     )
@@ -133,8 +146,8 @@ def test_get_asset_detail_with_mock_quote(client: TestClient) -> None:
     assert data["change_percent"] == "1.26"
     assert data["currency"] == "USD"
     assert data["sector"] == "Technology"
-    assert data["industry"] == "Consumer Electronics"
-    assert data["description"] == "Makes devices and services."
+    assert data["industry"] is None
+    assert data["description"] is None
     assert data["updated_at"] == "2026-06-19T00:00:00Z"
     assert data["market_cap"] == "3000000000000"
     assert data["next_earnings_date"] == "2026-07-30"
@@ -143,22 +156,68 @@ def test_get_asset_detail_with_mock_quote(client: TestClient) -> None:
 def test_get_asset_detail_uses_mock_fallback_for_unknown_symbol(
     client: TestClient,
 ) -> None:
-    asset = create_asset(
-        client,
-        {
-            "symbol": "ZZZZ",
-            "name": "Unknown Mock",
-            "market": "NASDAQ",
-        },
-    )
+    with TestingSessionLocal() as db:
+        asset_model = Asset(
+            symbol="ZZZZ",
+            name="Unknown Mock",
+            market="NASDAQ",
+        )
+        db.add(asset_model)
+        db.commit()
+        db.refresh(asset_model)
+        asset_id = asset_model.id
 
-    response = client.get(f"/api/v1/assets/{asset['id']}/detail")
+    response = client.get(f"/api/v1/assets/{asset_id}/detail")
 
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
     assert data["symbol"] == "ZZZZ"
     assert data["price"] == "210"
     assert data["change"] == "1.00"
+
+
+def test_lookup_assets_marks_registered_symbol(client: TestClient) -> None:
+    create_asset(client)
+
+    response = client.get("/api/v1/assets/lookup", params={"query": "app"})
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["items"] == [
+        {
+            "symbol": "AAPL",
+            "name": "Apple Inc.",
+            "market": "NASDAQ",
+            "sector": "Technology",
+            "registered": True,
+        }
+    ]
+
+
+def test_lookup_assets_marks_unregistered_symbol(client: TestClient) -> None:
+    response = client.get(
+        "/api/v1/assets/lookup",
+        params={"query": "micro", "market": "NASDAQ"},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["items"] == [
+        {
+            "symbol": "MSFT",
+            "name": "Microsoft Corporation",
+            "market": "NASDAQ",
+            "sector": "Technology",
+            "registered": False,
+        }
+    ]
+
+
+def test_lookup_assets_rejects_empty_query(client: TestClient) -> None:
+    response = client.get("/api/v1/assets/lookup", params={"query": ""})
+
+    assert response.status_code == 422
+    assert api_error(response)["code"] == "VALIDATION_ERROR"
 
 
 def test_get_asset_returns_404_when_missing(client: TestClient) -> None:

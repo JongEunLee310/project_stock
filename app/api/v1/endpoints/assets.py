@@ -1,13 +1,18 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
 from app.core.pagination import PaginationParams
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
-from app.domains.assets.schema import AssetCreate, AssetDetailResponse, AssetResponse
+from app.domains.assets.schema import (
+    AssetCreate,
+    AssetDetailResponse,
+    AssetLookupResponse,
+    AssetResponse,
+)
 from app.domains.assets.service import AssetService
 from app.domains.decision_checklist.schema import (
     BuyChecklistNoteUpdate,
@@ -61,6 +66,20 @@ def list_assets(
         size=pagination.size,
         total=total,
     )
+
+
+@router.get(
+    "/lookup",
+    response_model=ApiResponse[AssetLookupResponse],
+    summary="Lookup assets",
+    description="Return market-provider symbol matches and whether each asset is already registered.",
+)
+def lookup_assets(
+    query: str = Query(min_length=1),
+    market: str | None = None,
+    db: Session = Depends(get_db),
+) -> ApiResponse[AssetLookupResponse]:
+    return success(AssetService(db).lookup(query=query, market=market))
 
 
 @router.get(

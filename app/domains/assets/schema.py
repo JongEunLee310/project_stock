@@ -5,11 +5,19 @@ from app.core.schema import UtcDatetime
 
 class AssetCreate(BaseModel):
     symbol: str = Field(max_length=20)
-    name: str = Field(max_length=255)
     market: str = Field(max_length=20)
-    sector: str | None = Field(default=None, max_length=100)
-    industry: str | None = Field(default=None, max_length=100)
-    description: str | None = None
+
+
+class AssetLookupItem(BaseModel):
+    symbol: str
+    name: str
+    market: str
+    sector: str | None = None
+    registered: bool
+
+
+class AssetLookupResponse(BaseModel):
+    items: list[AssetLookupItem]
 
 
 class AssetResponse(BaseModel):

@@ -224,7 +224,7 @@ def test_list_signals_expand_asset_includes_asset_object(
         brief = item["asset"]
         assert brief["symbol"] == "AAPL"
         assert brief["market"] == asset["market"]
-        assert brief["name"] == "AAPL Inc."
+        assert brief["name"] == "Apple Inc."
         assert brief["price"] == "195.64"
         assert brief["change_percent"] == "1.26"
         assert isinstance(brief["price"], str)

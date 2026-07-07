@@ -6,7 +6,14 @@ from typing import Any, cast
 
 import yfinance as yf  # type: ignore[import-untyped]
 
-from app.adapters.market.base import PriceBarResult, PriceSeriesProvider
+from app.adapters.market.base import (
+    PriceBarResult,
+    PriceSeriesProvider,
+    SymbolLookupProvider,
+    SymbolLookupResult,
+)
+from app.core.error_codes import ErrorCode
+from app.core.exceptions import AppException
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +22,18 @@ _MARKET_SUFFIXES = {
     "KOSDAQ": ".KQ",
     "NASDAQ": "",
     "NYSE": "",
+}
+_YFINANCE_EXCHANGE_MARKETS = {
+    "NMS": "NASDAQ",
+    "NGM": "NASDAQ",
+    "NCM": "NASDAQ",
+    "NASDAQ": "NASDAQ",
+    "NYQ": "NYSE",
+    "NYSE": "NYSE",
+    "ASE": "NYSE",
+    "PCX": "NYSE",
+    "KSC": "KOSPI",
+    "KQ": "KOSDAQ",
 }
 
 
@@ -69,11 +88,63 @@ class YFinancePriceProvider(PriceSeriesProvider):
         )
 
 
+class YFinanceSymbolLookupProvider(SymbolLookupProvider):
+    def search(
+        self,
+        query: str,
+        market: str | None = None,
+    ) -> list[SymbolLookupResult]:
+        normalized_market = market.strip().upper() if market is not None else None
+        try:
+            search = yf.Search(query.strip(), max_results=10)
+            quotes = getattr(search, "quotes", [])
+        except Exception as exc:
+            raise AppException(
+                status_code=502,
+                detail="시장 데이터 제공자 조회 중 오류가 발생했습니다.",
+                error_code=ErrorCode.MARKET_DATA_PROVIDER_ERROR,
+            ) from exc
+
+        results: list[SymbolLookupResult] = []
+        for quote in quotes:
+            result = _lookup_result_from_quote(quote)
+            if result is None:
+                continue
+            if normalized_market is not None and result.market != normalized_market:
+                continue
+            results.append(result)
+        return results
+
+
 def to_yfinance_ticker(symbol: str, market: str) -> str | None:
     suffix = _MARKET_SUFFIXES.get(market.upper())
     if suffix is None:
         return None
     return f"{symbol.upper()}{suffix}"
+
+
+def _lookup_result_from_quote(quote: Any) -> SymbolLookupResult | None:
+    if not isinstance(quote, dict):
+        return None
+    symbol = quote.get("symbol")
+    name = quote.get("shortname") or quote.get("longname") or quote.get("name")
+    exchange = quote.get("exchange")
+    if not isinstance(symbol, str) or not symbol:
+        return None
+    if not isinstance(name, str) or not name:
+        return None
+    if not isinstance(exchange, str):
+        return None
+    market = _YFINANCE_EXCHANGE_MARKETS.get(exchange.upper())
+    if market is None:
+        return None
+    sector = quote.get("sector")
+    return SymbolLookupResult(
+        symbol=symbol.upper(),
+        name=name,
+        market=market,
+        sector=sector if isinstance(sector, str) and sector else None,
+    )
 
 
 def _range_to_period(range_value: str) -> str:
