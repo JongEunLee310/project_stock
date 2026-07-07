@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 2880
     OPENAI_API_KEY: str | None = None
+    OPENAI_BASE_URL: str | None = None
     OPENAI_MODEL: str = "gpt-4o-mini"
     LLM_TIMEOUT_SECONDS: int = 30
     LLM_PROVIDER: Literal["cloud", "local", "mock"] = "cloud"
@@ -49,6 +50,15 @@ class Settings(BaseSettings):
     def parse_optional_number(cls, value: Any) -> int | float | None | Any:
         if value == "":
             return None
+        return value
+
+    @field_validator("OPENAI_BASE_URL", mode="before")
+    @classmethod
+    def parse_optional_string(cls, value: Any) -> str | None | Any:
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
         return value
 
     @field_validator("LLM_CACHE_TTL_SECONDS")
