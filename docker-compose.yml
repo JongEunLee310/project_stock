@@ -1,29 +1,49 @@
 services:
   backend:
-    image: ${IMAGE_NAME}:staging
-    container_name: auto-invest-backend-staging
-    restart: unless-stopped
-    env_file:
-      - .env.staging
+    build: .
     ports:
       - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/stock_db
+      REDIS_URL: redis://redis:6379/0
+    env_file:
+      - path: .env
+        required: false
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/.venv
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   postgres:
-    image: postgres:16
-    container_name: auto-invest-postgres-staging
-    restart: unless-stopped
-    env_file:
-      - .env.staging
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: stock_db
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   redis:
-    image: redis:7
-    container_name: auto-invest-redis-staging
-    restart: unless-stopped
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 volumes:
   postgres_data:

@@ -14,7 +14,7 @@ cp .env.example .env
 PostgreSQL과 Redis는 Docker Compose로 함께 띄우거나 로컬 서비스를 직접 사용할 수 있다.
 
 ```bash
-docker compose -f docker-compose.local.yml up --build
+docker compose up --build
 ```
 
 API를 컨테이너 밖에서 직접 실행한다면 `.env`의 DB/Redis 호스트를 로컬 포트에 맞춘다.
