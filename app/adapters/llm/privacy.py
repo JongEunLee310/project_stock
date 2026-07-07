@@ -85,6 +85,16 @@ class WatchlistHighlight(BaseModel):
     daily_change_percent: Decimal
 
 
+class StockRecommendationCandidate(BaseModel):
+    symbol: str
+    name: str
+    sector: str | None = None
+    status: str
+    per: Decimal | None = None
+    peg: Decimal | None = None
+    daily_change_percent: Decimal
+
+
 class PortfolioBriefingSnapshot(CloudSafePayload):
     sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
 
@@ -114,6 +124,15 @@ class WatchlistObservationSnapshot(CloudSafePayload):
     watchlist_id: int
     item_count: int
     items: list[WatchlistHighlight]
+
+
+class StockRecommendationSnapshot(CloudSafePayload):
+    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
+
+    watchlist_id: int
+    current_symbols: list[str]
+    candidate_count: int
+    candidates: list[StockRecommendationCandidate]
 
 
 class ContextBundleProjectionModel(BaseModel):
@@ -288,6 +307,19 @@ def to_watchlist_observation_snapshot(
         watchlist_id=watchlist_id,
         item_count=len(items),
         items=list(items),
+    )
+
+
+def to_stock_recommendation_snapshot(
+    watchlist_id: int,
+    current_symbols: list[str],
+    candidates: list[StockRecommendationCandidate],
+) -> StockRecommendationSnapshot:
+    return StockRecommendationSnapshot(
+        watchlist_id=watchlist_id,
+        current_symbols=list(current_symbols),
+        candidate_count=len(candidates),
+        candidates=list(candidates),
     )
 
 
