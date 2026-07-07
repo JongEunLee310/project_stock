@@ -165,6 +165,7 @@ ASSET_BRIEF_CONTRACT: Contract = {
     "price": str,
     "change_percent": str,
     "sector": (str, type(None)),
+    "currency": (str, type(None)),
 }
 
 ASSET_DETAIL_CONTRACT: Contract = {
@@ -297,6 +298,13 @@ MARKET_INDEX_QUOTE_CONTRACT: Contract = {
     "symbol": str,
     "name": str,
     "value": str,
+    "change_percent": str,
+    "reference_at": str,
+}
+
+EXCHANGE_RATE_CONTRACT: Contract = {
+    "pair": str,
+    "rate": str,
     "change_percent": str,
     "reference_at": str,
 }
@@ -737,6 +745,16 @@ def test_market_index_quote_response_contract(client: TestClient) -> None:
     assert_contract(data[0], MARKET_INDEX_QUOTE_CONTRACT)
 
 
+def test_exchange_rate_response_contract(client: TestClient) -> None:
+    response = client.get("/api/v1/market/fx")
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 1
+    assert_contract(data[0], EXCHANGE_RATE_CONTRACT)
+
+
 def test_watchlist_observations_response_contract(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -809,6 +827,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/dashboard/briefing",
         "/api/v1/dashboard/trends",
         "/api/v1/market/indices",
+        "/api/v1/market/fx",
         "/api/v1/alert-candidates",
         "/api/v1/decision-logs",
         "/api/v1/decision-logs/stats",
@@ -832,6 +851,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "DashboardBriefingResponse",
         "DashboardTrendSeriesResponse",
         "MarketIndexQuoteResponse",
+        "ExchangeRateResponse",
         "TrendSeries",
         "TrendDataPoint",
         "PositionWeight",

@@ -147,6 +147,7 @@ class WatchlistService:
                     price=str(quote.price) if quote is not None else "0",
                     change_percent=str(quote.change_percent) if quote is not None else "0",
                     sector=asset.sector,
+                    currency=quote.currency if quote is not None else None,
                 )
             item_data = WatchlistItemResponse.model_validate(item).model_dump()
             result.append(WatchlistItemExpandedResponse(**item_data, asset=asset_brief))

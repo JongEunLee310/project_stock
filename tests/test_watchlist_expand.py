@@ -73,6 +73,7 @@ def test_list_items_with_expand_asset_includes_asset_object(client: TestClient) 
     assert "price" in brief
     assert "change_percent" in brief
     assert "sector" in brief
+    assert "currency" in brief
 
 
 def test_expand_asset_price_and_change_percent_are_strings(client: TestClient) -> None:
@@ -94,6 +95,7 @@ def test_expand_asset_price_and_change_percent_are_strings(client: TestClient) -
     # AAPL mock price is 195.64
     assert brief["price"] == "195.64"
     assert brief["change_percent"] == "1.26"
+    assert brief["currency"] == "USD"
 
 
 def test_expand_asset_mock_quote_for_tsla(client: TestClient) -> None:

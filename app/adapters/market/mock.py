@@ -3,6 +3,8 @@ from decimal import Decimal
 from hashlib import sha256
 
 from app.adapters.market.base import (
+    ExchangeRateProvider,
+    ExchangeRateResult,
     IndexQuoteProvider,
     IndexQuoteResult,
     MarketDataProvider,
@@ -22,6 +24,14 @@ _RANGE_COUNTS = {
     "1Y": 252,
 }
 MARKET_INDEX_SYMBOLS = ["SPX", "IXIC", "KOSPI", "VIX"]
+_SAMPLE_EXCHANGE_RATES: dict[str, ExchangeRateResult] = {
+    "USD/KRW": ExchangeRateResult(
+        pair="USD/KRW",
+        rate=Decimal("1384.50"),
+        change_percent=Decimal("0.18"),
+        as_of=_AS_OF,
+    ),
+}
 _INDEX_NAMES = {
     "SPX": "S&P 500",
     "IXIC": "NASDAQ Composite",
@@ -145,6 +155,15 @@ class MockPriceSeriesProvider(PriceSeriesProvider):
 class MockIndexQuoteProvider(IndexQuoteProvider):
     def get_quotes(self, symbols: list[str]) -> list[IndexQuoteResult]:
         return [_index_quote(symbol) for symbol in symbols]
+
+
+class MockExchangeRateProvider(ExchangeRateProvider):
+    def get_rates(self, pairs: list[str]) -> list[ExchangeRateResult]:
+        return [
+            rate
+            for pair in pairs
+            if (rate := _SAMPLE_EXCHANGE_RATES.get(pair.upper())) is not None
+        ]
 
 
 class MockSymbolLookupProvider(SymbolLookupProvider):
