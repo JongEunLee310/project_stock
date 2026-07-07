@@ -149,7 +149,7 @@ uv run uvicorn app.main:app --reload
 API, PostgreSQL, Redis를 함께 실행합니다.
 
 ```bash
-docker compose -f docker-compose.local.yml up --build
+docker compose up --build
 ```
 
 Compose 구성의 API 컨테이너는 `uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`로
@@ -158,7 +158,7 @@ Compose 구성의 API 컨테이너는 `uv run uvicorn app.main:app --host 0.0.0.
 종료합니다.
 
 ```bash
-docker compose -f docker-compose.local.yml down
+docker compose down
 ```
 
 데이터 볼륨까지 제거하려면 Docker의 볼륨 삭제 옵션을 별도로 사용하세요.
