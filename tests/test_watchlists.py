@@ -243,9 +243,9 @@ def test_get_watchlist_summary_returns_recent_items_sorted_and_limited(
     recent_items = cast(list[dict[str, Any]], data["recent_items"])
     assert [item["symbol"] for item in recent_items] == ["AMZN", "TSLA", "NVDA"]
     assert [item["name"] for item in recent_items] == [
-        "AMZN Inc.",
-        "TSLA Inc.",
-        "NVDA Inc.",
+        "Amazon.com, Inc.",
+        "Tesla, Inc.",
+        "NVIDIA Corporation",
     ]
     assert all("created_at" in item for item in recent_items)
 

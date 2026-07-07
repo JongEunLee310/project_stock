@@ -12,13 +12,15 @@ from app.adapters.market.base import (
     IndexQuoteProvider,
     MarketDataProvider,
     PriceSeriesProvider,
+    SymbolLookupProvider,
 )
 from app.adapters.market.mock import (
     MockIndexQuoteProvider,
     MockMarketDataProvider,
     MockPriceSeriesProvider,
+    MockSymbolLookupProvider,
 )
-from app.adapters.market.yfinance import YFinancePriceProvider
+from app.adapters.market.yfinance import YFinancePriceProvider, YFinanceSymbolLookupProvider
 from app.adapters.news.base import NewsAdapter
 from app.adapters.news.mock import MockNewsAdapter
 from app.adapters.news.rss import RSSNewsAdapter
@@ -47,6 +49,14 @@ def get_price_series_provider() -> PriceSeriesProvider:
 def get_index_quote_provider() -> IndexQuoteProvider:
     if settings.MARKET_PROVIDER == "mock":
         return MockIndexQuoteProvider()
+    raise NotImplementedError("market real provider 미구현")
+
+
+def get_symbol_lookup_provider() -> SymbolLookupProvider:
+    if settings.MARKET_PROVIDER == "mock":
+        return MockSymbolLookupProvider()
+    if settings.MARKET_PROVIDER == "yfinance":
+        return YFinanceSymbolLookupProvider()
     raise NotImplementedError("market real provider 미구현")
 
 

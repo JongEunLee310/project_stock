@@ -6,8 +6,14 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.adapters.market.base import PriceBarResult, PriceSeriesProvider
-from app.adapters.market.yfinance import YFinancePriceProvider, to_yfinance_ticker
+from app.adapters.market.base import PriceBarResult, PriceSeriesProvider, SymbolLookupResult
+from app.adapters.market.yfinance import (
+    YFinancePriceProvider,
+    YFinanceSymbolLookupProvider,
+    to_yfinance_ticker,
+)
+from app.core.error_codes import ErrorCode
+from app.core.exceptions import AppException
 from app.domains.assets.model import Asset
 from app.domains.ingestion.schema import ProcessingStatus
 from app.domains.jobs.model import JobRun
@@ -99,6 +105,62 @@ def test_yfinance_provider_parses_history_without_network(
 
 def test_yfinance_provider_skips_unknown_market() -> None:
     assert YFinancePriceProvider().get_daily_bars("VOD", "LSE", "1M", True) == []
+
+
+def test_yfinance_symbol_lookup_provider_maps_quotes_without_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSearch:
+        def __init__(self, query: str, max_results: int) -> None:
+            assert query == "apple"
+            assert max_results == 10
+            self.quotes = [
+                {
+                    "symbol": "AAPL",
+                    "shortname": "Apple Inc.",
+                    "exchange": "NMS",
+                    "sector": "Technology",
+                },
+                {
+                    "symbol": "APLE",
+                    "shortname": "Apple Hospitality REIT, Inc.",
+                    "exchange": "NYQ",
+                },
+                {
+                    "symbol": "UNSUPPORTED",
+                    "shortname": "Unsupported Market",
+                    "exchange": "LSE",
+                },
+            ]
+
+    monkeypatch.setattr("app.adapters.market.yfinance.yf.Search", FakeSearch)
+
+    results = YFinanceSymbolLookupProvider().search("apple", market="NASDAQ")
+
+    assert results == [
+        SymbolLookupResult(
+            symbol="AAPL",
+            name="Apple Inc.",
+            market="NASDAQ",
+            sector="Technology",
+        )
+    ]
+
+
+def test_yfinance_symbol_lookup_provider_converts_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingSearch:
+        def __init__(self, query: str, max_results: int) -> None:
+            raise RuntimeError("network unavailable")
+
+    monkeypatch.setattr("app.adapters.market.yfinance.yf.Search", FailingSearch)
+
+    with pytest.raises(AppException) as exc_info:
+        YFinanceSymbolLookupProvider().search("apple")
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.error_code == ErrorCode.MARKET_DATA_PROVIDER_ERROR
 
 
 def test_price_ingestion_validates_and_saves_counts(db: Session) -> None:

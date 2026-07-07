@@ -71,3 +71,21 @@ class IndexQuoteProvider(ABC):
     @abstractmethod
     def get_quotes(self, symbols: list[str]) -> list[IndexQuoteResult]:
         """Return current market index quotes for the given symbols."""
+
+
+@dataclass(frozen=True)
+class SymbolLookupResult:
+    symbol: str
+    name: str
+    market: str
+    sector: str | None = None
+
+
+class SymbolLookupProvider(ABC):
+    @abstractmethod
+    def search(
+        self,
+        query: str,
+        market: str | None = None,
+    ) -> list[SymbolLookupResult]:
+        """Return symbols matching the given symbol or company name query."""
