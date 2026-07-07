@@ -9,12 +9,14 @@ from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import DEFAULT_MOCK_RESPONSES, MockLLMClient
 from app.adapters.llm.openai import OpenAIClient
 from app.adapters.market.base import (
+    ExchangeRateProvider,
     IndexQuoteProvider,
     MarketDataProvider,
     PriceSeriesProvider,
     SymbolLookupProvider,
 )
 from app.adapters.market.mock import (
+    MockExchangeRateProvider,
     MockIndexQuoteProvider,
     MockMarketDataProvider,
     MockPriceSeriesProvider,
@@ -49,6 +51,12 @@ def get_price_series_provider() -> PriceSeriesProvider:
 def get_index_quote_provider() -> IndexQuoteProvider:
     if settings.MARKET_PROVIDER == "mock":
         return MockIndexQuoteProvider()
+    raise NotImplementedError("market real provider 미구현")
+
+
+def get_exchange_rate_provider() -> ExchangeRateProvider:
+    if settings.MARKET_PROVIDER == "mock":
+        return MockExchangeRateProvider()
     raise NotImplementedError("market real provider 미구현")
 
 

@@ -44,6 +44,7 @@ class AssetBriefResponse(BaseModel):
     price: str
     change_percent: str
     sector: str | None = None
+    currency: str | None = None
 
 
 class WatchlistItemExpandedResponse(BaseModel):

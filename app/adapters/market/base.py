@@ -74,6 +74,20 @@ class IndexQuoteProvider(ABC):
 
 
 @dataclass(frozen=True)
+class ExchangeRateResult:
+    pair: str
+    rate: Decimal
+    change_percent: Decimal
+    as_of: datetime
+
+
+class ExchangeRateProvider(ABC):
+    @abstractmethod
+    def get_rates(self, pairs: list[str]) -> list[ExchangeRateResult]:
+        """Return current exchange rates for the given currency pairs."""
+
+
+@dataclass(frozen=True)
 class SymbolLookupResult:
     symbol: str
     name: str

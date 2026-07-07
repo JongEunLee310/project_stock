@@ -3,6 +3,7 @@ import pytest
 from app.adapters.disclosure.mock import MockDisclosureProvider
 from app.adapters.factory import (
     get_disclosure_provider,
+    get_exchange_rate_provider,
     get_market_provider,
     get_news_adapter,
     get_portfolio_provider,
@@ -10,6 +11,7 @@ from app.adapters.factory import (
     get_symbol_lookup_provider,
 )
 from app.adapters.market.mock import (
+    MockExchangeRateProvider,
     MockMarketDataProvider,
     MockPriceSeriesProvider,
     MockSymbolLookupProvider,
@@ -107,6 +109,7 @@ def test_factories_return_mock_providers(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert isinstance(get_market_provider(), MockMarketDataProvider)
     assert isinstance(get_price_series_provider(), MockPriceSeriesProvider)
+    assert isinstance(get_exchange_rate_provider(), MockExchangeRateProvider)
     assert isinstance(get_symbol_lookup_provider(), MockSymbolLookupProvider)
     assert isinstance(get_news_adapter(), MockNewsAdapter)
     assert isinstance(get_disclosure_provider(), MockDisclosureProvider)
@@ -148,6 +151,7 @@ def test_news_factory_returns_rss_adapter(monkeypatch: pytest.MonkeyPatch) -> No
     [
         ("MARKET_PROVIDER", "get_market_provider"),
         ("MARKET_PROVIDER", "get_price_series_provider"),
+        ("MARKET_PROVIDER", "get_exchange_rate_provider"),
         ("MARKET_PROVIDER", "get_symbol_lookup_provider"),
         ("NEWS_PROVIDER", "get_news_adapter"),
         ("DISCLOSURE_PROVIDER", "get_disclosure_provider"),
@@ -162,6 +166,7 @@ def test_factories_fail_fast_for_real_providers(
     factories = {
         "get_market_provider": get_market_provider,
         "get_price_series_provider": get_price_series_provider,
+        "get_exchange_rate_provider": get_exchange_rate_provider,
         "get_symbol_lookup_provider": get_symbol_lookup_provider,
         "get_news_adapter": get_news_adapter,
         "get_disclosure_provider": get_disclosure_provider,

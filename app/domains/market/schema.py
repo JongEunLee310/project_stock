@@ -11,3 +11,10 @@ class MarketIndexQuoteResponse(BaseModel):
     value: Decimal
     change_percent: Decimal
     reference_at: UtcDatetime
+
+
+class ExchangeRateResponse(BaseModel):
+    pair: str
+    rate: Decimal
+    change_percent: Decimal
+    reference_at: UtcDatetime
