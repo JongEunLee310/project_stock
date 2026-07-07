@@ -27,6 +27,8 @@ from app.adapters.portfolio.mock import MockPortfolioProvider
 from app.core.config import settings
 from app.worker.connection import get_redis_connection
 
+LOCAL_PROXY_OPENAI_API_KEY = "local-proxy"
+
 
 def get_market_provider() -> MarketDataProvider:
     if settings.MARKET_PROVIDER == "mock":
@@ -71,10 +73,17 @@ def get_portfolio_provider() -> PortfolioProvider:
 def get_llm_client(provider: str | None = None) -> LLMClient:
     selected_provider = settings.LLM_PROVIDER if provider is None else provider
     if selected_provider == "cloud":
+        base_url = settings.OPENAI_BASE_URL
         api_key = settings.OPENAI_API_KEY
         if api_key is None or not api_key.strip():
-            raise RuntimeError("OPENAI_API_KEY is required when LLM_PROVIDER=cloud")
-        return OpenAIClient(api_key=api_key, model=settings.OPENAI_MODEL)
+            if base_url is None:
+                raise RuntimeError("OPENAI_API_KEY is required when LLM_PROVIDER=cloud")
+            api_key = LOCAL_PROXY_OPENAI_API_KEY
+        return OpenAIClient(
+            api_key=api_key,
+            model=settings.OPENAI_MODEL,
+            base_url=base_url,
+        )
     if selected_provider == "local":
         return LocalLLMProvider()
     if selected_provider == "mock":

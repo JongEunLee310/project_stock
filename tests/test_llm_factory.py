@@ -49,13 +49,51 @@ def test_get_llm_client_returns_cloud_client_when_api_key_is_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", None)
     monkeypatch.setattr(settings, "OPENAI_MODEL", "gpt-test-model")
 
-    with patch("app.adapters.llm.openai.openai.OpenAI", return_value=Mock()):
+    with patch("app.adapters.llm.openai.openai.OpenAI", return_value=Mock()) as openai:
         client = get_llm_client("cloud")
 
     assert isinstance(client, OpenAIClient)
     assert client.model == "gpt-test-model"
+    openai.assert_called_once_with(api_key="test-openai-key", base_url=None)
+
+
+def test_get_llm_client_returns_cloud_client_with_base_url_without_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "http://127.0.0.1:10531/v1")
+    monkeypatch.setattr(settings, "OPENAI_MODEL", "gpt-test-model")
+
+    with patch("app.adapters.llm.openai.openai.OpenAI", return_value=Mock()) as openai:
+        client = get_llm_client("cloud")
+
+    assert isinstance(client, OpenAIClient)
+    assert client.model == "gpt-test-model"
+    openai.assert_called_once_with(
+        api_key=factory.LOCAL_PROXY_OPENAI_API_KEY,
+        base_url="http://127.0.0.1:10531/v1",
+    )
+
+
+def test_get_llm_client_returns_cloud_client_with_base_url_and_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "http://127.0.0.1:10531/v1")
+    monkeypatch.setattr(settings, "OPENAI_MODEL", "gpt-test-model")
+
+    with patch("app.adapters.llm.openai.openai.OpenAI", return_value=Mock()) as openai:
+        client = get_llm_client("cloud")
+
+    assert isinstance(client, OpenAIClient)
+    assert client.model == "gpt-test-model"
+    openai.assert_called_once_with(
+        api_key="test-openai-key",
+        base_url="http://127.0.0.1:10531/v1",
+    )
 
 
 @pytest.mark.parametrize("api_key", [None, "", "   "])
@@ -64,6 +102,7 @@ def test_get_llm_client_fails_for_cloud_without_api_key(
     api_key: str | None,
 ) -> None:
     monkeypatch.setattr(settings, "OPENAI_API_KEY", api_key)
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", None)
 
     with pytest.raises(RuntimeError, match="OPENAI_API_KEY is required"):
         get_llm_client("cloud")
