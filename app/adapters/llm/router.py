@@ -16,6 +16,10 @@ LLM_TASK_ROUTES: dict[LLMTaskType, TaskRoute] = {
     LLMTaskType.PORTFOLIO_BRIEFING: TaskRoute(launch="cloud", future_primary="cloud"),
     LLMTaskType.DASHBOARD_BRIEFING: TaskRoute(launch="cloud", future_primary="local"),
     LLMTaskType.WATCHLIST_NOTE: TaskRoute(launch="cloud", future_primary="local"),
+    LLMTaskType.STOCK_RECOMMENDATION: TaskRoute(
+        launch="cloud",
+        future_primary="local",
+    ),
     LLMTaskType.TAG_SENTIMENT: TaskRoute(launch="cloud", future_primary="local"),
     LLMTaskType.AGENT: TaskRoute(launch="cloud", future_primary="cloud"),
 }

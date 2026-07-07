@@ -35,6 +35,7 @@ def test_llm_task_routes_record_future_primary_provider() -> None:
         LLMTaskType.PORTFOLIO_BRIEFING: "cloud",
         LLMTaskType.DASHBOARD_BRIEFING: "local",
         LLMTaskType.WATCHLIST_NOTE: "local",
+        LLMTaskType.STOCK_RECOMMENDATION: "local",
         LLMTaskType.TAG_SENTIMENT: "local",
         LLMTaskType.AGENT: "cloud",
     }

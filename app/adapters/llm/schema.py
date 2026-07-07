@@ -16,3 +16,13 @@ class ObservationItem(BaseModel):
 class ObservationsResult(BaseModel):
     summary: str
     items: list[ObservationItem]
+
+
+class RecommendationItem(BaseModel):
+    symbol: str
+    rationale: str
+    reference_metrics: list[str]
+
+
+class StockRecommendationResult(BaseModel):
+    recommendations: list[RecommendationItem]

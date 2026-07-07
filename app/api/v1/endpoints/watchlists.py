@@ -10,12 +10,16 @@ from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.users.model import User
 from app.domains.watchlists.observations_service import WatchlistObservationsService
+from app.domains.watchlists.recommendations_service import (
+    WatchlistRecommendationsService,
+)
 from app.domains.watchlists.schema import (
     WatchlistCreate,
     WatchlistItemCreate,
     WatchlistItemExpandedResponse,
     WatchlistItemResponse,
     WatchlistObservationsResponse,
+    WatchlistRecommendationsResponse,
     WatchlistResponse,
     WatchlistSummaryResponse,
     WatchlistSummaryTrendResponse,
@@ -180,6 +184,25 @@ def get_watchlist_observations(
 ) -> ApiResponse[WatchlistObservationsResponse]:
     return success(
         WatchlistObservationsService(db, get_llm_gateway()).generate(
+            watchlist_id,
+            current_user.id,
+        )
+    )
+
+
+@router.get(
+    "/{watchlist_id}/recommendations",
+    response_model=ApiResponse[WatchlistRecommendationsResponse],
+    summary="Generate watchlist recommendations",
+    description="Generate AI stock recommendations for a watchlist owned by the authenticated user.",
+)
+def get_watchlist_recommendations(
+    watchlist_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[WatchlistRecommendationsResponse]:
+    return success(
+        WatchlistRecommendationsService(db, get_llm_gateway()).generate(
             watchlist_id,
             current_user.id,
         )

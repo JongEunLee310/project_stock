@@ -96,3 +96,15 @@ class WatchlistObservationsResponse(BaseModel):
     summary: str
     items: list[WatchlistObservationItemResponse]
     generated_at: UtcDatetime
+
+
+class StockRecommendationProjection(BaseModel):
+    symbol: str
+    name: str
+    rationale: str
+    reference_metrics: list[str]
+
+
+class WatchlistRecommendationsResponse(BaseModel):
+    recommendations: list[StockRecommendationProjection]
+    generated_at: UtcDatetime
