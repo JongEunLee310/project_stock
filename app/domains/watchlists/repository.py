@@ -2,7 +2,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.domains.watchlists.model import Watchlist, WatchlistItem
+from app.domains.watchlists.model import Watchlist, WatchlistAlertRule, WatchlistItem
 
 
 class WatchlistRepository:
@@ -134,3 +134,46 @@ class WatchlistItemRepository:
         if sort == "-created_at":
             return stmt.order_by(WatchlistItem.created_at.desc(), WatchlistItem.id.desc())
         return stmt.order_by(WatchlistItem.priority, WatchlistItem.id)
+
+
+class WatchlistAlertRuleRepository:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def list_by_watchlist(self, watchlist_id: int) -> list[WatchlistAlertRule]:
+        stmt = (
+            select(WatchlistAlertRule)
+            .where(WatchlistAlertRule.watchlist_id == watchlist_id)
+            .order_by(WatchlistAlertRule.id)
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def upsert_template(
+        self,
+        watchlist_id: int,
+        template_type: str,
+        is_active: bool,
+    ) -> WatchlistAlertRule:
+        stmt = select(WatchlistAlertRule).where(
+            WatchlistAlertRule.watchlist_id == watchlist_id,
+            WatchlistAlertRule.template_type == template_type,
+        )
+        rule = self.db.scalars(stmt).first()
+        if rule is None:
+            rule = WatchlistAlertRule(
+                watchlist_id=watchlist_id,
+                template_type=template_type,
+                is_active=is_active,
+            )
+            self.db.add(rule)
+        else:
+            rule.is_active = is_active
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            rule = self.db.scalars(stmt).one()
+            rule.is_active = is_active
+            self.db.commit()
+        self.db.refresh(rule)
+        return rule

@@ -9,6 +9,7 @@ from app.core.pagination import PaginationParams, SortParams, sort_param
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.users.model import User
+from app.domains.watchlists.alert_rule_service import WatchlistAlertRuleService
 from app.domains.watchlists.evaluations_service import WatchlistEvaluationsService
 from app.domains.watchlists.observations_service import WatchlistObservationsService
 from app.domains.watchlists.recommendations_service import (
@@ -16,6 +17,8 @@ from app.domains.watchlists.recommendations_service import (
 )
 from app.domains.watchlists.schema import (
     WatchlistCreate,
+    WatchlistAlertRuleTemplateBulkRequest,
+    WatchlistAlertRuleTemplateProjection,
     WatchlistItemCreate,
     WatchlistItemExpandedResponse,
     WatchlistItemResponse,
@@ -235,6 +238,46 @@ def get_watchlist_evaluations(
         WatchlistEvaluationsService(db, get_llm_gateway()).generate(
             watchlist_id,
             current_user.id,
+        )
+    )
+
+
+@router.get(
+    "/{watchlist_id}/alert-rule-templates",
+    response_model=ApiResponse[list[WatchlistAlertRuleTemplateProjection]],
+    summary="List watchlist alert rule templates",
+    description="Return alert rule template statuses for a watchlist owned by the authenticated user.",
+)
+def get_watchlist_alert_rule_templates(
+    watchlist_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[list[WatchlistAlertRuleTemplateProjection]]:
+    return success(
+        WatchlistAlertRuleService(db).get_template_statuses(
+            watchlist_id,
+            current_user.id,
+        )
+    )
+
+
+@router.put(
+    "/{watchlist_id}/alert-rule-templates",
+    response_model=ApiResponse[list[WatchlistAlertRuleTemplateProjection]],
+    summary="Apply watchlist alert rule templates",
+    description="Apply alert rule template statuses for a watchlist owned by the authenticated user.",
+)
+def apply_watchlist_alert_rule_templates(
+    watchlist_id: int,
+    data: WatchlistAlertRuleTemplateBulkRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[list[WatchlistAlertRuleTemplateProjection]]:
+    return success(
+        WatchlistAlertRuleService(db).apply_templates(
+            watchlist_id,
+            current_user.id,
+            data,
         )
     )
 

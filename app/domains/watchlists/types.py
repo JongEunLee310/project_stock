@@ -29,3 +29,10 @@ class BuyReadinessLevel(str, Enum):
     SUFFICIENT = "SUFFICIENT"
     LIMITED = "LIMITED"
     RESTRICTED = "RESTRICTED"
+
+
+class WatchlistAlertTemplateType(str, Enum):
+    PRICE_SPIKE = "PRICE_SPIKE"
+    NEWS_RISK_HIGH = "NEWS_RISK_HIGH"
+    AI_JUDGMENT_CHANGE = "AI_JUDGMENT_CHANGE"
+    THEME_OVERHEAT = "THEME_OVERHEAT"

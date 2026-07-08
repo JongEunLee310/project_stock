@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
@@ -25,3 +25,23 @@ class WatchlistItem(Base, TimestampMixin):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
     memo: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class WatchlistAlertRule(Base, TimestampMixin):
+    __tablename__ = "watchlist_alert_rules"
+    __table_args__ = (
+        UniqueConstraint(
+            "watchlist_id",
+            "template_type",
+            name="uq_watchlist_alert_rules_template",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    watchlist_id: Mapped[int] = mapped_column(ForeignKey("watchlists.id"), index=True)
+    template_type: Mapped[str] = mapped_column(String(50))
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="true",
+    )
