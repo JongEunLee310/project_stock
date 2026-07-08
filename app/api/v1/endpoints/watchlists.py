@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -21,10 +21,12 @@ from app.domains.watchlists.schema import (
     WatchlistObservationsResponse,
     WatchlistRecommendationsResponse,
     WatchlistResponse,
+    WatchlistSparklineResponse,
     WatchlistSummaryResponse,
     WatchlistSummaryTrendResponse,
 )
 from app.domains.watchlists.service import WatchlistService
+from app.domains.watchlists.sparkline_service import WatchlistSparklineService
 from app.domains.watchlists.trend_service import WatchlistSummaryTrendService
 
 router = APIRouter()
@@ -167,6 +169,30 @@ def get_watchlist_summary_trends(
             watchlist_id,
             current_user.id,
             days,
+        )
+    )
+
+
+@router.get(
+    "/{watchlist_id}/sparklines",
+    response_model=ApiResponse[WatchlistSparklineResponse],
+    summary="Get watchlist sparkline series",
+    description="Return daily close sparkline series for all assets in a watchlist.",
+)
+def get_watchlist_sparklines(
+    watchlist_id: int,
+    sparkline_range: Annotated[
+        Literal["1M", "3M", "6M", "1Y"],
+        Query(alias="range"),
+    ] = "1M",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[WatchlistSparklineResponse]:
+    return success(
+        WatchlistSparklineService(db).get_sparklines(
+            watchlist_id,
+            current_user.id,
+            range_value=sparkline_range,
         )
     )
 

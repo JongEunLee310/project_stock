@@ -45,6 +45,7 @@ class AssetBriefResponse(BaseModel):
     change_percent: str
     sector: str | None = None
     currency: str | None = None
+    reference_at: UtcDatetime | None = None
 
 
 class WatchlistItemExpandedResponse(BaseModel):
@@ -58,7 +59,22 @@ class WatchlistItemExpandedResponse(BaseModel):
     tags: list[str] = Field(default_factory=list)
     memo: str | None = None
     created_at: UtcDatetime
+    status: str
     asset: AssetBriefResponse | None = None
+
+
+class SparklineBar(BaseModel):
+    date: str
+    close: str
+
+
+class AssetSparklineResponse(BaseModel):
+    symbol: str
+    bars: list[SparklineBar]
+
+
+class WatchlistSparklineResponse(BaseModel):
+    items: list[AssetSparklineResponse]
 
 
 class RecentWatchlistItemResponse(BaseModel):

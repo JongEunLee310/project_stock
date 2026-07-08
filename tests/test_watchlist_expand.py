@@ -2,6 +2,7 @@ from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
+from app.domains.signals.types import SignalType
 from tests.conftest import api_data, api_meta, set_current_user
 
 
@@ -28,6 +29,26 @@ def add_item(
     response = client.post(
         f"/api/v1/watchlists/{watchlist_id}/items",
         json={"asset_id": asset_id, "priority": priority},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    return cast(dict[str, Any], body["data"])
+
+
+def create_signal(
+    client: TestClient,
+    asset_id: int,
+    signal_type: SignalType,
+) -> dict[str, Any]:
+    response = client.post(
+        "/api/v1/signals",
+        json={
+            "asset_id": asset_id,
+            # Source: app/domains/signals/types.py SignalType.value
+            "signal_type": signal_type.value,
+            "score": 80,
+            "reason": "watchlist row enrichment fixture",
+        },
     )
     assert response.status_code == 201
     body = response.json()
@@ -64,6 +85,7 @@ def test_list_items_with_expand_asset_includes_asset_object(client: TestClient) 
     assert len(data) == 1
     item = data[0]
     assert "asset" in item
+    assert item["status"] == "NORMAL"
     brief = item["asset"]
     assert brief is not None
     assert brief["symbol"] == "AAPL"
@@ -74,6 +96,7 @@ def test_list_items_with_expand_asset_includes_asset_object(client: TestClient) 
     assert "change_percent" in brief
     assert "sector" in brief
     assert "currency" in brief
+    assert "reference_at" in brief
 
 
 def test_expand_asset_price_and_change_percent_are_strings(client: TestClient) -> None:
@@ -96,6 +119,56 @@ def test_expand_asset_price_and_change_percent_are_strings(client: TestClient) -
     assert brief["price"] == "195.64"
     assert brief["change_percent"] == "1.26"
     assert brief["currency"] == "USD"
+    assert brief["reference_at"] == "2026-06-19T00:00:00Z"
+
+
+def test_expand_asset_reference_at_is_none_when_quote_is_missing(
+    client: TestClient,
+    monkeypatch: Any,
+) -> None:
+    class EmptyMarketProvider:
+        def get_quote(self, symbols: list[str]) -> list[Any]:
+            return []
+
+    monkeypatch.setattr(
+        "app.domains.watchlists.service.get_market_provider",
+        lambda: EmptyMarketProvider(),
+    )
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+    asset = create_asset(client, "AAPL")
+    add_item(client, watchlist["id"], asset["id"])
+
+    response = client.get(
+        f"/api/v1/watchlists/{watchlist['id']}/items",
+        params={"expand": "asset"},
+    )
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    brief = data[0]["asset"]
+    assert brief["reference_at"] is None
+
+
+def test_expand_asset_status_uses_highest_priority_active_signal(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+    asset = create_asset(client, "AAPL")
+    add_item(client, watchlist["id"], asset["id"])
+    create_signal(client, asset["id"], SignalType.THESIS_BROKEN)
+    create_signal(client, asset["id"], SignalType.RISK_ALERT)
+
+    response = client.get(
+        f"/api/v1/watchlists/{watchlist['id']}/items",
+        params={"expand": "asset"},
+    )
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    # Source: app/domains/signals/types.py WATCHLIST_STATUS_PRIORITY
+    assert data[0]["status"] == SignalType.RISK_ALERT.value
 
 
 def test_expand_asset_mock_quote_for_tsla(client: TestClient) -> None:
