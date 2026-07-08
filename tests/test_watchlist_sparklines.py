@@ -1,9 +1,12 @@
 from datetime import datetime, timezone
 from typing import Any, cast
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.error_codes import ErrorCode
+from app.core.exceptions import AppException
 from app.domains.assets.repository import AssetRepository
 from app.domains.prices.schema import PriceBar, PriceSeriesResponse
 from app.domains.watchlists.repository import (
@@ -168,3 +171,117 @@ def test_watchlist_sparkline_service_extracts_daily_close_bars(db: Session) -> N
             }
         ]
     }
+
+
+def test_watchlist_sparkline_service_skips_price_series_not_found_404(
+    db: Session,
+) -> None:
+    aapl = AssetRepository(db).create(
+        symbol="AAPL",
+        name="Apple Inc.",
+        market="NASDAQ",
+        sector="Technology",
+        industry=None,
+        description=None,
+    )
+    msft = AssetRepository(db).create(
+        symbol="MSFT",
+        name="Microsoft Inc.",
+        market="NASDAQ",
+        sector="Technology",
+        industry=None,
+        description=None,
+    )
+    watchlist = WatchlistRepository(db).create(user_id=1, name="Core")
+    item_repo = WatchlistItemRepository(db)
+    item_repo.create(watchlist.id, aapl.id, priority=0, reason=None, tags=[], memo=None)
+    item_repo.create(watchlist.id, msft.id, priority=1, reason=None, tags=[], memo=None)
+
+    class FakePriceSeriesService:
+        def get_series(
+            self,
+            symbol: str,
+            market: str,
+            range_value: str = "3M",
+            interval: str = "1d",
+            adjusted: bool = True,
+        ) -> PriceSeriesResponse:
+            if symbol == "MSFT":
+                # ErrorCode is sourced from app/core/error_codes.py.
+                raise AppException(
+                    status_code=404,
+                    detail="No price series.",
+                    error_code=ErrorCode.PRICE_SERIES_NOT_FOUND,
+                )
+            return PriceSeriesResponse(
+                symbol=symbol,
+                market=market,
+                currency="USD",
+                interval=interval,
+                range=range_value,
+                source="test",
+                last_updated_at=datetime(2026, 6, 25, tzinfo=timezone.utc),
+                bars=[
+                    PriceBar(
+                        date="2026-06-25",
+                        open="101.5",
+                        high="103",
+                        low="101",
+                        close="102",
+                        adjusted_close="101.9",
+                        volume=1100,
+                    ),
+                ],
+            )
+
+    service = WatchlistSparklineService(db)
+    cast(Any, service).price_series_service = FakePriceSeriesService()
+
+    result = service.get_sparklines(watchlist.id, user_id=1, range_value="1M")
+
+    assert [item.symbol for item in result.items] == ["AAPL"]
+
+
+def test_watchlist_sparkline_service_reraises_non_price_series_not_found_404(
+    db: Session,
+) -> None:
+    asset = AssetRepository(db).create(
+        symbol="AAPL",
+        name="Apple Inc.",
+        market="NASDAQ",
+        sector="Technology",
+        industry=None,
+        description=None,
+    )
+    watchlist = WatchlistRepository(db).create(user_id=1, name="Core")
+    WatchlistItemRepository(db).create(
+        watchlist.id,
+        asset.id,
+        priority=0,
+        reason=None,
+        tags=[],
+        memo=None,
+    )
+
+    class FakePriceSeriesService:
+        def get_series(
+            self,
+            symbol: str,
+            market: str,
+            range_value: str = "3M",
+            interval: str = "1d",
+            adjusted: bool = True,
+        ) -> PriceSeriesResponse:
+            raise AppException(
+                status_code=404,
+                detail="Asset missing.",
+                error_code=ErrorCode.ASSET_NOT_FOUND,
+            )
+
+    service = WatchlistSparklineService(db)
+    cast(Any, service).price_series_service = FakePriceSeriesService()
+
+    with pytest.raises(AppException) as exc_info:
+        service.get_sparklines(watchlist.id, user_id=1, range_value="1M")
+
+    assert exc_info.value.error_code == ErrorCode.ASSET_NOT_FOUND

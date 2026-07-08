@@ -115,6 +115,21 @@ class WatchlistObservationsResponse(BaseModel):
     generated_at: UtcDatetime
 
 
+class WatchlistItemEvaluationProjection(BaseModel):
+    symbol: str
+    news_risk: str
+    valuation_burden: str
+    theme_heat: str
+    ai_judgment: str
+
+
+class WatchlistEvaluationsResponse(BaseModel):
+    items: list[WatchlistItemEvaluationProjection]
+    needs_research_count: int
+    cash_relevance_avg: float
+    generated_at: UtcDatetime
+
+
 class StockRecommendationProjection(BaseModel):
     symbol: str
     name: str

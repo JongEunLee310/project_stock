@@ -14,6 +14,9 @@ from app.adapters.llm.prompts.thesis_conflict import (
 from app.adapters.llm.prompts.watchlist_observation import (
     WATCHLIST_OBSERVATION_SYSTEM_PROMPT,
 )
+from app.adapters.llm.prompts.watchlist_evaluation import (
+    WATCHLIST_EVALUATION_SYSTEM_PROMPT,
+)
 
 
 @pytest.mark.parametrize(
@@ -21,6 +24,7 @@ from app.adapters.llm.prompts.watchlist_observation import (
     [
         STOCK_RECOMMENDATION_SYSTEM_PROMPT,
         WATCHLIST_OBSERVATION_SYSTEM_PROMPT,
+        WATCHLIST_EVALUATION_SYSTEM_PROMPT,
         DASHBOARD_BRIEFING_SYSTEM_PROMPT,
         PORTFOLIO_BRIEFING_SYSTEM_PROMPT,
         build_analysis_system_prompt(),

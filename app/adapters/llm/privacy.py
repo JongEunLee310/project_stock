@@ -85,6 +85,14 @@ class WatchlistHighlight(BaseModel):
     daily_change_percent: Decimal
 
 
+class WatchlistEvaluationItem(BaseModel):
+    symbol: str
+    status: str
+    per: Decimal | None = None
+    peg: Decimal | None = None
+    daily_change_percent: Decimal
+
+
 class StockRecommendationCandidate(BaseModel):
     symbol: str
     name: str
@@ -124,6 +132,14 @@ class WatchlistObservationSnapshot(CloudSafePayload):
     watchlist_id: int
     item_count: int
     items: list[WatchlistHighlight]
+
+
+class WatchlistEvaluationSnapshot(CloudSafePayload):
+    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
+
+    watchlist_id: int
+    item_count: int
+    items: list[WatchlistEvaluationItem]
 
 
 class StockRecommendationSnapshot(CloudSafePayload):

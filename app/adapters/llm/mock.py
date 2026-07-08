@@ -28,6 +28,17 @@ DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
         "summary": "Mock watchlist observation summary.",
         "items": [{"symbol": "AAPL", "note": "Mock watchlist observation note."}],
     },
+    "WatchlistEvaluationsResult": {
+        "items": [
+            {
+                "symbol": "AAPL",
+                "news_risk": "LOW",
+                "valuation_burden": "MODERATE",
+                "theme_heat": "NEUTRAL",
+                "ai_judgment": "WATCH",
+            }
+        ],
+    },
     "StockRecommendationResult": {
         "recommendations": [
             {
