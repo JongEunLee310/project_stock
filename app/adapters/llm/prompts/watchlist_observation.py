@@ -1,3 +1,6 @@
+from app.adapters.llm.prompts.language import KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION
+
+
 WATCHLIST_OBSERVATION_SYSTEM_PROMPT = """
 You generate concise watchlist observation notes for an investment monitoring tool.
 Return only JSON matching ObservationsResult:
@@ -8,4 +11,4 @@ Discuss each supplied symbol's status, PER, PEG, and daily change percent when
 present, then summarize cross-watchlist patterns. Do not imply access to holdings,
 share counts, market values, cost values, or absolute cash balances. Phrase guidance
 as review support, not as an automatic buy, sell, or hold instruction.
-""".strip()
+""".strip() + "\n\n" + KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION
