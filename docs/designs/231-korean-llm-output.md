@@ -15,8 +15,8 @@ openai-oauth 프록시로 실제 LLM 경로를 연결해 확인한 결과, 종�
 
 - 프롬프트 파일 7종: `stock_recommendation.py`, `watchlist_observation.py`,
   `dashboard_briefing.py`, `portfolio_briefing.py`, `news_summary.py`,
-  `analysis.py`, `thesis_conflict.py` — 상수 3종은 `*_SYSTEM_PROMPT` 문자열,
-  나머지 4종은 `build_*_system_prompt()` 함수가 JSON Schema를 삽입해 조립.
+  `analysis.py`, `thesis_conflict.py` — 상수 4종은 `*_SYSTEM_PROMPT` 문자열,
+  나머지 3종은 `build_*_system_prompt()` 함수가 JSON Schema를 삽입해 조립.
 - 기존 테스트는 gateway 호출 시 전달된 `system_prompt`를 캡처만 하고 내용을
   단언하지 않는다 (`tests/test_watchlist_recommendations.py:198` 등에서
   `_prompt`로 폐기). 프롬프트 문구 변경으로 깨지는 테스트 없음.
@@ -31,7 +31,7 @@ openai-oauth 프록시로 실제 LLM 경로를 연결해 확인한 결과, 종�
   `language.py` 중 구현 시 선택). 문구 취지: "자연어 필드(rationale, note,
   summary, headline, body, risk_checks 등)는 한국어로 작성한다. JSON 키,
   symbol, enum 값은 원문 그대로 유지한다."
-- **적용 방식**: 상수 3종은 문자열 말미에 이어 붙이고, 함수 4종은 반환 문자열에
+- **적용 방식**: 상수 4종은 문자열 말미에 이어 붙이고, 함수 3종은 반환 문자열에
   포함한다. 프롬프트 구조·기존 지시 내용은 변경하지 않는다.
 - **테스트**: 7종 프롬프트(함수형은 호출 결과)가 공통 지시문을 포함하는지
   단언하는 테스트를 추가한다.
