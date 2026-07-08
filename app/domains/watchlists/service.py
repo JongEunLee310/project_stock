@@ -6,7 +6,7 @@ from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.assets.repository import AssetRepository
 from app.domains.signals.repository import SignalRepository
-from app.domains.signals.types import SignalType
+from app.domains.signals.types import SignalType, resolve_watchlist_status
 from app.domains.watchlists.model import Watchlist
 from app.domains.watchlists.repository import (
     WatchlistItemRepository,
@@ -133,6 +133,7 @@ class WatchlistService:
             q.symbol: q
             for q in get_market_provider().get_quote(symbols)
         } if symbols else {}
+        active_types = self.signal_repo.active_signal_types_by_asset(asset_ids)
 
         result = []
         for item in items:
@@ -148,9 +149,18 @@ class WatchlistService:
                     change_percent=str(quote.change_percent) if quote is not None else "0",
                     sector=asset.sector,
                     currency=quote.currency if quote is not None else None,
+                    reference_at=quote.as_of if quote is not None else None,
                 )
             item_data = WatchlistItemResponse.model_validate(item).model_dump()
-            result.append(WatchlistItemExpandedResponse(**item_data, asset=asset_brief))
+            result.append(
+                WatchlistItemExpandedResponse(
+                    **item_data,
+                    status=resolve_watchlist_status(
+                        active_types.get(item.asset_id, set())
+                    ),
+                    asset=asset_brief,
+                )
+            )
         return result
 
     def count_items(self, watchlist_id: int, user_id: int) -> int:
