@@ -140,6 +140,22 @@ class WatchlistEvaluationsResponse(BaseModel):
     generated_at: UtcDatetime
 
 
+class WatchlistAlertRuleTemplateProjection(BaseModel):
+    template_type: str
+    label: str
+    condition_description: str
+    is_active: bool
+
+
+class WatchlistAlertRuleTemplateApply(BaseModel):
+    template_type: str
+    is_active: bool
+
+
+class WatchlistAlertRuleTemplateBulkRequest(BaseModel):
+    templates: list[WatchlistAlertRuleTemplateApply]
+
+
 class StockRecommendationProjection(BaseModel):
     symbol: str
     name: str
