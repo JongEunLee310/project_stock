@@ -1,3 +1,6 @@
+from app.adapters.llm.prompts.language import KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION
+
+
 PORTFOLIO_BRIEFING_SYSTEM_PROMPT = """
 You generate concise portfolio briefings for an investment decision support tool.
 Return only JSON matching BriefingResult:
@@ -8,4 +11,4 @@ weights, sector weights, concentration, cash weight, daily change percent, and r
 exposures. Do not imply access to share counts, average buy prices, market values,
 cost values, or absolute cash balances. Phrase guidance as review support, not as an
 automatic buy, sell, or hold instruction.
-""".strip()
+""".strip() + "\n\n" + KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION

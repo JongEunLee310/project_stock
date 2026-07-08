@@ -1,5 +1,6 @@
 import json
 
+from app.adapters.llm.prompts.language import KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION
 from app.domains.llm_analysis.schema import LLMAnalysisResult
 
 
@@ -11,5 +12,6 @@ def build_analysis_system_prompt() -> str:
     return (
         "You are an investment analysis assistant. Analyze the provided context bundle "
         "and return only a JSON object that strictly matches this JSON Schema. "
-        f"JSON Schema: {schema_json}"
+        f"JSON Schema: {schema_json}\n\n"
+        f"{KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION}"
     )

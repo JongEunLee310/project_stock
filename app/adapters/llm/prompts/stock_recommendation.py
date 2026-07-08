@@ -1,3 +1,6 @@
+from app.adapters.llm.prompts.language import KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION
+
+
 STOCK_RECOMMENDATION_SYSTEM_PROMPT = """
 You recommend stocks to add to an investment watchlist.
 Return only JSON matching StockRecommendationResult:
@@ -8,4 +11,4 @@ Recommend at most 5 symbols, and choose only from candidates. Do not recommend
 symbols already listed in current_symbols. Keep rationale concise and base it on
 status, PER, PEG, sector, and daily change percent when present. Phrase guidance
 as watchlist research support, not as an automatic buy, sell, or hold instruction.
-""".strip()
+""".strip() + "\n\n" + KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION
