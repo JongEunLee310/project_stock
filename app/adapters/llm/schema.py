@@ -26,3 +26,15 @@ class RecommendationItem(BaseModel):
 
 class StockRecommendationResult(BaseModel):
     recommendations: list[RecommendationItem]
+
+
+class ItemEvaluationResult(BaseModel):
+    symbol: str
+    news_risk: str
+    valuation_burden: str
+    theme_heat: str
+    ai_judgment: str
+
+
+class WatchlistEvaluationsResult(BaseModel):
+    items: list[ItemEvaluationResult]

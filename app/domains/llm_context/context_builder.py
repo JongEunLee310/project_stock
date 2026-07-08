@@ -56,6 +56,7 @@ _USER_INTENT_BY_TASK_TYPE: dict[LLMTaskType, str] = {
     LLMTaskType.PORTFOLIO_BRIEFING: "포트폴리오 상태와 주요 리스크를 점검한다.",
     LLMTaskType.DASHBOARD_BRIEFING: "대시보드 요약에 필요한 핵심 시장·보유 정보를 점검한다.",
     LLMTaskType.WATCHLIST_NOTE: "관심 종목의 점검 포인트와 데이터 한계를 정리한다.",
+    LLMTaskType.WATCHLIST_EVALUATION: "관심 종목별 평가 배지와 추가 점검 필요성을 정리한다.",
     LLMTaskType.TAG_SENTIMENT: "태그별 분위기와 판단 제한 사항을 정리한다.",
     LLMTaskType.AGENT: "사용자 요청에 맞춰 투자 판단에 필요한 맥락을 점검한다.",
 }

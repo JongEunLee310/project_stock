@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -5,6 +7,12 @@ from app.adapters.factory import get_market_provider
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.assets.repository import AssetRepository
+from app.domains.portfolios.repository import PortfolioRepository
+from app.domains.portfolios.service import (
+    CASH_FLOOR_HIGH,
+    CASH_FLOOR_MEDIUM,
+    PortfolioService,
+)
 from app.domains.signals.repository import SignalRepository
 from app.domains.signals.types import SignalType, resolve_watchlist_status
 from app.domains.watchlists.model import Watchlist
@@ -14,6 +22,7 @@ from app.domains.watchlists.repository import (
 )
 from app.domains.watchlists.schema import (
     AssetBriefResponse,
+    BuyReadinessProjection,
     RecentWatchlistItemResponse,
     WatchlistCreate,
     WatchlistItemCreate,
@@ -22,11 +31,14 @@ from app.domains.watchlists.schema import (
     WatchlistResponse,
     WatchlistSummaryResponse,
 )
+from app.domains.watchlists.types import BuyReadinessLevel
 
 
 class WatchlistService:
     def __init__(self, db: Session) -> None:
+        self.db = db
         self.asset_repo = AssetRepository(db)
+        self.portfolio_repo = PortfolioRepository(db)
         self.signal_repo = SignalRepository(db)
         self.watchlist_repo = WatchlistRepository(db)
         self.item_repo = WatchlistItemRepository(db)
@@ -171,6 +183,7 @@ class WatchlistService:
         self,
         watchlist_id: int,
         user_id: int,
+        portfolio_id: int | None = None,
         recent_limit: int = 5,
     ) -> WatchlistSummaryResponse:
         watchlist = self._get_owned_watchlist(watchlist_id, user_id)
@@ -206,7 +219,63 @@ class WatchlistService:
                 for item in recent_items
                 if (asset := assets.get(item.asset_id)) is not None
             ],
+            buy_readiness=self._build_buy_readiness(
+                asset_ids=asset_ids,
+                user_id=user_id,
+                portfolio_id=portfolio_id,
+            ),
         )
+
+    def _build_buy_readiness(
+        self,
+        *,
+        asset_ids: list[int],
+        user_id: int,
+        portfolio_id: int | None,
+    ) -> BuyReadinessProjection | None:
+        resolved_portfolio_id = portfolio_id
+        if resolved_portfolio_id is None:
+            portfolios = self.portfolio_repo.list_by_user(user_id, limit=1)
+            if not portfolios:
+                return None
+            resolved_portfolio_id = portfolios[0].id
+
+        portfolio_summary = PortfolioService(self.db).get_summary(
+            resolved_portfolio_id,
+            user_id,
+        )
+        buy_candidate_count = self.signal_repo.count_assets_with_active_signal(
+            asset_ids,
+            SignalType.BUY_CANDIDATE.value,
+        )
+        level = self._buy_readiness_level(portfolio_summary.cash_weight)
+        level_label = self._buy_readiness_label(level)
+        return BuyReadinessProjection(
+            level=level.value,
+            level_label=level_label,
+            cash_weight=portfolio_summary.cash_weight,
+            buy_candidate_count=buy_candidate_count,
+            message=(
+                f"현금 비중은 {portfolio_summary.cash_weight:.1%}입니다. "
+                f"매수 검토 후보는 {buy_candidate_count}개이며, "
+                f"신규 매수 여력은 {level_label}입니다."
+            ),
+        )
+
+    def _buy_readiness_level(self, cash_weight: Decimal) -> BuyReadinessLevel:
+        if cash_weight >= CASH_FLOOR_MEDIUM:
+            return BuyReadinessLevel.SUFFICIENT
+        if cash_weight >= CASH_FLOOR_HIGH:
+            return BuyReadinessLevel.LIMITED
+        return BuyReadinessLevel.RESTRICTED
+
+    def _buy_readiness_label(self, level: BuyReadinessLevel) -> str:
+        labels = {
+            BuyReadinessLevel.SUFFICIENT: "충분",
+            BuyReadinessLevel.LIMITED: "제한적",
+            BuyReadinessLevel.RESTRICTED: "매우 제한적",
+        }
+        return labels[level]
 
     def remove_item(self, watchlist_id: int, item_id: int, user_id: int) -> None:
         watchlist = self._get_owned_watchlist(watchlist_id, user_id)
