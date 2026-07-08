@@ -23,3 +23,9 @@ class AiJudgment(str, Enum):
     RISK_INCREASING = "RISK_INCREASING"
     WATCH = "WATCH"
     STABLE = "STABLE"
+
+
+class BuyReadinessLevel(str, Enum):
+    SUFFICIENT = "SUFFICIENT"
+    LIMITED = "LIMITED"
+    RESTRICTED = "RESTRICTED"

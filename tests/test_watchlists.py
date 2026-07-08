@@ -1,9 +1,14 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any, cast
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.adapters.market.base import QuoteResult
+from app.domains.portfolios.service import CASH_FLOOR_HIGH, CASH_FLOOR_MEDIUM
 from app.domains.signals.types import SignalType
+from app.domains.watchlists.types import BuyReadinessLevel
 from tests.conftest import api_data, api_error, api_meta, set_current_user
 
 
@@ -20,6 +25,37 @@ def create_watchlist(
     client: TestClient, name: str = "Core"
 ) -> dict[str, Any]:
     response = client.post("/api/v1/watchlists", json={"name": name})
+    assert response.status_code == 201
+    return cast(dict[str, Any], api_data(response))
+
+
+def create_portfolio(
+    client: TestClient,
+    name: str = "Long Term",
+    cash_balance: Decimal = Decimal("0"),
+) -> dict[str, Any]:
+    response = client.post(
+        "/api/v1/portfolios",
+        json={"name": name, "cash_balance": str(cash_balance)},
+    )
+    assert response.status_code == 201
+    return cast(dict[str, Any], api_data(response))
+
+
+def add_position(
+    client: TestClient,
+    portfolio_id: int,
+    asset_id: int,
+    quantity: Decimal,
+) -> dict[str, Any]:
+    response = client.post(
+        f"/api/v1/portfolios/{portfolio_id}/positions",
+        json={
+            "asset_id": asset_id,
+            "quantity": str(quantity),
+            "avg_buy_price": "1",
+        },
+    )
     assert response.status_code == 201
     return cast(dict[str, Any], api_data(response))
 
@@ -43,6 +79,40 @@ def create_signal(
     )
     assert response.status_code == 201
     return cast(dict[str, Any], api_data(response))
+
+
+def patch_portfolio_quotes(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FixedMarketProvider:
+        def get_quote(self, symbols: list[str]) -> list[QuoteResult]:
+            return [
+                QuoteResult(
+                    symbol=symbol,
+                    name=f"{symbol} Inc.",
+                    price=Decimal("1"),
+                    previous_close=Decimal("1"),
+                    change=Decimal("0"),
+                    change_percent=Decimal("0"),
+                    currency="USD",
+                    as_of=datetime(2026, 7, 8, tzinfo=timezone.utc),
+                )
+                for symbol in symbols
+            ]
+
+    monkeypatch.setattr(
+        "app.domains.portfolios.service.get_market_provider",
+        lambda: FixedMarketProvider(),
+    )
+
+
+def add_portfolio_with_cash_weight(
+    client: TestClient,
+    asset_id: int,
+    cash_weight: Decimal,
+    name: str = "Long Term",
+) -> dict[str, Any]:
+    portfolio = create_portfolio(client, name=name, cash_balance=cash_weight)
+    add_position(client, portfolio["id"], asset_id, Decimal("1") - cash_weight)
+    return portfolio
 
 
 def test_create_watchlist_success(client: TestClient) -> None:
@@ -217,6 +287,7 @@ def test_get_watchlist_summary_counts_total_and_active_risk_assets(
     assert data["total_count"] == 4
     assert data["risk_increasing_count"] == 1
     assert len(data["recent_items"]) == 4
+    assert data["buy_readiness"] is None
 
 
 def test_get_watchlist_summary_returns_recent_items_sorted_and_limited(
@@ -263,7 +334,147 @@ def test_get_watchlist_summary_returns_empty_values_for_empty_watchlist(
         "total_count": 0,
         "risk_increasing_count": 0,
         "recent_items": [],
+        "buy_readiness": None,
     }
+
+
+def test_get_watchlist_summary_returns_buy_readiness_for_portfolio_id(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch_portfolio_quotes(monkeypatch)
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+    aapl = create_asset(client, "AAPL")
+    msft = create_asset(client, "MSFT")
+    for asset in [aapl, msft]:
+        response = client.post(
+            f"/api/v1/watchlists/{watchlist['id']}/items",
+            json={"asset_id": asset["id"], "priority": 0},
+        )
+        assert response.status_code == 201
+    portfolio = add_portfolio_with_cash_weight(
+        client,
+        aapl["id"],
+        CASH_FLOOR_MEDIUM,
+    )
+    create_signal(client, aapl["id"], SignalType.BUY_CANDIDATE)
+    create_signal(client, msft["id"], SignalType.BUY_CANDIDATE)
+
+    response = client.get(
+        f"/api/v1/watchlists/{watchlist['id']}/summary",
+        params={"portfolio_id": portfolio["id"]},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    buy_readiness = cast(dict[str, Any], data["buy_readiness"])
+    assert buy_readiness["level"] == BuyReadinessLevel.SUFFICIENT.value
+    assert buy_readiness["level_label"] == "충분"
+    assert Decimal(buy_readiness["cash_weight"]) == CASH_FLOOR_MEDIUM
+    assert buy_readiness["buy_candidate_count"] == 2
+    assert "현금 비중" in buy_readiness["message"]
+
+
+def test_get_watchlist_summary_uses_first_portfolio_when_id_omitted(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch_portfolio_quotes(monkeypatch)
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+    asset = create_asset(client, "AAPL")
+    first = add_portfolio_with_cash_weight(
+        client,
+        asset["id"],
+        CASH_FLOOR_HIGH,
+        name="First",
+    )
+    add_portfolio_with_cash_weight(
+        client,
+        asset["id"],
+        Decimal("0.20"),
+        name="Second",
+    )
+
+    response = client.get(f"/api/v1/watchlists/{watchlist['id']}/summary")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    buy_readiness = cast(dict[str, Any], data["buy_readiness"])
+    assert first["id"] == 1
+    assert buy_readiness["level"] == BuyReadinessLevel.LIMITED.value
+    assert Decimal(buy_readiness["cash_weight"]) == CASH_FLOOR_HIGH
+
+
+@pytest.mark.parametrize(
+    ("cash_weight", "expected_level"),
+    [
+        (Decimal("0.20"), BuyReadinessLevel.SUFFICIENT),
+        (CASH_FLOOR_MEDIUM, BuyReadinessLevel.SUFFICIENT),
+        (Decimal("0.14"), BuyReadinessLevel.LIMITED),
+        (CASH_FLOOR_HIGH, BuyReadinessLevel.LIMITED),
+        (Decimal("0.04"), BuyReadinessLevel.RESTRICTED),
+    ],
+)
+def test_get_watchlist_summary_buy_readiness_level_boundaries(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    cash_weight: Decimal,
+    expected_level: BuyReadinessLevel,
+) -> None:
+    patch_portfolio_quotes(monkeypatch)
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+    asset = create_asset(client, "AAPL")
+    portfolio = add_portfolio_with_cash_weight(client, asset["id"], cash_weight)
+
+    response = client.get(
+        f"/api/v1/watchlists/{watchlist['id']}/summary",
+        params={"portfolio_id": portfolio["id"]},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    buy_readiness = cast(dict[str, Any], data["buy_readiness"])
+    assert buy_readiness["level"] == expected_level.value
+    assert Decimal(buy_readiness["cash_weight"]) == cash_weight
+
+
+def test_get_watchlist_summary_counts_only_active_buy_candidate_assets(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch_portfolio_quotes(monkeypatch)
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+    assets = [create_asset(client, symbol) for symbol in ["AAPL", "MSFT", "NVDA", "TSLA"]]
+    for asset in assets:
+        response = client.post(
+            f"/api/v1/watchlists/{watchlist['id']}/items",
+            json={"asset_id": asset["id"], "priority": 0},
+        )
+        assert response.status_code == 201
+    portfolio = add_portfolio_with_cash_weight(client, assets[0]["id"], Decimal("0.20"))
+    create_signal(client, assets[0]["id"], SignalType.BUY_CANDIDATE)
+    create_signal(client, assets[1]["id"], SignalType.BUY_CANDIDATE)
+    create_signal(
+        client,
+        assets[2]["id"],
+        SignalType.BUY_CANDIDATE,
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+    create_signal(client, assets[3]["id"], SignalType.RISK_ALERT)
+
+    response = client.get(
+        f"/api/v1/watchlists/{watchlist['id']}/summary",
+        params={"portfolio_id": portfolio["id"]},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    buy_readiness = cast(dict[str, Any], data["buy_readiness"])
+    assert buy_readiness["buy_candidate_count"] == 2
 
 
 def test_get_watchlist_summary_blocks_other_users(client: TestClient) -> None:

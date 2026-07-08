@@ -28,6 +28,7 @@ DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
         "summary": "Mock watchlist observation summary.",
         "items": [{"symbol": "AAPL", "note": "Mock watchlist observation note."}],
     },
+    # Enum values are sourced from app/domains/watchlists/types.py.
     "WatchlistEvaluationsResult": {
         "items": [
             {

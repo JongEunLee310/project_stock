@@ -185,7 +185,7 @@ def test_watchlist_evaluations_service_maps_gateway_result_and_snapshot(
 
     assert [item.symbol for item in result.items] == ["AAPL", "MSFT"]
     assert result.needs_research_count == 1
-    assert result.cash_relevance_avg == 0.5
+    assert "cash_relevance_avg" not in result.model_dump()
     task_type, payload, schema, _prompt = gateway.calls[0]
     assert task_type == LLMTaskType.WATCHLIST_EVALUATION
     assert isinstance(payload, WatchlistEvaluationSnapshot)
@@ -198,7 +198,7 @@ def test_watchlist_evaluations_service_maps_gateway_result_and_snapshot(
     assert schema is WatchlistEvaluationsResult
 
 
-def test_watchlist_evaluations_service_aggregates_research_and_cash_ratio(
+def test_watchlist_evaluations_service_aggregates_research_count(
     db: Session,
 ) -> None:
     watchlist = WatchlistRepository(db).create(user_id=1, name="Core")
@@ -218,7 +218,34 @@ def test_watchlist_evaluations_service_aggregates_research_and_cash_ratio(
     result = WatchlistEvaluationsService(db, gateway).generate(watchlist.id, user_id=1)
 
     assert result.needs_research_count == 3
-    assert result.cash_relevance_avg == 0.25
+    assert "cash_relevance_avg" not in result.model_dump()
+
+
+def test_watchlist_evaluations_service_skips_invalid_enum_item(
+    db: Session,
+) -> None:
+    watchlist = WatchlistRepository(db).create(user_id=1, name="Core")
+    add_watchlist_item(db, watchlist.id, create_asset(db, "AAPL"))
+    add_watchlist_item(db, watchlist.id, create_asset(db, "MSFT"))
+    gateway = EvaluationRecordingGateway(
+        {
+            "items": [
+                {
+                    "symbol": "AAPL",
+                    "news_risk": "INVALID_VALUE",
+                    "valuation_burden": ValuationBurden.MODERATE.value,
+                    "theme_heat": ThemeHeat.NEUTRAL.value,
+                    "ai_judgment": AiJudgment.WATCH.value,
+                },
+                evaluation_item("MSFT", NewsRisk.LOW, AiJudgment.STABLE),
+            ]
+        }
+    )
+
+    result = WatchlistEvaluationsService(db, gateway).generate(watchlist.id, user_id=1)
+
+    assert [item.symbol for item in result.items] == ["MSFT"]
+    assert result.needs_research_count == 0
 
 
 def test_watchlist_evaluations_service_returns_zero_aggregates_for_empty_watchlist(
@@ -231,7 +258,7 @@ def test_watchlist_evaluations_service_returns_zero_aggregates_for_empty_watchli
 
     assert result.items == []
     assert result.needs_research_count == 0
-    assert result.cash_relevance_avg == 0.0
+    assert "cash_relevance_avg" not in result.model_dump()
     assert gateway.calls == []
 
 
@@ -268,5 +295,5 @@ def test_watchlist_evaluations_endpoint_returns_enveloped_mock_response(
         }
     ]
     assert data["needs_research_count"] == 0
-    assert data["cash_relevance_avg"] == 1.0
+    assert "cash_relevance_avg" not in data
     assert isinstance(data["generated_at"], str)

@@ -1,6 +1,7 @@
 from decimal import Decimal
+import logging
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from app.adapters.factory import get_market_provider
@@ -37,6 +38,9 @@ from app.domains.watchlists.types import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class _ValidatedEvaluation(BaseModel):
     symbol: str
     news_risk: NewsRisk
@@ -64,7 +68,6 @@ class WatchlistEvaluationsService:
             return WatchlistEvaluationsResponse(
                 items=[],
                 needs_research_count=0,
-                cash_relevance_avg=0.0,
                 generated_at=utc_now(),
             )
 
@@ -98,12 +101,6 @@ class WatchlistEvaluationsService:
                 for item in projected_items
                 if item.news_risk is NewsRisk.HIGH
                 or item.ai_judgment is AiJudgment.RISK_INCREASING
-            ),
-            cash_relevance_avg=(
-                sum(1 for item in projected_items if item.ai_judgment is AiJudgment.WATCH)
-                / len(projected_items)
-                if projected_items
-                else 0.0
             ),
             generated_at=utc_now(),
         )
@@ -171,6 +168,20 @@ class WatchlistEvaluationsService:
         for item in result_items:
             if item.symbol not in snapshot_symbols or item.symbol in seen_symbols:
                 continue
-            projected.append(_ValidatedEvaluation.model_validate(item.model_dump()))
             seen_symbols.add(item.symbol)
+            try:
+                projected.append(_ValidatedEvaluation.model_validate(item.model_dump()))
+            except ValidationError as exc:
+                logger.warning(
+                    "Skipping invalid watchlist evaluation item: symbol=%s errors=%s",
+                    item.symbol,
+                    exc.errors(),
+                )
+        missing_symbols = snapshot_symbols - seen_symbols
+        if missing_symbols:
+            logger.warning(
+                "LLM watchlist evaluation omitted %s snapshot items: symbols=%s",
+                len(missing_symbols),
+                sorted(missing_symbols),
+            )
         return projected

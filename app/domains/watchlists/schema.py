@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from pydantic import BaseModel, Field
 
 from app.core.schema import UtcDatetime
@@ -83,10 +85,19 @@ class RecentWatchlistItemResponse(BaseModel):
     created_at: UtcDatetime
 
 
+class BuyReadinessProjection(BaseModel):
+    level: str
+    level_label: str
+    cash_weight: Decimal
+    buy_candidate_count: int
+    message: str
+
+
 class WatchlistSummaryResponse(BaseModel):
     total_count: int
     risk_increasing_count: int
     recent_items: list[RecentWatchlistItemResponse]
+    buy_readiness: BuyReadinessProjection | None
 
 
 class WatchlistSummaryTrendDataPoint(BaseModel):
@@ -126,7 +137,6 @@ class WatchlistItemEvaluationProjection(BaseModel):
 class WatchlistEvaluationsResponse(BaseModel):
     items: list[WatchlistItemEvaluationProjection]
     needs_research_count: int
-    cash_relevance_avg: float
     generated_at: UtcDatetime
 
 

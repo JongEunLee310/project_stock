@@ -142,6 +142,7 @@ def list_watchlist_items(
 def get_watchlist_summary(
     watchlist_id: int,
     recent_limit: int = Query(default=5, ge=0, le=50),
+    portfolio_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[WatchlistSummaryResponse]:
@@ -149,6 +150,7 @@ def get_watchlist_summary(
         WatchlistService(db).get_summary(
             watchlist_id,
             current_user.id,
+            portfolio_id=portfolio_id,
             recent_limit=recent_limit,
         )
     )
