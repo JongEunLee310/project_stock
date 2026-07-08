@@ -4,68 +4,164 @@
 
 Implemented
 
+## Revision History
+
+| 버전 | 날짜 | 변경 내용 |
+|---|---|---|
+| R0 | 2026-07-04 | 초안 작성. |
+| R1 | 2026-07-08 | PR #236 리뷰(S1·S2·Q1)와 개발자 피드백 반영. "평균 현금 연관도" 폐기, "신규 매수 여력(buy_readiness)" 재설계. 배치를 `WatchlistEvaluationsResponse`에서 `WatchlistSummaryResponse` 확장으로 역전. |
+
 ## Context
 
 FE 관심종목 페이지(`project_stock_frontend#117`) Phase 3에서 테이블 행마다 평가 배지 4종
-(뉴스 위험도·밸류에이션 부담·테마 과열·AI 판단)을 표시하고, 집계 카드에 추가 리서치 필요
-종목 수와 평균 현금 연관도를 표시해야 한다. 이를 제공하는 BE 계약이 현재 없다.
+(뉴스 위험도·밸류에이션 부담·테마 과열·AI 판단)을 표시하고, 집계 카드에 신규 매수 여력
+정보를 표시해야 한다. 이를 제공하는 BE 계약이 현재 없다.
 
 선행 이슈 #233(PR #235, 관심종목 행 보강)이 머지되어 있으므로 schema·endpoint 충돌 없이
 진행할 수 있다.
 
+PR #236에서 evaluations 엔드포인트와 집계 2종(`needs_research_count`, `cash_relevance_avg`)이
+구현되었으나, 개발자 피드백으로 `cash_relevance_avg`가 제품 의도에 맞지 않는다고 확정됐다.
+R1은 해당 필드를 폐기하고 "신규 매수 여력(buy_readiness)"으로 재설계하는 수정 설계다.
+
 ## Verified Facts (origin/dev, 2026-07-08 확인)
+
+### R0 원본 사실 (유효)
 
 - `app/domains/watchlists/observations_service.py:33` —
   `WatchlistObservationsService.__init__(self, db: Session, gateway: LLMGateway)` —
-  LLM gateway 주입 패턴. `generate(watchlist_id, user_id)` 온디맨드 LLM 호출.
-- `app/domains/watchlists/recommendations_service.py:38` —
-  `WatchlistRecommendationsService.__init__(self, db: Session, gateway: LLMGateway)` —
-  동일 패턴. 관심종목 전체를 단일 LLM 호출로 처리.
+  LLM gateway 주입 패턴.
 - `app/adapters/llm/gateway.py:59` —
   `LLMGateway.complete_json(task_type, payload, schema, system_prompt, escalation_signal=None)`
-  — 캐시 조회·budget 소비·cloud 호출·캐시 저장을 단일 경로에서 처리.
 - `app/adapters/llm/types.py:8` — `LLMTaskType(str, Enum)` 현재 값:
   `NEWS_SUMMARY`, `THESIS_CONFLICT`, `PORTFOLIO_BRIEFING`, `DASHBOARD_BRIEFING`,
   `WATCHLIST_NOTE`, `STOCK_RECOMMENDATION`, `TAG_SENTIMENT`, `AGENT`.
-  `WATCHLIST_EVALUATION`은 없음 — 신규 추가 필요.
-- `app/adapters/llm/privacy.py:121` — `WatchlistObservationSnapshot(CloudSafePayload)`:
-  `sensitivity = SensitivityLevel.AGGREGATED`, 필드: `watchlist_id: int`, `item_count: int`,
-  `items: list[WatchlistHighlight]`.
-- `app/adapters/llm/privacy.py:80` — `WatchlistHighlight(BaseModel)`:
-  `symbol: str`, `status: str`, `per: Decimal | None`, `peg: Decimal | None`,
-  `daily_change_percent: Decimal`.
-- `app/adapters/llm/prompts/language.py:1` —
-  `KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION` 상수. 신규 프롬프트도 이 상수를 포함한다.
-- `app/domains/watchlists/schema.py:86` —
-  `WatchlistSummaryResponse(total_count: int, risk_increasing_count: int,
-  recent_items: list[RecentWatchlistItemResponse])`. 현재 3개 필드만 존재.
-- `app/api/v1/endpoints/watchlists.py:200` —
-  `/observations` 엔드포인트: `WatchlistObservationsService(db, get_llm_gateway()).generate(...)`.
-  child endpoint 패턴 (`/sparklines`, `/observations`, `/recommendations` 동일 형식).
-- `app/domains/raw_news/repository.py:10` — `RawNewsEventRepository`는 `create_or_skip`,
-  `get_by_url`, `mark_normalized`, `mark_failed`만 제공. 종목별 최근 뉴스 조회 메서드 없음.
-  뉴스 위험도 입력은 현재 시그널·시세 지표에서 LLM이 추론하도록 한다 — 이후 뉴스 count 제공
-  시 snapshot 확장 가능.
+  `WATCHLIST_EVALUATION`은 PR #236에서 추가됨.
+- `app/domains/watchlists/schema.py:86` — 현재 `WatchlistSummaryResponse`:
+  `total_count: int`, `risk_increasing_count: int`, `recent_items: list[RecentWatchlistItemResponse]`.
+- `app/domains/watchlists/schema.py:126` — 현재 `WatchlistEvaluationsResponse`:
+  `items`, `needs_research_count`, `cash_relevance_avg: float`, `generated_at`.
+
+### R1 추가 확인 사실
+
+- `app/domains/portfolios/service.py:33` —
+  `CASH_FLOOR_HIGH = Decimal("0.05")` — 현금 비중 위험 임계값.
+- `app/domains/portfolios/service.py:34` —
+  `CASH_FLOOR_MEDIUM = Decimal("0.15")` — 현금 비중 경고 임계값.
+- `app/domains/portfolios/service.py:125-131` —
+  `PortfolioService.get_summary(portfolio_id: int, user_id: int) -> PortfolioSummaryResponse` —
+  소유 확인·포지션·시장가 조회를 포함한 공개 메서드.
+- `app/domains/portfolios/schema.py:91` —
+  `PortfolioSummaryResponse.cash_weight: Decimal` — 현금 비중(0.0–1.0). `get_summary` 반환값에 포함됨.
+- `app/domains/portfolios/repository.py:16-26` —
+  `PortfolioRepository.list_by_user(user_id, offset=0, limit=None) -> list[Portfolio]` —
+  `Portfolio.id` 오름차순 정렬. 포트폴리오가 여럿일 때 첫 번째가 결정적으로 선택 가능.
+- `app/domains/signals/repository.py:58-74` —
+  `SignalRepository.count_assets_with_active_signal(asset_ids: list[int], signal_type: str) -> int` —
+  WatchlistService.get_summary가 이미 `RISK_ALERT` 집계에 이 메서드를 사용함
+  (`app/domains/watchlists/service.py:180-182`).
+- `app/domains/signals/types.py:8` — `SignalType.BUY_CANDIDATE = "BUY_CANDIDATE"` — 매수 후보 시그널.
+- `app/domains/watchlists/service.py:170-209` —
+  `WatchlistService.get_summary(watchlist_id, user_id, recent_limit=5) -> WatchlistSummaryResponse` —
+  현재 시그니처. `portfolio_id` 파라미터 없음. `signal_repo`가 이미 주입되어 있음.
+- `app/api/v1/endpoints/watchlists.py:142-154` —
+  `GET /{watchlist_id}/summary` — 현재 `portfolio_id` 쿼리 파라미터 없음.
+- `app/domains/portfolios/service.py:426-444` —
+  `_calculate_risk_exposures`에서 `cash_weight < CASH_FLOOR_HIGH` → `"HIGH"`,
+  `cash_weight < CASH_FLOOR_MEDIUM` → `"MEDIUM"`으로 현금 부족 노출을 판정하는 선례가 있음.
+  buy_readiness 레벨 판정은 이 임계값 조합을 역전시켜 적용한다.
 
 ## Design Decisions
 
-### 1. 생성·캐싱 방식: 온디맨드 LLM 호출 + 게이트웨이 캐시
+### R1 개정 결정
 
-observations와 recommendations 선례를 그대로 따른다. `LLMGateway.complete_json`이 이미
-CLOUD 경로에서 `LLMResponseCache`를 통한 캐시 조회·저장을 처리하므로 서비스 레이어에서
-별도 캐시 로직을 추가하지 않는다.
+#### R1-1. "평균 현금 연관도" 폐기 및 "신규 매수 여력(buy_readiness)" 재설계
 
-배치 사전 생성(별도 스케줄러로 미리 평가 결과를 DB에 저장) 방식도 검토했으나, 스케줄러
-인프라가 없고 관심종목이 수시로 변경되어 재생성 타이밍이 복잡해진다. 온디맨드 방식이
-관리 복잡도 면에서 현 단계에 적합하고, 게이트웨이 캐시가 반복 호출 비용을 흡수한다.
+Decision 4의 "평균 현금 연관도(`cash_relevance_avg`)"는 제품 의도에 맞지 않는다고
+개발자가 확정했다. 이 지표를 폐기하고 "신규 매수 여력(buy_readiness)"으로 대체한다.
 
-종목별 개별 LLM 호출이 아니라 관심종목 내 항목 전체를 단일 호출의 입력으로 넣어 결과를
-받는 방식을 선택한다. observations·recommendations의 배치 처리 방식과 동일하다.
+buy_readiness의 제품 의도는 관심 종목을 실제 매수 후보로 봐도 되는지, 현금이 부족해
+관찰만 해야 하는지를 요약하는 지표다. 구성 요소는 두 가지다.
 
-### 2. 평가 4종 enum 정의
+- **포트폴리오 현금 비중(`cash_weight`)**: `PortfolioService.get_summary(portfolio_id, user_id).cash_weight`로 산출한다. 현금이 충분할수록 매수 여력이 있다.
+- **매수 검토 후보 수(`buy_candidate_count`)**: `SignalRepository.count_assets_with_active_signal(asset_ids, SignalType.BUY_CANDIDATE.value)`로 산출한다. 관심종목 내 `BUY_CANDIDATE` 활성 시그널 종목 수를 의미한다.
 
-신규 Python enum 4종을 `app/domains/watchlists/types.py`(신규 파일)에 정의한다.
-LLM은 문자열 값을 반환하고 서비스 레이어에서 유효성 검증한다.
+표현은 질적 레벨(`BuyReadinessLevel`)과 보조 수치를 포함한다. FE 카드 예시: "신규 매수 여력 / 제한적 / 현금 비중은 22.7%입니다. 매수 검토 후보는 5개지만, 현재는 분할 검토가 적합합니다."
+
+**레벨 판정 규칙** (임계값 출처: `app/domains/portfolios/service.py:33-34`):
+
+| 조건 | `BuyReadinessLevel` | 한국어 라벨 |
+|---|---|---|
+| `cash_weight >= CASH_FLOOR_MEDIUM` (≥ 0.15) | `SUFFICIENT` | 충분 |
+| `CASH_FLOOR_HIGH <= cash_weight < CASH_FLOOR_MEDIUM` (0.05 ~ 0.15 미만) | `LIMITED` | 제한적 |
+| `cash_weight < CASH_FLOOR_HIGH` (< 0.05) | `RESTRICTED` | 매우 제한적 |
+
+포트폴리오가 등록되지 않은 경우 `buy_readiness`는 `null`로 반환한다.
+
+#### R1-2. buy_readiness 배치: WatchlistSummaryResponse 확장 (Decision 5 역전)
+
+R0 Decision 5는 두 집계 필드 모두 LLM 평가 결과에서 파생되므로
+`WatchlistEvaluationsResponse`에 포함하고 `WatchlistSummaryResponse`를 변경하지 않기로 결정했다.
+
+R1에서 이 결정을 역전한다. buy_readiness는 LLM 파생이 아니라 결정적 계산이 가능하므로,
+summary의 빠른 DB 집계라는 성격을 깨지 않고도 `WatchlistSummaryResponse`에 포함할 수 있다.
+구체적으로:
+- `buy_candidate_count`는 순수 DB 집계(`SignalRepository.count_assets_with_active_signal`)다.
+- `cash_weight`는 시장 데이터 조회가 필요하지만, LLM 호출과 달리 지연이 결정적이다.
+
+두 값 모두 LLM에 의존하지 않으므로 summary 경계가 유지된다. `WatchlistEvaluationsResponse`에서
+`cash_relevance_avg`를 제거하고, `WatchlistSummaryResponse`에 `buy_readiness` 필드를 추가한다.
+
+#### R1-3. 포트폴리오 선택 방식
+
+`GET /{watchlist_id}/summary` 엔드포인트에 선택적 쿼리 파라미터 `portfolio_id: int | None`을
+추가한다. 파라미터가 제공되면 해당 포트폴리오를 사용하고, 제공되지 않으면
+`PortfolioRepository.list_by_user(user_id, limit=1)`로 id 오름차순 첫 번째 포트폴리오를
+사용한다. 포트폴리오가 없으면 `buy_readiness: null`을 반환한다.
+
+`PortfolioService.get_summary`가 소유 확인(403)을 내부에서 처리하므로, `portfolio_id`가
+지정된 경우 별도 소유 검증 없이 그대로 위임할 수 있다.
+
+#### R1-4. Q1 반영: 분모 기준 및 LLM 누락 항목 처리 원칙
+
+PR #236 리뷰 Q1에서 제기한 집계 분모 문제에 대해 개발자가 답변했다. 분모는 LLM 결과
+항목 수가 아니라 snapshot(전체 관심종목 수) 기준이 원칙이다.
+
+`cash_relevance_avg` 제거로 현재 비율 지표는 없다. `needs_research_count`는 비율이 아닌
+절대 수이므로 분모 문제가 직접 적용되지 않는다.
+
+LLM이 snapshot 항목을 누락했을 때의 처리 원칙은 다음과 같이 명시한다. `_project_items`는
+snapshot 외 symbol을 필터링할 때 누락된 symbol(snapshot에 있지만 LLM 결과에 없는 symbol)
+수를 warning 레벨로 로그에 기록한다. 이 처리는 서비스 레이어 집계 정확성을 추적할 수 있도록
+한다.
+
+#### R1-5. S1 반영: enum 외 값 항목 단위 스킵
+
+PR #236 리뷰 S1에서 지적한 문제를 반영한다. LLM이 enum에 정의되지 않은 값을 반환할 때
+`_project_items` 내 `_ValidatedEvaluation.model_validate` 호출이 `ValidationError`를 발생시켜
+전체 요청이 500으로 실패한다.
+
+변경 원칙: `_project_items`에서 `ValidationError`를 잡아 해당 항목만 스킵하고, 스킵된
+symbol과 사유를 warning 레벨로 로그에 기록한다. 나머지 항목은 정상 처리한다. 전체 실패는
+발생하지 않는다.
+
+#### R1-6. S2 반영: mock.py 픽스처 enum 출처 주석
+
+`app/adapters/llm/mock.py`의 `WatchlistEvaluationsResult` 픽스처(`"news_risk": "LOW"` 등)에
+`# Enum values are sourced from app/domains/watchlists/types.py.` 주석을 추가한다.
+`tests/test_watchlist_evaluations.py`에 이미 있는 주석과 일관성을 맞추기 위한 변경이다.
+
+### 원본 결정 (R1 기준)
+
+#### 1. 생성·캐싱 방식: 온디맨드 LLM 호출 + 게이트웨이 캐시
+
+*변경 없음.* observations와 recommendations 선례를 그대로 따른다.
+`LLMGateway.complete_json`이 이미 CLOUD 경로에서 `LLMResponseCache`를 통해 캐시 조회·저장을
+처리하므로 서비스 레이어에서 별도 캐시 로직을 추가하지 않는다.
+
+#### 2. 평가 4종 enum 정의
+
+*변경 없음.* `app/domains/watchlists/types.py`의 enum 4종 정의는 그대로 유지한다.
 
 | enum 클래스 | 값 | FE 배지 한국어 라벨 |
 |---|---|---|
@@ -82,183 +178,179 @@ LLM은 문자열 값을 반환하고 서비스 레이어에서 유효성 검증�
 | `AiJudgment.WATCH` | `"WATCH"` | 관망 |
 | `AiJudgment.STABLE` | `"STABLE"` | 안정 |
 
-### 3. "추가 리서치 필요" 산출 기준
+#### 3. "추가 리서치 필요" 산출 기준
 
-LLM 응답을 받은 뒤 서비스 레이어에서 다음 조건에 해당하는 종목을 집계한다.
+*변경 없음.* LLM 응답을 받은 뒤 서비스 레이어에서 다음 조건에 해당하는 종목을 집계한다.
 
 ```
 news_risk == "HIGH" OR ai_judgment == "RISK_INCREASING"
 ```
 
-이 기준은 코드에 명시적으로 표현된다. LLM에 `needs_research` 판단을 위임하지 않으므로
-LLM 자유도 변동이 집계값에 영향을 주지 않는다.
+#### 4. ~~"평균 현금 연관도" 산출 기준~~ (폐기)
 
-### 4. "평균 현금 연관도" 산출 기준 (Open Question)
+R1-1에서 폐기됨. `cash_relevance_avg` 필드는 `WatchlistEvaluationsResponse`에서 제거한다.
 
-"평균 현금 연관도"는 디자인 시안의 표현이며 제품팀 정의가 없다. 잠정 정의를 제안한다.
+#### 5. summary 필드 확장 위치 (R1에서 역전)
 
-**잠정 정의**: AI 판단이 `"WATCH"`인 종목 수를 전체 항목 수로 나눈 비율(float, 0.0–1.0).
-방어적 관망 종목 비중이 높을수록 현금 확보 필요성이 높다는 의미로 해석한다.
+R0에서는 두 집계 필드를 `WatchlistEvaluationsResponse`에 포함하고 `WatchlistSummaryResponse`를
+변경하지 않기로 했다. R1에서 이 결정을 역전한다. buy_readiness는 LLM 파생이 아니므로
+`WatchlistSummaryResponse` 확장이 적합하다. 상세는 R1-2 참고.
 
-이 정의는 프로덕트 결정 없이 제안된 것이다. 제품팀이 다른 정의(예: 포트폴리오 현금
-비중 연동, 배당주 비중 등)를 원할 경우 산출 로직만 교체하면 된다. **구현 전 제품팀
-확인이 필요하다.** Open Question 섹션에 추적 항목으로 명시한다.
+#### 6. 엔드포인트 형태
 
-### 5. summary 필드 확장 위치
+*변경 없음.* `GET /api/v1/watchlists/{watchlist_id}/evaluations` child endpoint를 유지한다.
+`GET /api/v1/watchlists/{watchlist_id}/summary`에는 R1-3에 따라 `portfolio_id` 쿼리 파라미터를 추가한다.
 
-이슈는 `WatchlistSummaryResponse` 확장을 명시하고 있으나, 두 필드(`needs_research_count`,
-`cash_relevance_avg`) 모두 LLM 평가 결과에서 파생된다. `WatchlistService.get_summary`에
-LLM 의존성을 끌어들이면 빠른 DB 기반 집계 응답이라는 현재 summary의 성격이 깨진다.
+#### 7. ADR 필요 여부
 
-**결정**: 두 필드를 `WatchlistEvaluationsResponse`에 포함한다. FE는 evaluations API
-한 번으로 배지 데이터와 집계값을 함께 받는다. `WatchlistSummaryResponse`는 변경하지 않는다.
-이 결정을 이슈 해석 변경으로 핸드오프에 명시해 Codex가 혼란 없이 구현하도록 한다.
-
-### 6. 엔드포인트 형태
-
-`/observations`, `/recommendations`, `/sparklines` 선례를 따라
-`GET /api/v1/watchlists/{watchlist_id}/evaluations` child endpoint를 신설한다.
-
-### 7. ADR 필요 여부
-
-불필요. 온디맨드 LLM + 게이트웨이 캐시 방식은 observations/recommendations 선례와 동일하며
-새로운 아키텍처 결정이 없다. child endpoint 패턴도 기존 선례가 있다.
+*변경 없음.* 불필요.
 
 ## Interfaces
 
-### 신규 파일: `app/domains/watchlists/types.py`
+### `app/domains/watchlists/types.py` — BuyReadinessLevel 추가
 
 ```
-class NewsRisk(str, Enum): HIGH, MEDIUM, LOW
-class ValuationBurden(str, Enum): HIGH, MODERATE, LOW
-class ThemeHeat(str, Enum): OVERHEATED, NEUTRAL, COLD
-class AiJudgment(str, Enum): RISK_INCREASING, WATCH, STABLE
+class BuyReadinessLevel(str, Enum):
+    SUFFICIENT = "SUFFICIENT"
+    LIMITED = "LIMITED"
+    RESTRICTED = "RESTRICTED"
 ```
 
-### LLM 입력 snapshot (신규, `app/adapters/llm/privacy.py`)
+기존 `NewsRisk`, `ValuationBurden`, `ThemeHeat`, `AiJudgment` enum은 변경 없음.
 
-```
-class WatchlistEvaluationItem(BaseModel):
-    symbol: str
-    status: str          # SignalType.value 또는 "NORMAL"
-    per: Decimal | None
-    peg: Decimal | None
-    daily_change_percent: Decimal
-
-class WatchlistEvaluationSnapshot(CloudSafePayload):
-    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
-    watchlist_id: int
-    item_count: int
-    items: list[WatchlistEvaluationItem]
-```
-
-### LLM 출력 schema (신규, `app/adapters/llm/schema.py`)
-
-```
-class ItemEvaluationResult(BaseModel):
-    symbol: str
-    news_risk: str          # NewsRisk 값
-    valuation_burden: str   # ValuationBurden 값
-    theme_heat: str         # ThemeHeat 값
-    ai_judgment: str        # AiJudgment 값
-
-class WatchlistEvaluationsResult(BaseModel):
-    items: list[ItemEvaluationResult]
-```
-
-### `LLMTaskType` 추가 (`app/adapters/llm/types.py`)
-
-```
-WATCHLIST_EVALUATION = "WATCHLIST_EVALUATION"
-```
-
-### 신규 프롬프트 (`app/adapters/llm/prompts/watchlist_evaluation.py`)
-
-```
-WATCHLIST_EVALUATION_SYSTEM_PROMPT: str
-```
-
-`KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION`을 포함한다. enum 값은 JSON 키와 같이 원문
-그대로 유지한다는 지시를 포함한다.
-
-### 응답 projection (`app/domains/watchlists/schema.py`)
+### `app/domains/watchlists/schema.py` — WatchlistSummaryResponse 확장, WatchlistEvaluationsResponse 수정
 
 신규 클래스:
 
 ```
-class WatchlistItemEvaluationProjection(BaseModel):
-    symbol: str
-    news_risk: str
-    valuation_burden: str
-    theme_heat: str
-    ai_judgment: str
+class BuyReadinessProjection(BaseModel):
+    level: str              # BuyReadinessLevel 값
+    level_label: str        # 한국어 라벨 ("충분" | "제한적" | "매우 제한적")
+    cash_weight: Decimal    # 현금 비중 (0.0–1.0)
+    buy_candidate_count: int
+    message: str            # FE 카드용 자연어 설명
+```
 
+`WatchlistSummaryResponse` 변경:
+
+```
+class WatchlistSummaryResponse(BaseModel):
+    total_count: int
+    risk_increasing_count: int
+    recent_items: list[RecentWatchlistItemResponse]
+    buy_readiness: BuyReadinessProjection | None   # 포트폴리오 없으면 None
+```
+
+`WatchlistEvaluationsResponse` 변경:
+
+```
 class WatchlistEvaluationsResponse(BaseModel):
     items: list[WatchlistItemEvaluationProjection]
     needs_research_count: int
-    cash_relevance_avg: float
+    # cash_relevance_avg 제거 (R1-1)
     generated_at: UtcDatetime
 ```
 
-### WatchlistEvaluationsService (신규, `app/domains/watchlists/evaluations_service.py`)
+### `app/domains/watchlists/service.py` — WatchlistService.get_summary 변경
+
+`WatchlistService.__init__`에 `PortfolioRepository` 의존성 추가.
 
 ```
-class WatchlistEvaluationsService:
-    def __init__(self, db: Session, gateway: LLMGateway) -> None
-    def generate(self, watchlist_id: int, user_id: int) -> WatchlistEvaluationsResponse
-    def _build_evaluation_items(self, watchlist_id: int) -> list[WatchlistEvaluationItem]
-    def _get_owned_watchlist(self, watchlist_id: int, user_id: int) -> Watchlist
+def get_summary(
+    self,
+    watchlist_id: int,
+    user_id: int,
+    portfolio_id: int | None = None,
+    recent_limit: int = 5,
+) -> WatchlistSummaryResponse
 ```
 
-`generate` 책임: 소유 확인 → 항목 snapshot 구성 →
-`gateway.complete_json(WATCHLIST_EVALUATION, snapshot, WatchlistEvaluationsResult, WATCHLIST_EVALUATION_SYSTEM_PROMPT)` 호출 →
-결과 projection 생성 → `needs_research_count` 집계 (조건: `news_risk == "HIGH"` OR
-`ai_judgment == "RISK_INCREASING"`) → `cash_relevance_avg` 집계 (잠정: `ai_judgment ==
-"WATCH"` 종목 비율) → `WatchlistEvaluationsResponse` 반환.
+책임: 소유 확인, 기존 집계 3종, `buy_readiness` 계산.
+`buy_readiness` 계산 순서: `portfolio_id` 또는 첫 번째 포트폴리오 조회 →
+`PortfolioService.get_summary(resolved_portfolio_id, user_id).cash_weight` →
+`count_assets_with_active_signal(asset_ids, SignalType.BUY_CANDIDATE.value)` →
+레벨 판정(R1-1 기준) → `BuyReadinessProjection` 생성. 포트폴리오 없으면 `None`.
 
-### API (신규)
+### `app/domains/watchlists/evaluations_service.py` — _project_items 방어 처리 변경
 
 ```
-GET /api/v1/watchlists/{watchlist_id}/evaluations
-  Response: ApiResponse[WatchlistEvaluationsResponse]
-  Auth: 인증 필요, 소유자 확인
+def _project_items(
+    self,
+    result_items: list[ItemEvaluationResult],
+    snapshot_items: list[WatchlistEvaluationItem],
+) -> list[_ValidatedEvaluation]
 ```
+
+책임 변경: `ValidationError` 발생 시 해당 항목을 스킵하고 symbol과 오류를 warning 로그로 기록.
+전체 실패 없이 유효한 항목만 반환한다.
+
+### API 변경
+
+`GET /api/v1/watchlists/{watchlist_id}/summary`에 선택적 쿼리 파라미터 추가:
+
+```
+GET /api/v1/watchlists/{watchlist_id}/summary
+  Query params:
+    recent_limit: int = 5 (기존)
+    portfolio_id: int | None = None (신규)
+  Response: ApiResponse[WatchlistSummaryResponse]
+```
+
+`GET /api/v1/watchlists/{watchlist_id}/evaluations` — 변경 없음 (응답 schema만 변경).
+
+### `app/adapters/llm/mock.py` — 픽스처 주석 추가
+
+`WatchlistEvaluationsResult` 픽스처 딕셔너리에 출처 주석 추가. 내용:
+`# Enum values are sourced from app/domains/watchlists/types.py.`
 
 ## Dependencies
+
+### 신규
+
+- `app/domains/portfolios/repository` — `PortfolioRepository` (WatchlistService에 추가)
+- `app/domains/portfolios/service` — `PortfolioService` (WatchlistService에서 get_summary 호출)
+
+### 기존 (유지)
 
 - `app/adapters/llm.gateway` — `LLMGateway.complete_json`
 - `app/adapters/factory` — `get_llm_gateway()`
 - `app/adapters/llm.privacy` — `CloudSafePayload`, `WatchlistEvaluationSnapshot`
-- `app/domains/signals` — `SignalRepository.active_signal_types_by_asset`, `resolve_watchlist_status`
-- `app/adapters/market` — `get_market_provider().get_quote` (per/peg/change_percent 수집)
+- `app/domains/signals` — `SignalRepository.active_signal_types_by_asset`,
+  `count_assets_with_active_signal`, `resolve_watchlist_status`
+- `app/adapters/market` — `get_market_provider().get_quote`
 - `app/domains/assets` — `AssetRepository`
 - `app/domains/watchlists` — `WatchlistRepository`, `WatchlistItemRepository`
 
 ## Out of Scope
 
-- `WatchlistSummaryResponse` 필드 변경 (Design Decisions 5 참고)
 - 평가 결과 DB 저장·이력 관리
 - 종목별 개별 뉴스 count snapshot 입력 (raw_news 도메인 확장 시 후속)
 - FE 구현 (`project_stock_frontend#117` Phase 3)
 - 평가 배치 사전 생성·스케줄러
+- `BuyReadinessLevel` 판정 기준의 동적 설정화
 
 ## Test Strategy
 
-- `WatchlistEvaluationsService.generate` — 온디맨드 LLM 호출, 결과 projection 반환
-- `needs_research_count` 집계 기준 검증: `news_risk == "HIGH"` 또는 `ai_judgment ==
-  "RISK_INCREASING"` 중 하나라도 해당하는 종목 수
-- `cash_relevance_avg` 집계 기준 검증: `ai_judgment == "WATCH"` 종목 비율 (Open Question
-  해소 전 잠정 기준)
-- 빈 관심종목(items가 없을 때) — `WatchlistEvaluationsResponse(items=[], needs_research_count=0,
-  cash_relevance_avg=0.0)`
-- `GET /watchlists/{id}/evaluations` 엔드포인트 통합 테스트
-- LLM schema 유효성: LLM 응답의 enum 값이 `NewsRisk`, `ValuationBurden`, `ThemeHeat`,
-  `AiJudgment` 정의값과 일치하는지 — enum 값 픽스처는 `app/domains/watchlists/types.py`
-  실제 정의에서 인용하고 출처 주석을 남긴다
-- 기존 `/observations`, `/recommendations`, `/summary` 테스트 약화·삭제 금지
+### 신규·변경 테스트
+
+- `WatchlistService.get_summary` — `buy_readiness` 포함 반환 (portfolio_id 제공·미제공 각각)
+- `buy_readiness` 레벨 판정 경계값 테스트:
+  - `cash_weight = 0.20` → `SUFFICIENT`
+  - `cash_weight = 0.15` → `SUFFICIENT` (경계, 포함)
+  - `cash_weight = 0.14` → `LIMITED`
+  - `cash_weight = 0.05` → `LIMITED` (경계, 포함)
+  - `cash_weight = 0.04` → `RESTRICTED`
+- `buy_candidate_count` 집계 정확성 (활성 `BUY_CANDIDATE` 시그널 종목 수)
+- 포트폴리오 없음 → `buy_readiness: null`
+- `_project_items` enum 외 값 스킵: `ValidationError` 항목이 있어도 유효 항목이 정상 반환됨
+- `WatchlistEvaluationsResponse`에 `cash_relevance_avg` 없음 확인
+- 기존 `/observations`, `/recommendations`, `/summary`, `/sparklines` 테스트 약화·삭제 금지
+
+### 변경된 픽스처
+
+- `app/adapters/llm/mock.py`의 `WatchlistEvaluationsResult` 픽스처에 enum 출처 주석 추가
+- 기존 evaluations 테스트의 `cash_relevance_avg` 검증 제거, `buy_readiness` 검증은 summary 테스트로 분리
 
 ## Open Questions
 
-1. **평균 현금 연관도 정의** — 제품팀이 "현금 연관도"를 어떤 지표로 정의하는지 확인이
-   필요하다. 현재 잠정 정의(`ai_judgment == "WATCH"` 비율)로 구현하되, 결정 변경 시
-   서비스 레이어 집계 로직만 교체한다.
+없음. R1에서 모든 open question이 해소됐다.
