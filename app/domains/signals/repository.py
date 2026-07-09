@@ -49,8 +49,29 @@ class SignalRepository:
             stmt = stmt.limit(limit)
         return list(self.db.scalars(stmt).all())
 
+    def list_all(
+        self,
+        include_expired: bool,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[Signal]:
+        stmt = select(Signal)
+        if not include_expired:
+            stmt = stmt.where(self._active_clause())
+        stmt = stmt.order_by(Signal.created_at.desc(), Signal.id.desc())
+        stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return list(self.db.scalars(stmt).all())
+
     def count_by_asset(self, asset_id: int, include_expired: bool) -> int:
         stmt = select(func.count()).select_from(Signal).where(Signal.asset_id == asset_id)
+        if not include_expired:
+            stmt = stmt.where(self._active_clause())
+        return int(self.db.scalar(stmt) or 0)
+
+    def count_all(self, include_expired: bool) -> int:
+        stmt = select(func.count()).select_from(Signal)
         if not include_expired:
             stmt = stmt.where(self._active_clause())
         return int(self.db.scalar(stmt) or 0)

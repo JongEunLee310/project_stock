@@ -250,6 +250,97 @@ def test_list_signals_expand_asset_returns_null_for_missing_asset(
     assert data[0]["asset"] is None
 
 
+def test_list_signals_without_asset_id_returns_all(client: TestClient) -> None:
+    set_current_user(1)
+    first_asset = create_asset(client, "AAPL")
+    second_asset = create_asset(client, "MSFT")
+    first_signal = create_signal(
+        client,
+        first_asset["id"],
+        SignalType.WATCH.value,
+    )
+    second_signal = create_signal(
+        client,
+        second_asset["id"],
+        SignalType.BUY_CANDIDATE.value,
+    )
+
+    response = client.get("/api/v1/signals")
+
+    assert response.status_code == 200
+    assert api_data(response) == [second_signal, first_signal]
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 2}
+
+
+def test_list_signals_without_asset_id_expand_asset_includes_asset_object(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_current_user(1)
+    first_asset = create_asset(client, "AAPL")
+    second_asset = create_asset(client, "MSFT")
+    create_signal(client, first_asset["id"], SignalType.WATCH.value)
+    create_signal(client, second_asset["id"], SignalType.BUY_CANDIDATE.value)
+
+    class RecordingMarketProvider:
+        def get_quote(self, symbols: list[str]) -> list[QuoteResult]:
+            return [
+                QuoteResult(
+                    symbol=symbol,
+                    name=f"{symbol} Inc.",
+                    price=Decimal("100"),
+                    previous_close=Decimal("99"),
+                    change=Decimal("1"),
+                    change_percent=Decimal("1.01"),
+                    currency="USD",
+                    as_of=datetime(2026, 7, 9, tzinfo=timezone.utc),
+                )
+                for symbol in symbols
+            ]
+
+    monkeypatch.setattr(
+        "app.domains.signals.service.get_market_provider",
+        lambda: RecordingMarketProvider(),
+    )
+
+    response = client.get("/api/v1/signals", params={"expand": "asset"})
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert {item["asset"]["symbol"] for item in data} == {"AAPL", "MSFT"}
+    assert all(item["asset"]["price"] == "100" for item in data)
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 2}
+
+
+def test_list_signals_without_asset_id_respects_include_expired(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    first_asset = create_asset(client, "AAPL")
+    second_asset = create_asset(client, "MSFT")
+    active = create_signal(client, first_asset["id"], SignalType.WATCH.value)
+    expired_at = datetime.now(timezone.utc) - timedelta(days=1)
+    expired = create_signal(
+        client,
+        second_asset["id"],
+        SignalType.SELL_REVIEW.value,
+        expired_at,
+    )
+
+    default_response = client.get("/api/v1/signals")
+    included_response = client.get(
+        "/api/v1/signals",
+        params={"include_expired": "true"},
+    )
+
+    assert default_response.status_code == 200
+    assert api_data(default_response) == [active]
+    assert api_meta(default_response) == {"page": 1, "size": 20, "total": 1}
+    assert included_response.status_code == 200
+    assert api_data(included_response) == [expired, active]
+    assert api_meta(included_response) == {"page": 1, "size": 20, "total": 2}
+
+
 def test_is_expired_for_past_future_and_null_expires_at(client: TestClient) -> None:
     set_current_user(1)
     asset = create_asset(client)
@@ -282,14 +373,6 @@ def test_get_signal_returns_404_when_missing(client: TestClient) -> None:
     response = client.get("/api/v1/signals/999")
 
     assert response.status_code == 404
-
-
-def test_list_signals_requires_asset_id(client: TestClient) -> None:
-    set_current_user(1)
-
-    response = client.get("/api/v1/signals")
-
-    assert response.status_code == 422
 
 
 def test_create_signal_rejects_score_outside_0_to_100(client: TestClient) -> None:

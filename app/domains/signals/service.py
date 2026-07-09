@@ -30,11 +30,17 @@ class SignalService:
 
     def list_signals(
         self,
-        asset_id: int,
+        asset_id: int | None,
         include_expired: bool = False,
         offset: int = 0,
         limit: int | None = None,
     ) -> list[Signal]:
+        if asset_id is None:
+            return self.repo.list_all(
+                include_expired,
+                offset=offset,
+                limit=limit,
+            )
         return self.repo.list_by_asset(
             asset_id,
             include_expired,
@@ -44,7 +50,7 @@ class SignalService:
 
     def list_signals_expanded(
         self,
-        asset_id: int,
+        asset_id: int | None,
         include_expired: bool = False,
         offset: int = 0,
         limit: int | None = None,
@@ -87,7 +93,9 @@ class SignalService:
 
     def count_signals(
         self,
-        asset_id: int,
+        asset_id: int | None,
         include_expired: bool = False,
     ) -> int:
+        if asset_id is None:
+            return self.repo.count_all(include_expired)
         return self.repo.count_by_asset(asset_id, include_expired)

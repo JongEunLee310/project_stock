@@ -43,8 +43,8 @@ def create_signal(
     ),
 )
 def list_signals(
-    asset_id: int,
     pagination: Annotated[PaginationParams, Depends()],
+    asset_id: int | None = None,
     include_expired: bool = False,
     expand: str | None = Query(
         default=None,
