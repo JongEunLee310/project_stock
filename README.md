@@ -75,7 +75,7 @@ flowchart TD
 
 수집·가공은 RQ 워커 잡이 구동합니다. `collect_prices_job`은 가격 일봉을, `collect_news_job`은
 뉴스를 수집·정규화해 저장하고, `analyze_watchlist_job`은 시그널·분석 흐름을 실행합니다.
-스케줄러(`app/scheduler/`)는 아직 스켈레톤이라 잡 실등록은 후속 과제입니다.
+스케줄러(`app/scheduler/`)는 RQ cron에 수집·분석 잡을 등록합니다.
 
 | 단계 | 모듈 | 구현 상태 |
 | --- | --- | --- |
@@ -146,14 +146,16 @@ uv run uvicorn app.main:app --reload
 
 ## Docker Compose 실행
 
-API, PostgreSQL, Redis를 함께 실행합니다.
+API, RQ worker, RQ cron scheduler, PostgreSQL, Redis를 함께 실행합니다.
 
 ```bash
 docker compose up --build
 ```
 
 Compose 구성의 API 컨테이너는 `uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`로
-시작하며 호스트의 `8000` 포트에 노출됩니다.
+시작하며 호스트의 `8000` 포트에 노출됩니다. worker는 default 큐를 소비하고 scheduler는
+등록된 cron 잡을 큐에 적재합니다. worker에는 코드 자동 재시작이 적용되지 않으므로 코드를
+변경한 뒤에는 worker 컨테이너를 재시작해야 합니다.
 
 종료합니다.
 
