@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     LLM_CACHE_TTL_SECONDS: int | None = None
     LLM_ESCALATION_ENABLED: bool = False
     LLM_ESCALATION_CONFIDENCE_THRESHOLD: float | None = None
+    ANALYSIS_SCHEDULE_ENABLED: bool = False
     MARKET_PROVIDER: Literal["mock", "real", "yfinance"] = "mock"
     NEWS_PROVIDER: Literal["mock", "real", "rss"] = "mock"
     NEWS_QUERY_URL_TEMPLATE: str = (
