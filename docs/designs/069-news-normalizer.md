@@ -12,7 +12,9 @@ Milestone 데이터 수집 파이프라인 — 백엔드(#5). 기준 문서 `doc
 수행해 수집 잡과 완결 연결돼 있다. 반면 뉴스는 `collect_news_job` → `NewsIngestionService`가
 `raw_news_events` 저장까지만 한다. 내부 표준 모델(`NewsItem`)로의 정규화는 현재 분석 도메인
 `analysis/service.py._create_new_items`에 묶여 있고, 어댑터를 재조회(`_RecordingNewsAdapter`)하는
-구조라 raw 저장과 분리돼 있다.
+구조라 raw 저장과 분리돼 있다. (이 문단은 작성 시점 기준 서술이다 — `_RecordingNewsAdapter`는
+PR #249에서 제거됐고, 분석 파이프라인 수집은 `fetch_query` 기반으로 정렬됐다. `NewsItem` 정규화가
+분석 도메인에 묶여 있다는 문제의식 자체는 여전히 유효하다.)
 
 지침 §7은 "뉴스 정규화를 `domains/news/`로 끌어와 수집 잡과 연결"하는 것을 3단계 과제로 명시한다.
 지침 6.3은 Normalizer의 책임으로 외부 필드명 → 내부 필드명 변환, 날짜·시간대 정규화, 심볼 표기
