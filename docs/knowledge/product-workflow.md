@@ -23,7 +23,8 @@ deterministic mock이다. `market`은 `mock` / `yfinance`(일봉 실수집) / `r
 ```mermaid
 flowchart LR
     subgraph trigger["트리거"]
-        SCHED["스케줄러<br/>(price_collection/news_collection)"]
+        SCHED["스케줄러<br/>(수집 잡 / analyze_all_watchlists_job)"]
+        ADD["관심종목 추가<br/>(자동 분석 큐잉)"]
         WJOB["워커 잡 enqueue<br/>(news / analysis)"]
     end
 
@@ -41,6 +42,7 @@ flowchart LR
     end
 
     SCHED --> WJOB
+    ADD --> WJOB
     WJOB --> PIPE
     ALERT --> REVIEW
     PORT --> SIG
@@ -53,6 +55,11 @@ flowchart LR
 핵심 백그라운드 흐름이다. `analyze_watchlist_job`(RQ 잡)이 `WatchlistAnalysisService`를
 실행하며, 관심목록의 각 종목을 순회한다. 종목 단위로 트랜잭션을 처리하고, 한 종목이
 실패하면 롤백 후 `failures`에 기록하고 다음 종목으로 넘어간다.
+
+관심종목 추가 API가 성공하면 해당 watchlist의 `analyze_watchlist_job`을 자동으로 큐에
+적재한다. Redis 장애 등 큐잉 실패는 경고로 기록하되 관심종목 추가 응답에는 영향을 주지
+않는다. 세션 밴드 스케줄은 `analyze_all_watchlists_job`을 적재해 모든 watchlist를
+순차 분석하며, 수동 분석 API도 인증된 사용자가 같은 분석 잡을 큐에 적재하는 경로다.
 
 종목별 처리 순서:
 
@@ -139,9 +146,15 @@ LLM을 호출하지 않는다 — 산출물은 `prices`·`raw_prices` 적재까�
 
 ## 스케줄러
 
-스케줄러는 RQ 내장 cron으로 수집 잡을 큐에 적재한다. 레지스트리에는 `price_collection`
-(`10 22 * * 1-5`)과 `news_collection`(`0 * * * *`)이 등록되어 있으며, 스케줄러
-프로세스는 `uv run rq cron app/scheduler/cron_config.py -u $REDIS_URL`로 실행한다.
+스케줄러는 RQ 내장 cron으로 수집·분석 잡을 큐에 적재한다. 레지스트리에는
+`price_collection`(`10 22 * * 1-5`)과 `news_collection`(`0 * * * *`) 외에
+`analysis_kr_open`(`0 23 * * 0-4`), `analysis_kr_main`(`0 0-7 * * 1-5`),
+`analysis_us_session`(`0 13-21 * * 1-5`), `analysis_kr_post`
+(`0 9,11 * * 1-5`)가 등록되어 있다. 분석 스케줄 4종은 기본값이 `False`인
+`ANALYSIS_SCHEDULE_ENABLED` 플래그로 함께 제어하며, 비활성 상태에서는 레지스트리에
+남지만 RQ cron에 등록되지 않는다. 이 플래그는 `app/scheduler/registry.py`를 임포트할 때
+평가되므로 env 값을 변경한 뒤에는 스케줄러 프로세스를 재시작해야 한다. 스케줄러 프로세스는
+`uv run rq cron app/scheduler/cron_config.py -u $REDIS_URL`로 실행한다.
 수동 실행 경로(`POST /api/v1/worker/scheduler/jobs/{job_name}/run`)도 같은 RQ enqueue
 경로를 사용하며, 응답의 `job_id`는 RQ job id다. 설계 배경은
 [ADR-003](../decisions/ADR-003-scheduler-approach.md)을 참고한다.

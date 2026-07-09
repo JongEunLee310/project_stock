@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -14,7 +15,9 @@ from app.domains.assets.model import Asset
 from app.domains.jobs.model import JobRun
 from app.domains.llm_analysis.schema import RunStatus
 from app.domains.raw_news.model import RawNewsEvent
+from app.domains.watchlists.model import Watchlist
 from app.main import app
+from app.worker.jobs import analysis
 from app.worker.jobs import llm_analysis
 from app.worker.jobs import news
 from app.worker.jobs.analysis import analyze_watchlist_job
@@ -120,6 +123,77 @@ def test_collect_news_job_records_success_with_target_failure(
     assert job_run.status == "success"
     assert job_run.finished_at is not None
     assert db.scalars(select(RawNewsEvent)).all() == []
+
+
+def test_analyze_all_watchlists_job_isolates_watchlist_failures(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db.add_all(
+        [
+            Watchlist(user_id=1, name="First"),
+            Watchlist(user_id=1, name="Second"),
+        ]
+    )
+    db.commit()
+    analyzed_watchlist_ids: list[int] = []
+
+    class PartiallyFailingService:
+        def __init__(
+            self,
+            db: Session,
+            gateway: object,
+            news_adapter: object,
+        ) -> None:
+            pass
+
+        def run(self, watchlist_id: int) -> SimpleNamespace:
+            analyzed_watchlist_ids.append(watchlist_id)
+            if watchlist_id == 1:
+                raise RuntimeError("first failed")
+            return SimpleNamespace(failures=[])
+
+    monkeypatch.setattr(analysis, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(analysis, "get_llm_gateway", object)
+    monkeypatch.setattr(analysis, "get_news_adapter", object)
+    monkeypatch.setattr(
+        analysis,
+        "WatchlistAnalysisService",
+        PartiallyFailingService,
+    )
+
+    analysis.analyze_all_watchlists_job()
+
+    job_run = db.scalars(select(JobRun)).one()
+    assert analyzed_watchlist_ids == [1, 2]
+    assert job_run.job_type == "all_watchlists_analysis"
+    assert job_run.status == "success"
+    assert job_run.metadata_ == {
+        "watchlist_ids": [1, 2],
+        "partial_failures": [
+            {"watchlist_id": 1, "error": "first failed"},
+        ],
+    }
+
+
+def test_analyze_all_watchlists_job_records_watchlist_query_failure(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_query_error(*args: object) -> object:
+        raise RuntimeError("watchlist query failed")
+
+    monkeypatch.setattr(analysis, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(analysis, "select", raise_query_error)
+
+    with pytest.raises(RuntimeError, match="watchlist query failed"):
+        analysis.analyze_all_watchlists_job()
+
+    job_run = db.scalars(select(JobRun)).one()
+    assert job_run.job_type == "all_watchlists_analysis"
+    assert job_run.status == "failed"
+    assert job_run.error_message == "watchlist query failed"
+    assert job_run.metadata_ == {"watchlist_ids": []}
 
 
 @dataclass
@@ -264,12 +338,22 @@ def test_enqueue_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
             captured["watchlist_id"] = watchlist_id
             return FakeJob()
 
-    redis_connection = object()
+    class FakeRedis:
+        def set(self, key: str, value: str, *, nx: bool, ex: int) -> bool:
+            # Source: docs/designs/243-analysis-triggers.md rate_limit Redis 키 스킴.
+            assert key == "rate_limit:analysis_manual:42"
+            assert value == "1"
+            assert nx is True
+            assert ex == 60
+            return True
+
+    redis_connection = FakeRedis()
     monkeypatch.setattr("app.api.v1.endpoints.worker.Queue", FakeQueue)
     monkeypatch.setattr(
         "app.api.v1.endpoints.worker.get_redis_connection",
         lambda: redis_connection,
     )
+    set_current_user(42)
 
     with TestClient(app) as client:
         response = client.post(
@@ -285,6 +369,76 @@ def test_enqueue_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
         "func": analyze_watchlist_job,
         "watchlist_id": 7,
     }
+    app.dependency_overrides.clear()
+
+
+def test_enqueue_analysis_job_requires_auth() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/worker/jobs/analysis",
+            json={"watchlist_id": 7},
+        )
+
+    assert response.status_code == 401
+
+
+def test_enqueue_analysis_job_rate_limit_allows_first_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeRedis:
+        def set(self, key: str, value: str, *, nx: bool, ex: int) -> bool:
+            return True
+
+    class FakeJob:
+        id = "rq-job-first"
+
+    class FakeQueue:
+        def __init__(self, name: str, connection: object) -> None:
+            pass
+
+        def enqueue(self, func: object, watchlist_id: int) -> FakeJob:
+            return FakeJob()
+
+    monkeypatch.setattr("app.api.v1.endpoints.worker.Queue", FakeQueue)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.worker.get_redis_connection",
+        FakeRedis,
+    )
+    set_current_user(42)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/worker/jobs/analysis",
+            json={"watchlist_id": 7},
+        )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+
+
+def test_enqueue_analysis_job_rate_limit_blocks_second_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeRedis:
+        def set(self, key: str, value: str, *, nx: bool, ex: int) -> bool:
+            return False
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.worker.get_redis_connection",
+        FakeRedis,
+    )
+    set_current_user(42)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/worker/jobs/analysis",
+            json={"watchlist_id": 7},
+        )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "60"
+    assert response.json()["error"]["code"] == "RATE_LIMIT_EXCEEDED"
 
 
 def test_enqueue_llm_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.v1.deps import get_current_user
 from app.adapters.llm.types import LLMTaskType
+from app.core.error_codes import ErrorCode
+from app.core.exceptions import AppException
 from app.core.response import ApiResponse, success
 from app.domains.users.model import User
 from app.scheduler.registry import default_scheduler_registry
@@ -73,8 +75,20 @@ def enqueue_news_job(payload: NewsJobRequest) -> ApiResponse[JobQueuedResponse]:
     summary="Enqueue watchlist analysis job",
     description="Queue a background job that analyzes a watchlist and produces research artifacts.",
 )
-def enqueue_analysis_job(payload: AnalysisJobRequest) -> ApiResponse[JobQueuedResponse]:
-    queue = Queue("default", connection=get_redis_connection())
+def enqueue_analysis_job(
+    payload: AnalysisJobRequest,
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[JobQueuedResponse]:
+    connection = get_redis_connection()
+    rate_limit_key = f"rate_limit:analysis_manual:{current_user.id}"
+    if not connection.set(rate_limit_key, "1", nx=True, ex=60):
+        raise AppException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="분석 요청은 60초에 한 번만 실행할 수 있습니다.",
+            error_code=ErrorCode.RATE_LIMIT_EXCEEDED,
+            headers={"Retry-After": "60"},
+        )
+    queue = Queue("default", connection=connection)
     job = queue.enqueue(analyze_watchlist_job, payload.watchlist_id)
     return success(JobQueuedResponse(job_id=str(job.id), status="queued"))
 
