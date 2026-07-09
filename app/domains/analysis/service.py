@@ -92,9 +92,20 @@ class WatchlistAnalysisService:
         return result
 
     def _process_asset(self, asset: Asset, user_id: int) -> "_AssetAnalysisResult":
-        recording_adapter = _RecordingNewsAdapter(self.news_adapter)
-        RawNewsService(self.db).collect_and_save(recording_adapter, [asset.symbol])
-        news_items = self._create_new_items(asset, recording_adapter.results)
+        market = asset.market.upper()
+        collected_results = self.news_adapter.fetch_query(asset.name, market)
+        raw_news_service = RawNewsService(self.db)
+        new_results = [
+            result
+            for result in collected_results
+            if raw_news_service.save_with_symbol(
+                result,
+                asset.symbol,
+                market,
+            )
+            is not None
+        ]
+        news_items = self._create_new_items(asset, new_results)
         thesis = self.thesis_repo.get_latest_by_asset(asset.id, user_id)
 
         created_reports = 0
@@ -196,17 +207,6 @@ class WatchlistAnalysisService:
                 news_item_ids=[news_item.id],
             )
         )
-
-
-class _RecordingNewsAdapter(NewsAdapter):
-    def __init__(self, wrapped: NewsAdapter) -> None:
-        self.wrapped = wrapped
-        self.results: list[NewsAdapterResult] = []
-
-    def fetch(self, symbols: list[str]) -> list[NewsAdapterResult]:
-        self.results = self.wrapped.fetch(symbols)
-        return self.results
-
 
 @dataclass(frozen=True)
 class _AssetAnalysisResult:

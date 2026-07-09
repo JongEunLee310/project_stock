@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.adapters.llm.gateway import CLOUD, LOCAL, LLMGateway
 from app.adapters.llm.mock import MockLLMClient
 from app.adapters.news.base import NewsAdapter, NewsAdapterResult
+from app.adapters.news.mock import MockNewsAdapter
 from app.core.exceptions import AppException
 from app.db.base import Base
 from app.domains.alerts.model import Alert
@@ -38,29 +39,31 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 
 class StaticNewsAdapter(NewsAdapter):
-    def __init__(self, results_by_symbol: dict[str, list[NewsAdapterResult]]) -> None:
-        self.results_by_symbol = results_by_symbol
+    def __init__(self, results_by_query: dict[str, list[NewsAdapterResult]]) -> None:
+        self.results_by_query = results_by_query
+        self.queries: list[tuple[str, str]] = []
 
     def fetch(self, symbols: list[str]) -> list[NewsAdapterResult]:
-        results: list[NewsAdapterResult] = []
-        for symbol in symbols:
-            results.extend(self.results_by_symbol.get(symbol, []))
-        return results
+        raise AssertionError("analysis must use query-based news collection")
+
+    def fetch_query(self, query: str, market: str) -> list[NewsAdapterResult]:
+        self.queries.append((query, market))
+        return self.results_by_query.get(query, [])
 
 
 class FailingNewsAdapter(StaticNewsAdapter):
     def __init__(
         self,
-        results_by_symbol: dict[str, list[NewsAdapterResult]],
-        failing_symbol: str,
+        results_by_query: dict[str, list[NewsAdapterResult]],
+        failing_query: str,
     ) -> None:
-        super().__init__(results_by_symbol)
-        self.failing_symbol = failing_symbol
+        super().__init__(results_by_query)
+        self.failing_query = failing_query
 
-    def fetch(self, symbols: list[str]) -> list[NewsAdapterResult]:
-        if self.failing_symbol in symbols:
-            raise RuntimeError(f"{self.failing_symbol} feed failed")
-        return super().fetch(symbols)
+    def fetch_query(self, query: str, market: str) -> list[NewsAdapterResult]:
+        if query == self.failing_query:
+            raise RuntimeError(f"{query} query failed")
+        return super().fetch_query(query, market)
 
 
 @pytest.fixture
@@ -78,6 +81,7 @@ def db() -> Generator[Session, None, None]:
 def patch_worker_session(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(analysis, "SessionLocal", TestingSessionLocal)
     monkeypatch.setattr(analysis, "get_llm_gateway", lambda: llm_gateway())
+    monkeypatch.setattr(analysis, "get_news_adapter", MockNewsAdapter)
 
 
 def llm_client(
@@ -111,13 +115,17 @@ def llm_gateway(
 
 
 def news_result(symbol: str, index: int = 1) -> NewsAdapterResult:
+    query = f"{symbol} Inc."
     return NewsAdapterResult(
-        title=f"{symbol} guidance update {index}",
-        url=f"https://example.com/{symbol.lower()}/guidance-{index}",
-        body=f"{symbol} management changed guidance.",
-        source="Example News",
+        title=f"{query} mock news {index}",
+        url=(
+            "https://example.com/mock-news/query/"
+            f"nasdaq/{query.lower().replace(' ', '-')}/{index}"
+        ),
+        body=f"Mock news body for {query} #{index}",
+        source="mock",
         published_at=datetime.now(timezone.utc),
-        payload={"symbol": symbol, "index": index},
+        payload={"query": query, "market": "NASDAQ", "index": index},
     )
 
 
@@ -190,7 +198,7 @@ def test_watchlist_analysis_flow_creates_news_report_signal_and_alert(
     user = create_user(db)
     asset = create_asset(db, "AAPL")
     watchlist = create_watchlist(db, user.id, [asset])
-    adapter = StaticNewsAdapter({"AAPL": [news_result("AAPL")]})
+    adapter = StaticNewsAdapter({asset.name: [news_result("AAPL")]})
 
     result = run_service(db, watchlist.id, adapter)
 
@@ -205,13 +213,32 @@ def test_watchlist_analysis_flow_creates_news_report_signal_and_alert(
     assert db.scalar(select(ResearchReport)) is not None
     assert db.scalar(select(Signal)) is not None
     assert db.scalar(select(Alert).where(Alert.user_id == user.id)) is not None
+    assert adapter.queries == [(asset.name, asset.market.upper())]
+
+
+def test_watchlist_analysis_flow_uses_mock_query_results(db: Session) -> None:
+    user = create_user(db)
+    asset = create_asset(db, "AAPL")
+    watchlist = create_watchlist(db, user.id, [asset])
+
+    result = run_service(db, watchlist.id, MockNewsAdapter())
+
+    news_items = db.scalars(select(NewsItem).order_by(NewsItem.id)).all()
+    assert result.created_news_items == 2
+    assert result.created_reports == 2
+    assert result.created_signals == 2
+    assert [item.source for item in news_items] == ["mock", "mock"]
+    assert [item.url for item in news_items] == [
+        "https://example.com/mock-news/query/nasdaq/aapl-inc./1",
+        "https://example.com/mock-news/query/nasdaq/aapl-inc./2",
+    ]
 
 
 def test_watchlist_analysis_flow_skips_duplicate_news_urls(db: Session) -> None:
     user = create_user(db)
     asset = create_asset(db, "AAPL")
     watchlist = create_watchlist(db, user.id, [asset])
-    adapter = StaticNewsAdapter({"AAPL": [news_result("AAPL")]})
+    adapter = StaticNewsAdapter({asset.name: [news_result("AAPL")]})
 
     first = run_service(db, watchlist.id, adapter)
     second = run_service(db, watchlist.id, adapter)
@@ -231,7 +258,7 @@ def test_watchlist_analysis_flow_routes_conflict_to_signal_and_alert(
     asset = create_asset(db, "AAPL")
     create_thesis(db, user.id, asset.id)
     watchlist = create_watchlist(db, user.id, [asset])
-    adapter = StaticNewsAdapter({"AAPL": [news_result("AAPL")]})
+    adapter = StaticNewsAdapter({asset.name: [news_result("AAPL")]})
 
     result = run_service(
         db,
@@ -256,8 +283,8 @@ def test_watchlist_analysis_flow_isolates_asset_failures(db: Session) -> None:
     failing_asset = create_asset(db, "TSLA")
     watchlist = create_watchlist(db, user.id, [good_asset, failing_asset])
     adapter = FailingNewsAdapter(
-        {"AAPL": [news_result("AAPL")]},
-        failing_symbol="TSLA",
+        {good_asset.name: [news_result("AAPL")]},
+        failing_query=failing_asset.name,
     )
 
     result = run_service(db, watchlist.id, adapter)
@@ -265,7 +292,7 @@ def test_watchlist_analysis_flow_isolates_asset_failures(db: Session) -> None:
     assert result.processed_assets == 1
     assert result.created_news_items == 1
     assert result.failures == [
-        {"asset_id": failing_asset.id, "error": "TSLA feed failed"}
+        {"asset_id": failing_asset.id, "error": "TSLA Inc. query failed"}
     ]
     assert (
         db.scalar(select(NewsItem).where(NewsItem.asset_id == good_asset.id))
@@ -297,8 +324,8 @@ def test_analyze_watchlist_job_records_partial_failures_in_metadata(
     watchlist = create_watchlist(db, user.id, [good_asset, failing_asset])
 
     adapter = FailingNewsAdapter(
-        {"AAPL": [news_result("AAPL")]},
-        failing_symbol="TSLA",
+        {good_asset.name: [news_result("AAPL")]},
+        failing_query=failing_asset.name,
     )
     monkeypatch.setattr(analysis, "get_news_adapter", lambda: adapter)
 
@@ -309,7 +336,7 @@ def test_analyze_watchlist_job_records_partial_failures_in_metadata(
     assert job_run.metadata_ == {
         "watchlist_id": watchlist.id,
         "partial_failures": [
-            {"asset_id": failing_asset.id, "error": "TSLA feed failed"}
+            {"asset_id": failing_asset.id, "error": "TSLA Inc. query failed"}
         ],
     }
 

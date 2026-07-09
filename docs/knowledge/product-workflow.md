@@ -63,7 +63,9 @@ flowchart LR
 
 종목별 처리 순서:
 
-1. **뉴스 수집**: news adapter로 종목 심볼의 원시 뉴스를 수집·저장하고 News Item을 만든다.
+1. **뉴스 수집**: news adapter의 `fetch_query`에 회사명(`Asset.name`)과 대문자로 정규화한
+   시장 값(`Asset.market.upper()`)을 전달해 원시 뉴스를 수집·저장하고, 이번 실행에서 새로
+   저장된 뉴스만 News Item로 만든다.
 2. **AI 요약**: 각 News Item을 LLM으로 요약한다.
 3. **가설 충돌 분석**: 종목의 최신 투자 가설과 뉴스를 비교해 충돌 상태
    (`SUPPORTS` / `NEUTRAL` / `CONFLICTS`)와 무효화 조건 충족 여부(`invalidation_triggered`)를 판정한다.
