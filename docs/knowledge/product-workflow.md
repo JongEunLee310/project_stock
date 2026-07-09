@@ -155,9 +155,17 @@ LLM을 호출하지 않는다 — 산출물은 `prices`·`raw_prices` 적재까�
 남지만 RQ cron에 등록되지 않는다. 이 플래그는 `app/scheduler/registry.py`를 임포트할 때
 평가되므로 env 값을 변경한 뒤에는 스케줄러 프로세스를 재시작해야 한다. 스케줄러 프로세스는
 `uv run rq cron app/scheduler/cron_config.py -u $REDIS_URL`로 실행한다.
+
 로컬에서 `docker compose up`을 실행하면 default 큐를 소비하는 worker와 이 scheduler가
 API·PostgreSQL·Redis와 함께 기동된다. worker에는 코드 자동 재시작이 적용되지 않으므로
 코드 변경 뒤에는 worker 컨테이너를 재시작해야 한다.
+
+compose에서 RQ 프로세스(worker·cron)를 띄울 때는 `sh -c 'exec rq ... -u "$REDIS_URL"'`
+패턴을 표준으로 쓴다. `exec`로 셸을 RQ 프로세스로 치환해야 컨테이너 종료 시그널(SIGTERM)이
+RQ에 직접 전달되어 처리 중인 잡의 warm shutdown이 동작하고, compose YAML에서는 `$`를
+`$$`로 이스케이프해 변수 확장을 컨테이너 셸에 위임한다. 다른 기능에서 Redis 큐 프로세스를
+추가할 때도 이 패턴을 따른다 (PR #246 Q1 논의).
+
 수동 실행 경로(`POST /api/v1/worker/scheduler/jobs/{job_name}/run`)도 같은 RQ enqueue
 경로를 사용하며, 응답의 `job_id`는 RQ job id다. 설계 배경은
 [ADR-003](../decisions/ADR-003-scheduler-approach.md)을 참고한다.
