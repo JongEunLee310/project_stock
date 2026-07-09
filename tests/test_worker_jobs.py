@@ -176,6 +176,26 @@ def test_analyze_all_watchlists_job_isolates_watchlist_failures(
     }
 
 
+def test_analyze_all_watchlists_job_records_watchlist_query_failure(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_query_error(*args: object) -> object:
+        raise RuntimeError("watchlist query failed")
+
+    monkeypatch.setattr(analysis, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(analysis, "select", raise_query_error)
+
+    with pytest.raises(RuntimeError, match="watchlist query failed"):
+        analysis.analyze_all_watchlists_job()
+
+    job_run = db.scalars(select(JobRun)).one()
+    assert job_run.job_type == "all_watchlists_analysis"
+    assert job_run.status == "failed"
+    assert job_run.error_message == "watchlist query failed"
+    assert job_run.metadata_ == {"watchlist_ids": []}
+
+
 @dataclass
 class FakeLLMAnalysisRun:
     status: str
@@ -320,6 +340,7 @@ def test_enqueue_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
 
     class FakeRedis:
         def set(self, key: str, value: str, *, nx: bool, ex: int) -> bool:
+            # Source: docs/designs/243-analysis-triggers.md rate_limit Redis 키 스킴.
             assert key == "rate_limit:analysis_manual:42"
             assert value == "1"
             assert nx is True

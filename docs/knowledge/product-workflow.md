@@ -152,7 +152,8 @@ LLM을 호출하지 않는다 — 산출물은 `prices`·`raw_prices` 적재까�
 `analysis_us_session`(`0 13-21 * * 1-5`), `analysis_kr_post`
 (`0 9,11 * * 1-5`)가 등록되어 있다. 분석 스케줄 4종은 기본값이 `False`인
 `ANALYSIS_SCHEDULE_ENABLED` 플래그로 함께 제어하며, 비활성 상태에서는 레지스트리에
-남지만 RQ cron에 등록되지 않는다. 스케줄러 프로세스는
+남지만 RQ cron에 등록되지 않는다. 이 플래그는 `app/scheduler/registry.py`를 임포트할 때
+평가되므로 env 값을 변경한 뒤에는 스케줄러 프로세스를 재시작해야 한다. 스케줄러 프로세스는
 `uv run rq cron app/scheduler/cron_config.py -u $REDIS_URL`로 실행한다.
 수동 실행 경로(`POST /api/v1/worker/scheduler/jobs/{job_name}/run`)도 같은 RQ enqueue
 경로를 사용하며, 응답의 `job_id`는 RQ job id다. 설계 배경은

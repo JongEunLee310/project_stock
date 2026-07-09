@@ -61,12 +61,14 @@ def analyze_all_watchlists_job() -> None:
     job_run_service = JobRunService(db)
     job_run_id: int | None = None
     try:
-        watchlist_ids = list(db.scalars(select(Watchlist.id).order_by(Watchlist.id)))
         job_run = job_run_service.start(
             "all_watchlists_analysis",
-            {"watchlist_ids": watchlist_ids},
+            {"watchlist_ids": []},
         )
         job_run_id = job_run.id
+        watchlist_ids = list(db.scalars(select(Watchlist.id).order_by(Watchlist.id)))
+        job_run.metadata_ = {"watchlist_ids": watchlist_ids}
+        db.commit()
         failures: list[dict[str, object]] = []
         service = WatchlistAnalysisService(
             db,
