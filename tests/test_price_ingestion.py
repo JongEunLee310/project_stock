@@ -103,6 +103,52 @@ def test_yfinance_provider_parses_history_without_network(
     ]
 
 
+def test_yfinance_provider_requests_15_minute_intraday_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeFrame:
+        empty = False
+
+        def iterrows(self) -> list[tuple[datetime, dict[str, object]]]:
+            return [
+                (
+                    datetime(2026, 6, 25, 13, 30, tzinfo=UTC),
+                    {
+                        "Open": 100,
+                        "High": 101,
+                        "Low": 99,
+                        "Close": 100.5,
+                        "Volume": 123,
+                    },
+                )
+            ]
+
+    class FakeTicker:
+        fast_info = {"currency": "USD"}
+
+        def __init__(self, ticker: str) -> None:
+            assert ticker == "AAPL"
+
+        def history(
+            self,
+            period: str,
+            interval: str,
+            auto_adjust: bool,
+        ) -> FakeFrame:
+            assert period == "1d"
+            assert interval == "15m"
+            assert auto_adjust is True
+            return FakeFrame()
+
+    monkeypatch.setattr("app.adapters.market.yfinance.yf.Ticker", FakeTicker)
+
+    bars = YFinancePriceProvider().get_intraday_bars("aapl", "nasdaq")
+
+    assert len(bars) == 1
+    assert bars[0].interval == "15m"
+    assert bars[0].timestamp == datetime(2026, 6, 25, 13, 30, tzinfo=UTC)
+
+
 def test_yfinance_provider_skips_unknown_market() -> None:
     assert YFinancePriceProvider().get_daily_bars("VOD", "LSE", "1M", True) == []
 
@@ -391,6 +437,13 @@ class StaticPriceProvider(PriceSeriesProvider):
     ) -> list[PriceBarResult]:
         return self.bars
 
+    def get_intraday_bars(
+        self,
+        symbol: str,
+        market: str,
+    ) -> list[PriceBarResult]:
+        return []
+
 
 class MixedProvider(PriceSeriesProvider):
     source = "fixture"
@@ -406,6 +459,13 @@ class MixedProvider(PriceSeriesProvider):
             raise RuntimeError("target failed")
         self.last_payload = {"symbol": symbol, "market": market}
         return [price_bar(date=date.today(), close=Decimal("100"), symbol=symbol)]
+
+    def get_intraday_bars(
+        self,
+        symbol: str,
+        market: str,
+    ) -> list[PriceBarResult]:
+        return []
 
 
 def price_bar(

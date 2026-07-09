@@ -17,6 +17,7 @@ from app.adapters.market.base import (
 
 _AS_OF = datetime(2026, 6, 19, 0, 0, tzinfo=timezone.utc)
 _PRICE_SERIES_END_DATE = date(2026, 6, 25)
+_INTRADAY_BAR_COUNT = 26
 _RANGE_COUNTS = {
     "1M": 22,
     "3M": 66,
@@ -144,6 +145,55 @@ class MockPriceSeriesProvider(PriceSeriesProvider):
                     close_price=close_price,
                     adjusted_close_price=adjusted_close_price,
                     volume=volume,
+                    currency=_currency_for_market(normalized_market),
+                    source="mock",
+                )
+            )
+            previous_close = close_price
+        return bars
+
+    def get_intraday_bars(
+        self,
+        symbol: str,
+        market: str,
+    ) -> list[PriceBarResult]:
+        normalized_symbol = symbol.upper()
+        normalized_market = market.upper()
+        seed = _stable_seed(f"{normalized_symbol}:{normalized_market}:intraday")
+        previous_close = Decimal(seed % 50000 + 5000)
+        session_start = datetime.combine(
+            _PRICE_SERIES_END_DATE,
+            time(13, 30),
+            tzinfo=timezone.utc,
+        )
+
+        bars: list[PriceBarResult] = []
+        for index in range(_INTRADAY_BAR_COUNT):
+            drift = Decimal(((seed + index * 17) % 300) - 150) / Decimal("100")
+            open_price = _money(previous_close + drift)
+            close_move = Decimal(((seed // 7 + index * 13) % 240) - 120) / Decimal(
+                "100"
+            )
+            close_price = _money(max(open_price + close_move, Decimal("1.00")))
+            spread = Decimal(((seed // 13 + index * 5) % 100) + 10) / Decimal(
+                "100"
+            )
+            high_price = _money(max(open_price, close_price) + spread)
+            low_price = _money(
+                max(min(open_price, close_price) - spread, Decimal("0.01"))
+            )
+            bars.append(
+                PriceBarResult(
+                    symbol=normalized_symbol,
+                    market=normalized_market,
+                    interval="15m",
+                    timestamp=session_start + timedelta(minutes=15 * index),
+                    open_price=open_price,
+                    high_price=high_price,
+                    low_price=low_price,
+                    close_price=close_price,
+                    adjusted_close_price=close_price,
+                    volume=int((seed % 100_000) + 10_000 + index * 97),
                     currency=_currency_for_market(normalized_market),
                     source="mock",
                 )

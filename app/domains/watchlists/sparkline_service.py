@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.assets.repository import AssetRepository
-from app.domains.prices.service import PriceSeriesService
+from app.domains.prices.service import PriceSeriesService, _RANGE_INTERVALS
 from app.domains.watchlists.repository import WatchlistItemRepository
 from app.domains.watchlists.schema import (
     AssetSparklineResponse,
@@ -30,6 +30,7 @@ class WatchlistSparklineService:
         items = self.item_repo.list_by_watchlist(watchlist.id)
         asset_ids = [item.asset_id for item in items]
         assets = {asset.id: asset for asset in self.asset_repo.list_by_ids(asset_ids)}
+        interval = _RANGE_INTERVALS[range_value]
 
         response_items: list[AssetSparklineResponse] = []
         for item in items:
@@ -41,7 +42,7 @@ class WatchlistSparklineService:
                     symbol=asset.symbol,
                     market=asset.market,
                     range_value=range_value,
-                    interval="1d",
+                    interval=interval,
                 )
             except AppException as exc:
                 if (

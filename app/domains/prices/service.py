@@ -12,12 +12,19 @@ from app.domains.prices.repository import PriceBarRepository
 from app.domains.prices.schema import PriceBar, PriceSeriesResponse
 
 _RANGE_COUNTS = {
+    "1D": 26,
     "1M": 22,
     "3M": 66,
     "6M": 132,
     "1Y": 252,
 }
-_SUPPORTED_INTERVAL = "1d"
+_RANGE_INTERVALS = {
+    "1D": "15m",
+    "1M": "1d",
+    "3M": "1d",
+    "6M": "1d",
+    "1Y": "1d",
+}
 
 
 class PriceSeriesService:
@@ -29,22 +36,31 @@ class PriceSeriesService:
         symbol: str,
         market: str,
         range_value: str = "3M",
-        interval: str = _SUPPORTED_INTERVAL,
+        interval: str | None = None,
         adjusted: bool = True,
     ) -> PriceSeriesResponse:
         normalized_symbol = symbol.upper()
         normalized_market = market.upper()
         self._validate_range(range_value)
-        self._validate_interval(interval)
+        derived_interval = _RANGE_INTERVALS[range_value]
+        self._validate_interval(interval, derived_interval)
+        selected_interval = interval or derived_interval
         count = _RANGE_COUNTS[range_value]
 
         try:
-            generated_bars = get_price_series_provider().get_daily_bars(
-                normalized_symbol,
-                normalized_market,
-                range_value,
-                adjusted,
-            )
+            provider = get_price_series_provider()
+            if selected_interval == "15m":
+                generated_bars = provider.get_intraday_bars(
+                    normalized_symbol,
+                    normalized_market,
+                )
+            else:
+                generated_bars = provider.get_daily_bars(
+                    normalized_symbol,
+                    normalized_market,
+                    range_value,
+                    adjusted,
+                )
         except Exception as exc:
             raise AppException(
                 status_code=502,
@@ -71,7 +87,7 @@ class PriceSeriesService:
         bars = self.repo.list_recent(
             symbol=normalized_symbol,
             market=normalized_market,
-            interval=interval,
+            interval=selected_interval,
             limit=count,
         )
         if not bars:
@@ -84,7 +100,7 @@ class PriceSeriesService:
             symbol=normalized_symbol,
             market=normalized_market,
             range_value=range_value,
-            interval=interval,
+            interval=selected_interval,
             bars=bars,
         )
 
@@ -96,8 +112,12 @@ class PriceSeriesService:
                 error_code=ErrorCode.INVALID_PRICE_RANGE,
             )
 
-    def _validate_interval(self, interval: str) -> None:
-        if interval != _SUPPORTED_INTERVAL:
+    def _validate_interval(
+        self,
+        interval: str | None,
+        derived_interval: str,
+    ) -> None:
+        if interval is not None and interval != derived_interval:
             raise AppException(
                 status_code=400,
                 detail="지원하지 않는 가격 간격입니다.",
@@ -121,12 +141,16 @@ class PriceSeriesService:
             range=range_value,
             source=bars[-1].source,
             last_updated_at=_as_utc(latest),
-            bars=[self._to_bar(bar) for bar in bars],
+            bars=[self._to_bar(bar, interval) for bar in bars],
         )
 
-    def _to_bar(self, bar: StockPriceBar) -> PriceBar:
+    def _to_bar(self, bar: StockPriceBar, interval: str) -> PriceBar:
         return PriceBar(
-            date=bar.timestamp.date().isoformat(),
+            date=(
+                bar.timestamp.date().isoformat()
+                if interval == "1d"
+                else bar.timestamp.isoformat()
+            ),
             open=_decimal_to_wire(bar.open_price),
             high=_decimal_to_wire(bar.high_price),
             low=_decimal_to_wire(bar.low_price),
