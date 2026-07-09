@@ -80,6 +80,42 @@ def test_get_watchlist_sparklines_accepts_explicit_3m_range(
     assert len(data["items"][0]["bars"]) == 66
 
 
+def test_get_watchlist_sparklines_accepts_1d_intraday_range(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+    asset = create_asset(client, "AAPL")
+    add_item(client, watchlist["id"], asset["id"])
+
+    # range contract: app/api/v1/endpoints/watchlists.py Literal.
+    response = client.get(
+        f"/api/v1/watchlists/{watchlist['id']}/sparklines",
+        params={"range": "1D"},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    bars = data["items"][0]["bars"]
+    assert len(bars) == 26
+    assert "T" in bars[0]["date"]
+
+
+def test_get_watchlist_sparklines_rejects_unsupported_range(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    watchlist = create_watchlist(client)
+
+    # range contract: app/api/v1/endpoints/watchlists.py Literal.
+    response = client.get(
+        f"/api/v1/watchlists/{watchlist['id']}/sparklines",
+        params={"range": "2D"},
+    )
+
+    assert response.status_code == 422
+
+
 def test_get_watchlist_sparklines_returns_empty_items_for_empty_watchlist(
     client: TestClient,
 ) -> None:
@@ -171,6 +207,57 @@ def test_watchlist_sparkline_service_extracts_daily_close_bars(db: Session) -> N
             }
         ]
     }
+
+
+def test_watchlist_sparkline_service_derives_intraday_interval(db: Session) -> None:
+    asset = AssetRepository(db).create(
+        symbol="AAPL",
+        name="Apple Inc.",
+        market="NASDAQ",
+        sector="Technology",
+        industry=None,
+        description=None,
+    )
+    watchlist = WatchlistRepository(db).create(user_id=1, name="Core")
+    WatchlistItemRepository(db).create(
+        watchlist_id=watchlist.id,
+        asset_id=asset.id,
+        priority=0,
+        reason=None,
+        tags=[],
+        memo=None,
+    )
+
+    class FakePriceSeriesService:
+        def get_series(
+            self,
+            symbol: str,
+            market: str,
+            range_value: str = "3M",
+            interval: str | None = None,
+            adjusted: bool = True,
+        ) -> PriceSeriesResponse:
+            # range contract: app/api/v1/endpoints/watchlists.py Literal.
+            assert range_value == "1D"
+            # interval contract: app/domains/prices/service.py _RANGE_INTERVALS.
+            assert interval == "15m"
+            return PriceSeriesResponse(
+                symbol=symbol,
+                market=market,
+                currency="USD",
+                interval=interval,
+                range=range_value,
+                source="test",
+                last_updated_at=datetime(2026, 6, 25, tzinfo=timezone.utc),
+                bars=[],
+            )
+
+    service = WatchlistSparklineService(db)
+    cast(Any, service).price_series_service = FakePriceSeriesService()
+
+    result = service.get_sparklines(watchlist.id, user_id=1, range_value="1D")
+
+    assert result.items[0].bars == []
 
 
 def test_watchlist_sparkline_service_skips_price_series_not_found_404(

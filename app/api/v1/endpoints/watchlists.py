@@ -189,7 +189,7 @@ def get_watchlist_summary_trends(
 def get_watchlist_sparklines(
     watchlist_id: int,
     sparkline_range: Annotated[
-        Literal["1M", "3M", "6M", "1Y"],
+        Literal["1M", "3M", "6M", "1Y", "1D"],
         Query(alias="range"),
     ] = "1M",
     db: Session = Depends(get_db),

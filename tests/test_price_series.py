@@ -3,17 +3,22 @@ from decimal import Decimal
 import re
 from typing import Any, cast
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.adapters.market.base import PriceBarResult
 from app.adapters.market.mock import MockPriceSeriesProvider
+from app.core.error_codes import ErrorCode
+from app.core.exceptions import AppException
 from app.domains.prices.model import StockPriceBar
 from app.domains.prices.repository import PriceBarRepository
+from app.domains.prices.service import PriceSeriesService
 from tests.conftest import api_data, api_error
 
 DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+DATETIME_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 
 
 def test_get_price_series_returns_contract_shape(client: TestClient) -> None:
@@ -219,3 +224,73 @@ def test_price_bar_repository_upsert_is_idempotent(db: Session) -> None:
 
     count = db.scalar(select(func.count()).select_from(StockPriceBar))
     assert count == 1
+
+
+def test_price_series_service_uses_intraday_provider_for_1d(
+    db: Session,
+    monkeypatch: Any,
+) -> None:
+    provider = MockPriceSeriesProvider()
+    calls: list[tuple[str, str]] = []
+    original = provider.get_intraday_bars
+
+    def get_intraday_bars(symbol: str, market: str) -> list[PriceBarResult]:
+        calls.append((symbol, market))
+        return original(symbol, market)
+
+    monkeypatch.setattr(provider, "get_intraday_bars", get_intraday_bars)
+    monkeypatch.setattr(
+        "app.domains.prices.service.get_price_series_provider",
+        lambda: provider,
+    )
+
+    # range contract: app/api/v1/endpoints/watchlists.py Literal.
+    result = PriceSeriesService(db).get_series("aapl", "nasdaq", range_value="1D")
+
+    assert calls == [("AAPL", "NASDAQ")]
+    # interval contract: app/domains/prices/service.py _RANGE_INTERVALS.
+    assert result.interval == "15m"
+    assert len(result.bars) <= 26
+    assert all(DATETIME_PATTERN.match(bar.date) for bar in result.bars)
+
+
+def test_price_series_service_validates_range_and_derived_interval(
+    db: Session,
+) -> None:
+    service = PriceSeriesService(db)
+
+    # range contract: app/api/v1/endpoints/watchlists.py Literal.
+    service._validate_range("1D")
+    with pytest.raises(AppException) as range_error:
+        service._validate_range("2D")
+    assert range_error.value.status_code == 400
+    assert range_error.value.error_code == ErrorCode.INVALID_PRICE_RANGE
+
+    # interval contract: app/domains/prices/service.py _RANGE_INTERVALS.
+    with pytest.raises(AppException) as interval_error:
+        service._validate_interval("1d", "15m")
+    assert interval_error.value.status_code == 400
+    assert interval_error.value.error_code == ErrorCode.INVALID_PRICE_INTERVAL
+
+
+def test_price_series_service_formats_bar_date_by_interval(db: Session) -> None:
+    timestamp = datetime(2026, 6, 25, 13, 30, tzinfo=timezone.utc)
+    bar = StockPriceBar(
+        symbol="AAPL",
+        market="NASDAQ",
+        interval="15m",
+        timestamp=timestamp,
+        open_price=Decimal("100"),
+        high_price=Decimal("101"),
+        low_price=Decimal("99"),
+        close_price=Decimal("100.5"),
+        adjusted_close_price=Decimal("100.5"),
+        volume=100,
+        currency="USD",
+        source="test",
+    )
+    service = PriceSeriesService(db)
+
+    # interval contract: app/domains/prices/service.py _RANGE_INTERVALS.
+    assert service._to_bar(bar, "15m").date == timestamp.isoformat()
+    assert service._to_bar(bar, "1d").date == "2026-06-25"

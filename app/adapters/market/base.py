@@ -57,6 +57,14 @@ class PriceSeriesProvider(ABC):
     ) -> list[PriceBarResult]:
         """Return deterministic daily OHLCV bars for the given symbol and market."""
 
+    @abstractmethod
+    def get_intraday_bars(
+        self,
+        symbol: str,
+        market: str,
+    ) -> list[PriceBarResult]:
+        """Return 15-minute OHLCV bars for the current trading day."""
+
 
 @dataclass(frozen=True)
 class IndexQuoteResult:

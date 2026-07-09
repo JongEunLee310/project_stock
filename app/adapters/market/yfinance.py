@@ -85,6 +85,46 @@ class YFinancePriceProvider(PriceSeriesProvider):
             symbol=normalized_symbol,
             market=normalized_market,
             currency=currency,
+            interval="1d",
+        )
+
+    def get_intraday_bars(
+        self,
+        symbol: str,
+        market: str,
+    ) -> list[PriceBarResult]:
+        normalized_symbol = symbol.upper()
+        normalized_market = market.upper()
+        ticker_symbol = to_yfinance_ticker(normalized_symbol, normalized_market)
+        if ticker_symbol is None:
+            logger.warning(
+                "Skipping unsupported market for yfinance price collection",
+                extra={"symbol": normalized_symbol, "market": normalized_market},
+            )
+            self.last_payload = {
+                "symbol": normalized_symbol,
+                "market": normalized_market,
+                "source": self.source,
+                "skipped": "unsupported_market",
+            }
+            return []
+
+        ticker = yf.Ticker(ticker_symbol)
+        frame = ticker.history(period="1d", interval="15m", auto_adjust=True)
+        currency = _currency_from_ticker(ticker, normalized_market)
+        self.last_payload = _payload_from_frame(
+            frame=frame,
+            symbol=normalized_symbol,
+            market=normalized_market,
+            ticker=ticker_symbol,
+            currency=currency,
+        )
+        return _bars_from_frame(
+            frame=frame,
+            symbol=normalized_symbol,
+            market=normalized_market,
+            currency=currency,
+            interval="15m",
         )
 
 
@@ -205,6 +245,7 @@ def _bars_from_frame(
     symbol: str,
     market: str,
     currency: str,
+    interval: str,
 ) -> list[PriceBarResult]:
     bars: list[PriceBarResult] = []
     if frame.empty:
@@ -215,7 +256,7 @@ def _bars_from_frame(
             PriceBarResult(
                 symbol=symbol,
                 market=market,
-                interval="1d",
+                interval=interval,
                 timestamp=_timestamp_from_index(index),
                 open_price=_to_decimal(row.get("Open")),
                 high_price=_to_decimal(row.get("High")),
