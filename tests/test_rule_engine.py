@@ -188,6 +188,9 @@ def test_high_impact_news_rule_creates_risk_alert(
     assert result.signal_type == SignalType.RISK_ALERT
     assert result.risk_level == impact_level
     assert result.score == expected_score
+    assert result.reason == (
+        f"영향도 {impact_level} 뉴스: Management lowered guidance."
+    )
     assert result.evidence == {
         "news_item_id": 1,
         "impact_level": impact_level,
@@ -286,5 +289,5 @@ def test_rule_engine_run_ignores_expired_duplicate(db: Session) -> None:
 
     assert len(created) == 1
     assert created[0].id > 0
-    assert created[0].reason == "High-impact news requires review: Management lowered guidance."
+    assert created[0].reason == "영향도 HIGH 뉴스: Management lowered guidance."
     assert created[0].key_points is not None
