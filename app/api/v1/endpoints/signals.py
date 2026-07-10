@@ -39,6 +39,7 @@ def create_signal(
     summary="List signals",
     description=(
         "Return paginated signals for an asset, with optional expired-signal inclusion. "
+        "Pass view=current to return one active dominant signal per asset; include_expired is ignored for current. "
         "Pass expand=asset to include asset quote information in each item."
     ),
 )
@@ -50,6 +51,7 @@ def list_signals(
         default=None,
         description="Comma-separated expand fields. Supported: asset",
     ),
+    view: str = Query(default="all"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Any:
@@ -62,8 +64,9 @@ def list_signals(
             include_expired,
             offset=pagination.offset,
             limit=pagination.limit,
+            view=view,
         )
-        total = service.count_signals(asset_id, include_expired)
+        total = service.count_signals(asset_id, include_expired, view=view)
         return paginated(
             expanded_items,
             page=pagination.page,
@@ -77,9 +80,10 @@ def list_signals(
             include_expired,
             offset=pagination.offset,
             limit=pagination.limit,
+            view=view,
         )
     ]
-    total = service.count_signals(asset_id, include_expired)
+    total = service.count_signals(asset_id, include_expired, view=view)
     return paginated(
         plain_items,
         page=pagination.page,
