@@ -163,6 +163,8 @@ API 노출 계약:
 
 - `GET /api/v1/signals?view=current`: 각 항목에 `change`를 포함한다. 스냅샷이 아직 없으면
   `change=null`이다. `view=all` 응답에는 이 필드를 추가하지 않는다.
+- 모든 시그널 응답은 구조화 근거 불릿 `key_points: list[str]`를 포함하며, 저장값이
+  `null`이면 빈 배열로 내려간다.
 - `GET /api/v1/signals/changes`: 일별 스냅샷의 인접 diff 중 `UNCHANGED`가 아닌 항목을
   `snapshot_date`·`captured_at` 역순으로 반환한다. `limit`은 기본 20이고, `since`를 주면 해당
   일자 이후의 스냅샷 변화만 반환한다.

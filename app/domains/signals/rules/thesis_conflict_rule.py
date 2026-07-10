@@ -20,6 +20,7 @@ class ThesisConflictRule(Rule):
         else:
             return None
 
+        invalidation_text = "발동" if conflict_result.invalidation_triggered else "미발동"
         return SignalCreate(
             asset_id=context.asset_id,
             thesis_id=context.thesis.id if context.thesis is not None else None,
@@ -28,6 +29,10 @@ class ThesisConflictRule(Rule):
             score=score,
             risk_level=risk_level,
             reason=conflict_result.reason,
+            key_points=[
+                f"충돌 상태는 {conflict_result.status}이고 무효화 조건은 {invalidation_text}입니다.",
+                f"충돌 사유: {conflict_result.reason}",
+            ],
             evidence={
                 "status": conflict_result.status,
                 "invalidation_triggered": conflict_result.invalidation_triggered,

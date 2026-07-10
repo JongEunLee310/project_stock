@@ -641,6 +641,10 @@ def test_check_concentration_creates_risk_alert_signal(client: TestClient) -> No
     assert Decimal(signal["evidence"]["threshold"]) == Decimal("0.6000")
     assert Decimal(signal["evidence"]["cost_value"]) == Decimal("300.000000000000")
     assert Decimal(signal["evidence"]["market_value"]) == Decimal("586.920000000000")
+    assert len(signal["key_points"]) == 2
+    assert str(expected_weight) in signal["key_points"][0]
+    assert "0.6000" in signal["key_points"][0]
+    assert "586.92" in signal["key_points"][1]
 
 
 def test_check_concentration_does_not_duplicate_active_signal(

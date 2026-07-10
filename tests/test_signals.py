@@ -143,8 +143,58 @@ def test_create_signal_success_returns_evidence_as_dict(client: TestClient) -> N
         "summary": "Management lowered next-quarter guidance.",
         "factors": ["Revenue guide down", "Margin pressure"],
     }
+    assert data["key_points"] == []
     assert data["is_expired"] is False
     assert "created_at" in data
+
+
+def test_create_signal_accepts_key_points(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+    payload = signal_payload(asset["id"])
+    payload["key_points"] = [
+        "영향도 HIGH 뉴스입니다.",
+        "대상 뉴스 요지는 가이던스 하향입니다.",
+    ]
+
+    response = client.post("/api/v1/signals", json=payload)
+
+    assert response.status_code == 201
+    data = cast(dict[str, Any], api_data(response))
+    assert data["key_points"] == payload["key_points"]
+
+
+def test_null_key_points_stored_row_returns_empty_list(
+    client: TestClient,
+    db: Session,
+) -> None:
+    set_current_user(1)
+    asset = create_db_asset(db)
+    signal = Signal(
+        asset_id=asset.id,
+        signal_type=SignalType.RISK_ALERT.value,
+        score=82,
+        risk_level="HIGH",
+        reason="Existing row without key points.",
+        evidence=None,
+        key_points=None,
+    )
+    db.add(signal)
+    db.commit()
+    db.refresh(signal)
+
+    detail_response = client.get(f"/api/v1/signals/{signal.id}")
+    all_response = client.get("/api/v1/signals", params={"view": "all"})
+    current_response = client.get("/api/v1/signals", params={"view": "current"})
+
+    assert detail_response.status_code == 200
+    assert api_data(detail_response)["key_points"] == []
+    assert all_response.status_code == 200
+    all_data = cast(list[dict[str, Any]], api_data(all_response))
+    assert all_data[0]["key_points"] == []
+    assert current_response.status_code == 200
+    current_data = cast(list[dict[str, Any]], api_data(current_response))
+    assert current_data[0]["key_points"] == []
 
 
 def test_list_signals_excludes_expired_by_default(client: TestClient) -> None:
