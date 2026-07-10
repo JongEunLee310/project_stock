@@ -300,7 +300,11 @@ def build_change(
     previous_captured_at = previous.captured_at if previous is not None else None
 
     if previous is None:
-        direction = SignalChangeDirection.NEW
+        direction = (
+            SignalChangeDirection.UNCHANGED
+            if latest.signal_type is None
+            else SignalChangeDirection.NEW
+        )
     elif previous.signal_type is None and latest.signal_type is not None:
         direction = SignalChangeDirection.NEW
     elif previous.signal_type is not None and latest.signal_type is None:

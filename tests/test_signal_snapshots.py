@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.domains.assets.model import Asset
 from app.domains.signals.model import Signal
+from app.domains.signals.repository import SignalSnapshotRepository
 from app.domains.signals.service import SignalService, build_change
 from app.domains.signals.snapshot_model import AssetSignalSnapshot
 from app.domains.signals.types import SignalType
@@ -186,6 +187,7 @@ def _snapshot(signal_type: str | None, score: int | None) -> AssetSignalSnapshot
 @pytest.mark.parametrize(
     ("latest", "previous", "direction", "score_delta"),
     [
+        (_snapshot(None, None), None, "UNCHANGED", None),
         (_snapshot(SignalType.WATCH.value, 40), None, "NEW", None),
         (_snapshot(SignalType.WATCH.value, 40), _snapshot(None, None), "NEW", None),
         (_snapshot(None, None), _snapshot(SignalType.WATCH.value, 40), "CLEARED", None),
@@ -291,15 +293,17 @@ def test_signal_changes_endpoint_filters_orders_limits_and_since(
     with TestingSessionLocal() as db:
         first = _add_asset(db, "AAPL")
         second = _add_asset(db, "MSFT")
+        empty = _add_asset(db, "EMPTY")
         _add_snapshot(db, first.id, date(2026, 7, 1), SignalType.WATCH.value, 40)
         _add_snapshot(db, first.id, date(2026, 7, 3), SignalType.RISK_ALERT.value, 80)
         _add_snapshot(db, first.id, date(2026, 7, 4), SignalType.RISK_ALERT.value, 85)
         _add_snapshot(db, second.id, date(2026, 7, 2), SignalType.BUY_CANDIDATE.value, 60)
         _add_snapshot(db, second.id, date(2026, 7, 5), None, None)
+        _add_snapshot(db, empty.id, date(2026, 7, 6), None, None)
 
     response = client.get(
         "/api/v1/signals/changes",
-        params={"since": "2026-07-03", "limit": 2},
+        params={"since": "2026-07-03", "limit": 10},
     )
 
     assert response.status_code == 200
@@ -308,6 +312,71 @@ def test_signal_changes_endpoint_filters_orders_limits_and_since(
     assert [item["change"]["direction"] for item in data] == ["CLEARED", "ESCALATED"]
     assert [item["asset"]["symbol"] for item in data] == ["MSFT", "AAPL"]
     assert data[0]["dominant"] is None
+
+
+def test_upsert_daily_integrity_recovery_preserves_prior_flush(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prior_asset = _add_asset(db, "PRIOR")
+    conflict_asset = _add_asset(db, "DUPE")
+    snapshot_date = date(2026, 7, 10)
+    _add_snapshot(
+        db,
+        conflict_asset.id,
+        snapshot_date,
+        SignalType.WATCH.value,
+        30,
+        captured_at=datetime(2026, 7, 10, 8, tzinfo=timezone.utc),
+    )
+    repo = SignalSnapshotRepository(db)
+    repo.upsert_daily(
+        asset_id=prior_asset.id,
+        snapshot_date=snapshot_date,
+        signal_id=None,
+        signal_type=SignalType.BUY_CANDIDATE.value,
+        score=70,
+        captured_at=datetime(2026, 7, 10, 9, tzinfo=timezone.utc),
+    )
+
+    original_get = repo.get_by_asset_date
+    stale_read_count = 0
+
+    def stale_once(
+        asset_id: int,
+        requested_date: date,
+    ) -> AssetSignalSnapshot | None:
+        nonlocal stale_read_count
+        if (
+            asset_id == conflict_asset.id
+            and requested_date == snapshot_date
+            and stale_read_count == 0
+        ):
+            stale_read_count += 1
+            return None
+        return original_get(asset_id, requested_date)
+
+    monkeypatch.setattr(repo, "get_by_asset_date", stale_once)
+
+    repo.upsert_daily(
+        asset_id=conflict_asset.id,
+        snapshot_date=snapshot_date,
+        signal_id=None,
+        signal_type=SignalType.RISK_ALERT.value,
+        score=95,
+        captured_at=datetime(2026, 7, 10, 10, tzinfo=timezone.utc),
+    )
+    db.commit()
+
+    prior_snapshot = original_get(prior_asset.id, snapshot_date)
+    conflict_snapshot = original_get(conflict_asset.id, snapshot_date)
+    assert stale_read_count == 1
+    assert prior_snapshot is not None
+    assert prior_snapshot.signal_type == SignalType.BUY_CANDIDATE.value
+    assert prior_snapshot.score == 70
+    assert conflict_snapshot is not None
+    assert conflict_snapshot.signal_type == SignalType.RISK_ALERT.value
+    assert conflict_snapshot.score == 95
 
 
 def test_signal_summary_endpoint_counts_categories_and_snapshot_delta(

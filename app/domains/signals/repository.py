@@ -232,19 +232,19 @@ class SignalSnapshotRepository:
     ) -> AssetSignalSnapshot:
         snapshot = self.get_by_asset_date(asset_id, snapshot_date)
         if snapshot is None:
-            snapshot = AssetSignalSnapshot(
-                asset_id=asset_id,
-                snapshot_date=snapshot_date,
-                signal_id=signal_id,
-                signal_type=signal_type,
-                score=score,
-                captured_at=captured_at,
-            )
-            self.db.add(snapshot)
             try:
-                self.db.flush()
+                with self.db.begin_nested():
+                    snapshot = AssetSignalSnapshot(
+                        asset_id=asset_id,
+                        snapshot_date=snapshot_date,
+                        signal_id=signal_id,
+                        signal_type=signal_type,
+                        score=score,
+                        captured_at=captured_at,
+                    )
+                    self.db.add(snapshot)
+                    self.db.flush()
             except IntegrityError:
-                self.db.rollback()
                 snapshot = self.get_by_asset_date(asset_id, snapshot_date)
                 if snapshot is None:
                     raise
