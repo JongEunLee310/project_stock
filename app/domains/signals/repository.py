@@ -1,12 +1,13 @@
 import json
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.domains.signals.model import Signal
 from app.domains.signals.schema import SignalCreate
 from app.domains.signals.time import utc_now
+from app.domains.signals.types import WATCHLIST_STATUS_PRIORITY
 
 
 class SignalRepository:
@@ -64,6 +65,49 @@ class SignalRepository:
             stmt = stmt.limit(limit)
         return list(self.db.scalars(stmt).all())
 
+    def list_current_by_asset(
+        self,
+        asset_id: int | None,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[Signal]:
+        rank_by_type = {
+            signal_type.value: rank
+            for rank, signal_type in enumerate(WATCHLIST_STATUS_PRIORITY)
+        }
+        rank_expression = case(
+            rank_by_type,
+            value=Signal.signal_type,
+            else_=len(rank_by_type),
+        )
+        ranked_stmt = select(
+            Signal.id.label("signal_id"),
+            func.row_number()
+            .over(
+                partition_by=Signal.asset_id,
+                order_by=(
+                    rank_expression.asc(),
+                    Signal.score.desc(),
+                    Signal.created_at.desc(),
+                    Signal.id.desc(),
+                ),
+            )
+            .label("asset_rank"),
+        ).where(self._active_clause())
+        if asset_id is not None:
+            ranked_stmt = ranked_stmt.where(Signal.asset_id == asset_id)
+        ranked = ranked_stmt.subquery()
+        stmt = (
+            select(Signal)
+            .join(ranked, Signal.id == ranked.c.signal_id)
+            .where(ranked.c.asset_rank == 1)
+            .order_by(Signal.score.desc(), Signal.created_at.desc(), Signal.asset_id.asc())
+            .offset(offset)
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return list(self.db.scalars(stmt).all())
+
     def count_by_asset(self, asset_id: int, include_expired: bool) -> int:
         stmt = select(func.count()).select_from(Signal).where(Signal.asset_id == asset_id)
         if not include_expired:
@@ -74,6 +118,14 @@ class SignalRepository:
         stmt = select(func.count()).select_from(Signal)
         if not include_expired:
             stmt = stmt.where(self._active_clause())
+        return int(self.db.scalar(stmt) or 0)
+
+    def count_current(self, asset_id: int | None) -> int:
+        stmt = select(func.count(func.distinct(Signal.asset_id))).select_from(Signal).where(
+            self._active_clause()
+        )
+        if asset_id is not None:
+            stmt = stmt.where(Signal.asset_id == asset_id)
         return int(self.db.scalar(stmt) or 0)
 
     def count_assets_with_active_signal(
