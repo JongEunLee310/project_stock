@@ -2,8 +2,9 @@
 
 ## Source Issue
 
-이슈 미발번 (실사용 피드백 라운드 — 시그널 카드 근거 텍스트 개선).
-설계: `docs/designs/signal-reason-korean-backfill.md` (반드시 먼저 읽는다).
+GitHub issue #264 — 시그널 reason 한국어 전환 및 기존 시그널 key_points
+backfill (실사용 피드백 라운드, 이슈는 핸드오프 후 발번).
+설계: `docs/designs/264-signal-reason-korean-backfill.md` (반드시 먼저 읽는다).
 
 ## Task Summary
 

@@ -3,7 +3,7 @@
 - Status: Approved (구두 승인 — 실사용 피드백 라운드)
 - Author: Claude Code (Fable 5)
 - Date: 2026-07-10
-- Related: #260(key_points), PR #261, FE #135(4단계 연결)
+- Related: #264(본 이슈), #260(key_points), PR #261, FE #135(4단계 연결)
 
 ## 배경
 
