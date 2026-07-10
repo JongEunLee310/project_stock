@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.adapters.market.base import QuoteResult
 from app.domains.assets.model import Asset
 from app.domains.news.model import NewsItem
+from app.domains.signals.model import Signal
 from app.domains.signals.repository import SignalRepository
 from app.domains.signals.schema import SignalCreate
 from app.domains.signals.time import is_expired_at
@@ -31,11 +32,12 @@ def signal_payload(
     asset_id: int,
     signal_type: str = SignalType.RISK_ALERT.value,
     expires_at: datetime | None = None,
+    score: int = 82,
 ) -> dict[str, Any]:
     return {
         "asset_id": asset_id,
         "signal_type": signal_type,
-        "score": 82,
+        "score": score,
         "risk_level": "HIGH",
         "reason": "Negative guidance conflicts with the current thesis.",
         "evidence": {
@@ -51,10 +53,11 @@ def create_signal(
     asset_id: int,
     signal_type: str = SignalType.RISK_ALERT.value,
     expires_at: datetime | None = None,
+    score: int = 82,
 ) -> dict[str, Any]:
     response = client.post(
         "/api/v1/signals",
-        json=signal_payload(asset_id, signal_type, expires_at),
+        json=signal_payload(asset_id, signal_type, expires_at, score),
     )
     assert response.status_code == 201
     return cast(dict[str, Any], api_data(response))
@@ -99,6 +102,30 @@ def create_db_news_item(db: Session, asset_id: int) -> NewsItem:
     db.commit()
     db.refresh(item)
     return item
+
+
+def create_db_signal(
+    db: Session,
+    asset_id: int,
+    signal_type: str,
+    score: int,
+    created_at: datetime,
+    expires_at: datetime | None = None,
+) -> Signal:
+    signal = Signal(
+        asset_id=asset_id,
+        signal_type=signal_type,
+        score=score,
+        risk_level="HIGH",
+        reason="Repository test signal.",
+        evidence=None,
+        expires_at=expires_at,
+        created_at=created_at,
+    )
+    db.add(signal)
+    db.commit()
+    db.refresh(signal)
+    return signal
 
 
 def test_create_signal_success_returns_evidence_as_dict(client: TestClient) -> None:
@@ -341,6 +368,123 @@ def test_list_signals_without_asset_id_respects_include_expired(
     assert api_meta(included_response) == {"page": 1, "size": 20, "total": 2}
 
 
+def test_list_signals_current_collapses_to_one_dominant_signal_per_asset(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    first_asset = create_asset(client, "AAPL")
+    second_asset = create_asset(client, "MSFT")
+    watch = create_signal(client, first_asset["id"], SignalType.WATCH.value, score=99)
+    risk = create_signal(client, first_asset["id"], SignalType.RISK_ALERT.value, score=60)
+    buy = create_signal(client, second_asset["id"], SignalType.BUY_CANDIDATE.value, score=88)
+
+    response = client.get("/api/v1/signals", params={"view": "current"})
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert {item["id"] for item in data} == {risk["id"], buy["id"]}
+    assert watch["id"] not in {item["id"] for item in data}
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 2}
+
+
+def test_list_signals_current_ignores_include_expired(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+    expired_at = datetime.now(timezone.utc) - timedelta(days=1)
+    active = create_signal(client, asset["id"], SignalType.WATCH.value, score=60)
+    expired = create_signal(
+        client,
+        asset["id"],
+        SignalType.RISK_ALERT.value,
+        expired_at,
+        score=99,
+    )
+
+    response = client.get(
+        "/api/v1/signals",
+        params={
+            "asset_id": asset["id"],
+            "view": "current",
+            "include_expired": "true",
+        },
+    )
+
+    assert response.status_code == 200
+    assert api_data(response) == [active]
+    assert expired["id"] != active["id"]
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
+
+
+def test_list_signals_current_with_asset_id_returns_asset_dominant(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    first_asset = create_asset(client, "AAPL")
+    second_asset = create_asset(client, "MSFT")
+    sell_review = create_signal(
+        client,
+        first_asset["id"],
+        SignalType.SELL_REVIEW.value,
+        score=70,
+    )
+    create_signal(client, first_asset["id"], SignalType.WATCH.value, score=95)
+    create_signal(client, second_asset["id"], SignalType.RISK_ALERT.value, score=99)
+
+    response = client.get(
+        "/api/v1/signals",
+        params={"asset_id": first_asset["id"], "view": "current"},
+    )
+
+    assert response.status_code == 200
+    assert api_data(response) == [sell_review]
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
+
+
+def test_list_signals_current_expand_asset_includes_asset_object(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_current_user(1)
+    asset = create_asset(client, "AAPL")
+    create_signal(client, asset["id"], SignalType.WATCH.value, score=99)
+    dominant = create_signal(client, asset["id"], SignalType.RISK_ALERT.value, score=60)
+
+    class RecordingMarketProvider:
+        def get_quote(self, symbols: list[str]) -> list[QuoteResult]:
+            return [
+                QuoteResult(
+                    symbol="AAPL",
+                    name="Apple Inc.",
+                    price=Decimal("195.64"),
+                    previous_close=Decimal("193.20"),
+                    change=Decimal("2.44"),
+                    change_percent=Decimal("1.26"),
+                    currency="USD",
+                    as_of=datetime(2026, 6, 19, tzinfo=timezone.utc),
+                )
+            ]
+
+    monkeypatch.setattr(
+        "app.domains.signals.service.get_market_provider",
+        lambda: RecordingMarketProvider(),
+    )
+
+    response = client.get(
+        "/api/v1/signals",
+        params={"asset_id": asset["id"], "view": "current", "expand": "asset"},
+    )
+
+    assert response.status_code == 200
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 1
+    assert data[0]["id"] == dominant["id"]
+    assert data[0]["asset"]["symbol"] == "AAPL"
+    assert data[0]["asset"]["price"] == "195.64"
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
+
+
 def test_is_expired_for_past_future_and_null_expires_at(client: TestClient) -> None:
     set_current_user(1)
     asset = create_asset(client)
@@ -391,6 +535,139 @@ def test_is_expired_at_treats_naive_datetime_as_utc() -> None:
 
     assert is_expired_at(datetime(2026, 6, 19, 11, 59), now) is True
     assert is_expired_at(datetime(2026, 6, 19, 12, 1), now) is False
+
+
+def test_signal_repository_current_uses_watchlist_priority(db: Session) -> None:
+    asset = create_db_asset(db)
+    created_at = datetime(2026, 7, 10, 9, 0, tzinfo=timezone.utc)
+    watch = create_db_signal(
+        db,
+        asset.id,
+        SignalType.WATCH.value,
+        score=99,
+        created_at=created_at,
+    )
+    risk = create_db_signal(
+        db,
+        asset.id,
+        SignalType.RISK_ALERT.value,
+        score=60,
+        created_at=created_at,
+    )
+
+    result = SignalRepository(db).list_current_by_asset(None)
+
+    assert result == [risk]
+    assert watch.id != risk.id
+
+
+def test_signal_repository_current_uses_score_tie_break(db: Session) -> None:
+    asset = create_db_asset(db)
+    created_at = datetime(2026, 7, 10, 9, 0, tzinfo=timezone.utc)
+    lower_score = create_db_signal(
+        db,
+        asset.id,
+        SignalType.WATCH.value,
+        score=70,
+        created_at=created_at,
+    )
+    higher_score = create_db_signal(
+        db,
+        asset.id,
+        SignalType.WATCH.value,
+        score=80,
+        created_at=created_at,
+    )
+
+    result = SignalRepository(db).list_current_by_asset(asset.id)
+
+    assert result == [higher_score]
+    assert lower_score.id != higher_score.id
+
+
+def test_signal_repository_current_uses_created_at_tie_break(db: Session) -> None:
+    asset = create_db_asset(db)
+    older = create_db_signal(
+        db,
+        asset.id,
+        SignalType.WATCH.value,
+        score=80,
+        created_at=datetime(2026, 7, 10, 9, 0, tzinfo=timezone.utc),
+    )
+    newer = create_db_signal(
+        db,
+        asset.id,
+        SignalType.WATCH.value,
+        score=80,
+        created_at=datetime(2026, 7, 10, 10, 0, tzinfo=timezone.utc),
+    )
+
+    result = SignalRepository(db).list_current_by_asset(asset.id)
+
+    assert result == [newer]
+    assert older.id != newer.id
+
+
+def test_signal_repository_current_uses_id_tie_break(db: Session) -> None:
+    asset = create_db_asset(db)
+    created_at = datetime(2026, 7, 10, 9, 0, tzinfo=timezone.utc)
+    earlier_id = create_db_signal(
+        db,
+        asset.id,
+        SignalType.WATCH.value,
+        score=80,
+        created_at=created_at,
+    )
+    later_id = create_db_signal(
+        db,
+        asset.id,
+        SignalType.WATCH.value,
+        score=80,
+        created_at=created_at,
+    )
+
+    result = SignalRepository(db).list_current_by_asset(asset.id)
+
+    assert result == [later_id]
+    assert earlier_id.id < later_id.id
+
+
+def test_signal_repository_count_current_counts_distinct_active_assets(
+    db: Session,
+) -> None:
+    first_asset = create_db_asset(db)
+    second_asset = Asset(symbol="MSFT", name="Microsoft Corp.", market="NASDAQ")
+    db.add(second_asset)
+    db.commit()
+    db.refresh(second_asset)
+    expired_at = datetime.now(timezone.utc) - timedelta(days=1)
+    create_db_signal(
+        db,
+        first_asset.id,
+        SignalType.WATCH.value,
+        score=70,
+        created_at=datetime(2026, 7, 10, 9, 0, tzinfo=timezone.utc),
+    )
+    create_db_signal(
+        db,
+        first_asset.id,
+        SignalType.RISK_ALERT.value,
+        score=90,
+        created_at=datetime(2026, 7, 10, 10, 0, tzinfo=timezone.utc),
+    )
+    create_db_signal(
+        db,
+        second_asset.id,
+        SignalType.BUY_CANDIDATE.value,
+        score=80,
+        created_at=datetime(2026, 7, 10, 11, 0, tzinfo=timezone.utc),
+        expires_at=expired_at,
+    )
+    repo = SignalRepository(db)
+
+    assert repo.count_current(None) == 1
+    assert repo.count_current(first_asset.id) == 1
+    assert repo.count_current(second_asset.id) == 0
 
 
 def test_signal_repository_exists_active_ignores_expired_rows(db: Session) -> None:

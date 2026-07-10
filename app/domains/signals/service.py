@@ -34,7 +34,14 @@ class SignalService:
         include_expired: bool = False,
         offset: int = 0,
         limit: int | None = None,
+        view: str = "all",
     ) -> list[Signal]:
+        if view == "current":
+            return self.repo.list_current_by_asset(
+                asset_id,
+                offset=offset,
+                limit=limit,
+            )
         if asset_id is None:
             return self.repo.list_all(
                 include_expired,
@@ -54,12 +61,14 @@ class SignalService:
         include_expired: bool = False,
         offset: int = 0,
         limit: int | None = None,
+        view: str = "all",
     ) -> list[SignalExpandedResponse]:
         signals = self.list_signals(
             asset_id,
             include_expired,
             offset=offset,
             limit=limit,
+            view=view,
         )
         asset_ids = [signal.asset_id for signal in signals]
         assets = {
@@ -95,7 +104,10 @@ class SignalService:
         self,
         asset_id: int | None,
         include_expired: bool = False,
+        view: str = "all",
     ) -> int:
+        if view == "current":
+            return self.repo.count_current(asset_id)
         if asset_id is None:
             return self.repo.count_all(include_expired)
         return self.repo.count_by_asset(asset_id, include_expired)
