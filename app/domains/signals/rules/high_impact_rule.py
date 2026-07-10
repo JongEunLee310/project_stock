@@ -22,7 +22,7 @@ class HighImpactNewsRule(Rule):
             signal_type=SignalType.RISK_ALERT,
             score=score,
             risk_level=impact_level,
-            reason=f"High-impact news requires review: {summary}",
+            reason=f"영향도 {impact_level} 뉴스: {summary}",
             key_points=key_points,
             evidence={
                 "news_item_id": context.news_item.id,
