@@ -27,6 +27,7 @@ class SignalRepository:
             risk_level=data.risk_level,
             reason=data.reason,
             evidence=self._dump_evidence(data.evidence),
+            key_points=self._dump_key_points(data.key_points),
             expires_at=data.expires_at,
         )
         self.db.add(signal)
@@ -211,6 +212,11 @@ class SignalRepository:
         return or_(Signal.expires_at.is_(None), Signal.expires_at > now)
 
     def _dump_evidence(self, value: dict[str, Any] | None) -> str | None:
+        if value is None:
+            return None
+        return json.dumps(value, ensure_ascii=False)
+
+    def _dump_key_points(self, value: list[str] | None) -> str | None:
         if value is None:
             return None
         return json.dumps(value, ensure_ascii=False)

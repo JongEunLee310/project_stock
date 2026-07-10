@@ -22,6 +22,7 @@ class Signal(Base):
     risk_level: Mapped[str | None] = mapped_column(String(20), nullable=True)
     reason: Mapped[str] = mapped_column(Text)
     evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    key_points: Mapped[str | None] = mapped_column(Text, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

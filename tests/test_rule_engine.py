@@ -122,6 +122,11 @@ def test_thesis_conflict_rule_creates_thesis_broken_for_invalidation() -> None:
         "invalidation_triggered": True,
         "news_item_id": 1,
     }
+    assert result.key_points is not None
+    assert len(result.key_points) == 2
+    assert "SUPPORTS" in result.key_points[0]
+    assert "발동" in result.key_points[0]
+    assert "Guidance cut conflicts with the thesis." in result.key_points[1]
 
 
 def test_thesis_conflict_rule_creates_risk_alert_for_conflict() -> None:
@@ -138,6 +143,11 @@ def test_thesis_conflict_rule_creates_risk_alert_for_conflict() -> None:
     assert result.signal_type == SignalType.RISK_ALERT
     assert result.risk_level == "HIGH"
     assert result.score == 70
+    assert result.key_points is not None
+    assert len(result.key_points) == 2
+    assert "CONFLICTS" in result.key_points[0]
+    assert "미발동" in result.key_points[0]
+    assert "Guidance cut conflicts with the thesis." in result.key_points[1]
 
 
 @pytest.mark.parametrize("status", ["SUPPORTS", "NEUTRAL"])
@@ -183,6 +193,27 @@ def test_high_impact_news_rule_creates_risk_alert(
         "impact_level": impact_level,
         "sentiment": "NEGATIVE",
     }
+    assert result.key_points is not None
+    assert len(result.key_points) == 3
+    assert impact_level in result.key_points[0]
+    assert "NEGATIVE" in result.key_points[1]
+    assert "Management lowered guidance." in result.key_points[2]
+
+
+def test_high_impact_news_rule_omits_sentiment_key_point_when_missing() -> None:
+    result = HighImpactNewsRule().evaluate(
+        RuleContext(
+            asset_id=1,
+            news_item=news_item(impact_level="HIGH", sentiment=None),
+        )
+    )
+
+    assert result is not None
+    assert result.key_points is not None
+    assert len(result.key_points) == 2
+    assert "HIGH" in result.key_points[0]
+    assert all("감성" not in key_point for key_point in result.key_points)
+    assert "Management lowered guidance." in result.key_points[1]
 
 
 @pytest.mark.parametrize("impact_level", ["LOW", None])
@@ -256,3 +287,4 @@ def test_rule_engine_run_ignores_expired_duplicate(db: Session) -> None:
     assert len(created) == 1
     assert created[0].id > 0
     assert created[0].reason == "High-impact news requires review: Management lowered guidance."
+    assert created[0].key_points is not None

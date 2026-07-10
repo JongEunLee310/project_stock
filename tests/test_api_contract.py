@@ -371,6 +371,7 @@ SIGNAL_CONTRACT: Contract = {
     "risk_level": (str, type(None)),
     "reason": str,
     "evidence": (dict, type(None)),
+    "key_points": list,
     "expires_at": (str, type(None)),
     "is_expired": bool,
     "created_at": str,

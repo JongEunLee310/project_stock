@@ -30,6 +30,7 @@ class SignalCreate(BaseModel):
     risk_level: str | None = Field(default=None, max_length=20)
     reason: str
     evidence: dict[str, Any] | None = None
+    key_points: list[str] | None = None
     expires_at: datetime | None = None
 
 
@@ -45,6 +46,7 @@ class SignalResponse(BaseModel):
     risk_level: str | None
     reason: str
     evidence: dict[str, Any] | None
+    key_points: list[str]
     expires_at: UtcDatetime | None
     is_expired: bool = False
     created_at: UtcDatetime
@@ -53,6 +55,17 @@ class SignalResponse(BaseModel):
     @classmethod
     def parse_evidence(cls, value: Any) -> Any:
         if value is None or isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            return json.loads(value)
+        return value
+
+    @field_validator("key_points", mode="before")
+    @classmethod
+    def parse_key_points(cls, value: Any) -> Any:
+        if value is None:
+            return []
+        if isinstance(value, list):
             return value
         if isinstance(value, str):
             return json.loads(value)

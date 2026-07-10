@@ -157,6 +157,13 @@ class PortfolioService:
                     score=self._score_from_weight(position.weight),
                     risk_level="HIGH",
                     reason="포트폴리오 단일 종목 비중이 임계치를 초과했습니다.",
+                    key_points=[
+                        (
+                            f"현재 비중 {position.weight}이 임계치 "
+                            f"{summary.concentration_threshold}를 초과했습니다."
+                        ),
+                        f"평가금액은 {position.market_value}입니다.",
+                    ],
                     evidence={
                         "portfolio_id": portfolio.id,
                         "weight": str(position.weight),
