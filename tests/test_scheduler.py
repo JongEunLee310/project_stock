@@ -19,6 +19,7 @@ from app.scheduler.runner import ManualSchedulerRunner
 from app.worker.jobs.analysis import analyze_all_watchlists_job
 from app.worker.jobs.news import collect_news_job
 from app.worker.jobs.prices import collect_prices_job
+from app.worker.jobs.signal_snapshots import snapshot_signal_states_job
 from tests.conftest import api_data
 
 
@@ -84,7 +85,7 @@ def test_manual_scheduler_runner_rejects_disabled_job() -> None:
     assert queue.enqueued == []
 
 
-def test_default_scheduler_registry_contains_only_collection_jobs() -> None:
+def test_default_scheduler_registry_contains_expected_jobs() -> None:
     schedules = default_scheduler_registry.list()
     schedules_by_name = {schedule.job.name: schedule for schedule in schedules}
 
@@ -95,11 +96,14 @@ def test_default_scheduler_registry_contains_only_collection_jobs() -> None:
         "analysis_kr_main",
         "analysis_us_session",
         "analysis_kr_post",
+        "signal_snapshot",
     }
     assert schedules_by_name["price_collection"].job.func is collect_prices_job
     assert schedules_by_name["price_collection"].cron == "10 22 * * 1-5"
     assert schedules_by_name["news_collection"].job.func is collect_news_job
     assert schedules_by_name["news_collection"].cron == "0 * * * *"
+    assert schedules_by_name["signal_snapshot"].job.func is snapshot_signal_states_job
+    assert schedules_by_name["signal_snapshot"].cron == "30 11 * * 1-5"
     # Source: docs/designs/243-analysis-triggers.md UTC conversion table.
     expected_analysis_crons = {
         "analysis_kr_open": "0 23 * * 0-4",
@@ -171,6 +175,7 @@ def test_cron_config_registers_enabled_scheduler_jobs(
     assert registered == [
         (collect_prices_job, "default", "10 22 * * 1-5"),
         (collect_news_job, "default", "0 * * * *"),
+        (snapshot_signal_states_job, "default", "30 11 * * 1-5"),
     ]
 
 

@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
@@ -9,7 +10,9 @@ from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.signals.schema import (
     SignalCreate,
+    SignalChangeTimelineItem,
     SignalExpandedResponse,
+    SignalSummary,
     SignalResponse,
 )
 from app.domains.signals.service import SignalService
@@ -57,7 +60,7 @@ def list_signals(
 ) -> Any:
     service = SignalService(db)
     expanded_items: list[SignalExpandedResponse]
-    plain_items: list[SignalResponse]
+    plain_items: list[Any]
     if expand is not None and "asset" in [e.strip() for e in expand.split(",")]:
         expanded_items = service.list_signals_expanded(
             asset_id,
@@ -69,6 +72,19 @@ def list_signals(
         total = service.count_signals(asset_id, include_expired, view=view)
         return paginated(
             expanded_items,
+            page=pagination.page,
+            size=pagination.size,
+            total=total,
+        )
+    if view == "current":
+        plain_items = service.list_current_signals(
+            asset_id,
+            offset=pagination.offset,
+            limit=pagination.limit,
+        )
+        total = service.count_signals(asset_id, include_expired, view=view)
+        return paginated(
+            plain_items,
             page=pagination.page,
             size=pagination.size,
             total=total,
@@ -90,6 +106,35 @@ def list_signals(
         size=pagination.size,
         total=total,
     )
+
+
+@router.get(
+    "/changes",
+    response_model=ApiResponse[list[SignalChangeTimelineItem]],
+    summary="List signal changes",
+    description="Return recent asset dominant-signal changes derived from daily snapshots.",
+)
+def list_signal_changes(
+    limit: int = Query(default=20, ge=1, le=100),
+    since: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[list[SignalChangeTimelineItem]]:
+    return success(SignalService(db).list_recent_changes(limit=limit, since=since))
+
+
+@router.get(
+    "/summary",
+    response_model=ApiResponse[SignalSummary],
+    summary="Get signal summary",
+    description="Return current dominant-signal category counts and snapshot deltas.",
+)
+def get_signal_summary(
+    view: str = Query(default="current"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[SignalSummary]:
+    return success(SignalService(db).summary(view=view))
 
 
 @router.get(

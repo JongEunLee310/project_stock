@@ -1,11 +1,14 @@
 import json
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import case, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domains.signals.model import Signal
 from app.domains.signals.schema import SignalCreate
+from app.domains.signals.snapshot_model import AssetSignalSnapshot
 from app.domains.signals.time import utc_now
 from app.domains.signals.types import WATCHLIST_STATUS_PRIORITY
 
@@ -211,3 +214,166 @@ class SignalRepository:
         if value is None:
             return None
         return json.dumps(value, ensure_ascii=False)
+
+
+class SignalSnapshotRepository:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def upsert_daily(
+        self,
+        *,
+        asset_id: int,
+        snapshot_date: date,
+        signal_id: int | None,
+        signal_type: str | None,
+        score: int | None,
+        captured_at: datetime,
+    ) -> AssetSignalSnapshot:
+        snapshot = self.get_by_asset_date(asset_id, snapshot_date)
+        if snapshot is None:
+            snapshot = AssetSignalSnapshot(
+                asset_id=asset_id,
+                snapshot_date=snapshot_date,
+                signal_id=signal_id,
+                signal_type=signal_type,
+                score=score,
+                captured_at=captured_at,
+            )
+            self.db.add(snapshot)
+            try:
+                self.db.flush()
+            except IntegrityError:
+                self.db.rollback()
+                snapshot = self.get_by_asset_date(asset_id, snapshot_date)
+                if snapshot is None:
+                    raise
+        snapshot.signal_id = signal_id
+        snapshot.signal_type = signal_type
+        snapshot.score = score
+        snapshot.captured_at = captured_at
+        self.db.flush()
+        return snapshot
+
+    def get_by_asset_date(
+        self,
+        asset_id: int,
+        snapshot_date: date,
+    ) -> AssetSignalSnapshot | None:
+        stmt = select(AssetSignalSnapshot).where(
+            AssetSignalSnapshot.asset_id == asset_id,
+            AssetSignalSnapshot.snapshot_date == snapshot_date,
+        )
+        return self.db.scalars(stmt).one_or_none()
+
+    def get_latest(self, asset_id: int) -> AssetSignalSnapshot | None:
+        stmt = (
+            select(AssetSignalSnapshot)
+            .where(AssetSignalSnapshot.asset_id == asset_id)
+            .order_by(
+                AssetSignalSnapshot.snapshot_date.desc(),
+                AssetSignalSnapshot.captured_at.desc(),
+                AssetSignalSnapshot.id.desc(),
+            )
+            .limit(1)
+        )
+        return self.db.scalars(stmt).first()
+
+    def get_previous(
+        self,
+        asset_id: int,
+        before_date: date,
+    ) -> AssetSignalSnapshot | None:
+        stmt = (
+            select(AssetSignalSnapshot)
+            .where(
+                AssetSignalSnapshot.asset_id == asset_id,
+                AssetSignalSnapshot.snapshot_date < before_date,
+            )
+            .order_by(
+                AssetSignalSnapshot.snapshot_date.desc(),
+                AssetSignalSnapshot.captured_at.desc(),
+                AssetSignalSnapshot.id.desc(),
+            )
+            .limit(1)
+        )
+        return self.db.scalars(stmt).first()
+
+    def latest_pair_by_asset(
+        self,
+        asset_ids: list[int],
+    ) -> dict[int, tuple[AssetSignalSnapshot | None, AssetSignalSnapshot | None]]:
+        if not asset_ids:
+            return {}
+        ranked = (
+            select(
+                AssetSignalSnapshot.id.label("snapshot_id"),
+                AssetSignalSnapshot.asset_id.label("asset_id"),
+                func.row_number()
+                .over(
+                    partition_by=AssetSignalSnapshot.asset_id,
+                    order_by=(
+                        AssetSignalSnapshot.snapshot_date.desc(),
+                        AssetSignalSnapshot.captured_at.desc(),
+                        AssetSignalSnapshot.id.desc(),
+                    ),
+                )
+                .label("snapshot_rank"),
+            )
+            .where(AssetSignalSnapshot.asset_id.in_(asset_ids))
+            .subquery()
+        )
+        stmt = (
+            select(AssetSignalSnapshot, ranked.c.snapshot_rank)
+            .join(ranked, AssetSignalSnapshot.id == ranked.c.snapshot_id)
+            .where(ranked.c.snapshot_rank <= 2)
+            .order_by(
+                AssetSignalSnapshot.asset_id.asc(),
+                ranked.c.snapshot_rank.asc(),
+            )
+        )
+        pairs: dict[
+            int,
+            tuple[AssetSignalSnapshot | None, AssetSignalSnapshot | None],
+        ] = {asset_id: (None, None) for asset_id in asset_ids}
+        for snapshot, snapshot_rank in self.db.execute(stmt):
+            latest, previous = pairs[snapshot.asset_id]
+            if snapshot_rank == 1:
+                latest = snapshot
+            else:
+                previous = snapshot
+            pairs[snapshot.asset_id] = (latest, previous)
+        return pairs
+
+    def list_all_ordered(self) -> list[AssetSignalSnapshot]:
+        stmt = select(AssetSignalSnapshot).order_by(
+            AssetSignalSnapshot.asset_id.asc(),
+            AssetSignalSnapshot.snapshot_date.asc(),
+            AssetSignalSnapshot.captured_at.asc(),
+            AssetSignalSnapshot.id.asc(),
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def latest_snapshot_date(self) -> date | None:
+        stmt = select(func.max(AssetSignalSnapshot.snapshot_date))
+        return self.db.scalar(stmt)
+
+    def previous_snapshot_date(self, latest_date: date) -> date | None:
+        stmt = select(func.max(AssetSignalSnapshot.snapshot_date)).where(
+            AssetSignalSnapshot.snapshot_date < latest_date
+        )
+        return self.db.scalar(stmt)
+
+    def count_by_category_for_date(self, snapshot_date: date) -> dict[str, int]:
+        from app.domains.signals.types import SignalCategory, signal_category_for_type
+
+        counts = {category.value: 0 for category in SignalCategory}
+        stmt = select(AssetSignalSnapshot.signal_type).where(
+            AssetSignalSnapshot.snapshot_date == snapshot_date,
+            AssetSignalSnapshot.signal_type.is_not(None),
+        )
+        for signal_type in self.db.scalars(stmt):
+            category = signal_category_for_type(signal_type)
+            if category is not None:
+                counts[category.value] += 1
+        return counts

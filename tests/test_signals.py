@@ -412,7 +412,10 @@ def test_list_signals_current_ignores_include_expired(
     )
 
     assert response.status_code == 200
-    assert api_data(response) == [active]
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 1
+    assert {key: data[0][key] for key in active} == active
+    assert data[0]["change"] is None
     assert expired["id"] != active["id"]
     assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
 
@@ -438,7 +441,10 @@ def test_list_signals_current_with_asset_id_returns_asset_dominant(
     )
 
     assert response.status_code == 200
-    assert api_data(response) == [sell_review]
+    data = cast(list[dict[str, Any]], api_data(response))
+    assert len(data) == 1
+    assert {key: data[0][key] for key in sell_review} == sell_review
+    assert data[0]["change"] is None
     assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
 
 
