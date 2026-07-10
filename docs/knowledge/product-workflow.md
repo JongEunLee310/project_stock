@@ -146,13 +146,38 @@ yfinance 단일 provider가 시장 suffix(`.KS`/`.KQ`)로 미국·한국을 모�
 LLM을 호출하지 않는다 — 산출물은 `prices`·`raw_prices` 적재까지이며, Feature 계산·Context
 조립·LLM 입력 패키징은 후속 범위다.
 
+## 시그널 스냅샷 잡
+
+`snapshot_signal_states_job`(RQ 잡)은 자산별 현재 dominant Signal을 하루 한 번
+`asset_signal_snapshots`에 기록한다. dominant 판정은 `GET /api/v1/signals?view=current`와
+같은 `SignalRepository.list_current_by_asset` 로직을 재사용하므로, `WATCHLIST_STATUS_PRIORITY`
+우선순위와 score 정렬 규칙이 한 곳에서 유지된다.
+
+스냅샷은 `(asset_id, snapshot_date)` unique 키로 멱등 upsert된다. 같은 날 잡을 다시 실행하면
+행을 추가하지 않고 해당 일자의 `signal_id`·`signal_type`·`score`·`captured_at`를 갱신한다.
+활성 dominant Signal이 없는 자산도 `signal_id=null`, `signal_type=null`, `score=null` 행으로
+남긴다. 이 null 스냅샷 덕분에 시그널 만료처럼 새 Signal write가 없는 변화도 다음 실행에서
+`CLEARED` 변화로 파생할 수 있다.
+
+API 노출 계약:
+
+- `GET /api/v1/signals?view=current`: 각 항목에 `change`를 포함한다. 스냅샷이 아직 없으면
+  `change=null`이다. `view=all` 응답에는 이 필드를 추가하지 않는다.
+- `GET /api/v1/signals/changes`: 일별 스냅샷의 인접 diff 중 `UNCHANGED`가 아닌 항목을
+  `snapshot_date`·`captured_at` 역순으로 반환한다. `limit`은 기본 20이고, `since`를 주면 해당
+  일자 이후의 스냅샷 변화만 반환한다.
+- `GET /api/v1/signals/summary?view=current`: 현재 dominant Signal을 `WATCH`·`RISK`·`BUY`·
+  `RESEARCH` 4개 카테고리로 집계하고, 최신 스냅샷 일자와 직전 스냅샷 일자의 카테고리 count
+  차이를 `delta_by_category`로 반환한다. 비교할 스냅샷 쌍이 없으면 delta는 모두 0이다.
+
 ## 스케줄러
 
 스케줄러는 RQ 내장 cron으로 수집·분석 잡을 큐에 적재한다. 레지스트리에는
 `price_collection`(`10 22 * * 1-5`)과 `news_collection`(`0 * * * *`) 외에
 `analysis_kr_open`(`0 23 * * 0-4`), `analysis_kr_main`(`0 0-7 * * 1-5`),
 `analysis_us_session`(`0 13-21 * * 1-5`), `analysis_kr_post`
-(`0 9,11 * * 1-5`)가 등록되어 있다. 분석 스케줄 4종은 기본값이 `False`인
+(`0 9,11 * * 1-5`), `signal_snapshot`(`30 11 * * 1-5`)가 등록되어 있다.
+분석 스케줄 4종은 기본값이 `False`인
 `ANALYSIS_SCHEDULE_ENABLED` 플래그로 함께 제어하며, 비활성 상태에서는 레지스트리에
 남지만 RQ cron에 등록되지 않는다. 이 플래그는 `app/scheduler/registry.py`를 임포트할 때
 평가되므로 env 값을 변경한 뒤에는 스케줄러 프로세스를 재시작해야 한다. 스케줄러 프로세스는
@@ -202,7 +227,9 @@ stateDiagram-v2
 - **포트폴리오 집중도 점검**: 요약(섹터/현금 비중 포함)을 조회하고 점검을 실행한다.
   시세 기반 비중이 `concentration_threshold`를 초과한 종목에 대해 시그널을 만든다.
 - **시그널 검토**: 화면에서 종목당 현재 dominant 시그널만 소비할 때는
-  `GET /api/v1/signals?view=current`를 사용한다.
+  `GET /api/v1/signals?view=current`를 사용한다. 변화 표시는 스냅샷 기반 `change` projection을
+  사용하고, 최근 변화 타임라인은 `GET /api/v1/signals/changes`, 카테고리 KPI와 전일대비 delta는
+  `GET /api/v1/signals/summary?view=current`를 사용한다.
 - **알림 검토**: Alert를 읽음/숨김 처리한다. 발송 전 Alert Candidate는 사람이 검토해
   읽음/확정한다(상태 전이 순서는 강제하지 않는다).
 - **가설 관리**: 투자 가설을 생성·수정·비활성화한다. 분석 파이프라인은 종목의 최신

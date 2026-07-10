@@ -1,5 +1,6 @@
 import json
-from datetime import datetime
+from datetime import date, datetime
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -9,6 +10,15 @@ from app.core.schema import UtcDatetime
 from app.domains.signals.time import is_expired_at
 from app.domains.signals.types import SignalType
 from app.domains.watchlists.schema import AssetBriefResponse
+
+
+class SignalChangeDirection(str, Enum):
+    NEW = "NEW"
+    CLEARED = "CLEARED"
+    ESCALATED = "ESCALATED"
+    DEESCALATED = "DEESCALATED"
+    CHANGED = "CHANGED"
+    UNCHANGED = "UNCHANGED"
 
 
 class SignalCreate(BaseModel):
@@ -56,3 +66,38 @@ class SignalResponse(BaseModel):
 
 class SignalExpandedResponse(SignalResponse):
     asset: AssetBriefResponse | None = None
+
+
+class SignalChange(BaseModel):
+    direction: str
+    score_delta: int | None
+    previous_type: str | None
+    previous_captured_at: UtcDatetime | None
+
+
+class SignalCurrentResponse(SignalResponse):
+    change: SignalChange | None
+
+
+class SignalCurrentExpandedResponse(SignalExpandedResponse):
+    change: SignalChange | None
+
+
+class SignalDominantSummary(BaseModel):
+    signal_id: int | None
+    signal_type: str
+    score: int
+
+
+class SignalChangeTimelineItem(BaseModel):
+    asset: AssetBriefResponse
+    snapshot_date: date
+    captured_at: UtcDatetime
+    change: SignalChange
+    dominant: SignalDominantSummary | None
+
+
+class SignalSummary(BaseModel):
+    total: int
+    by_category: dict[str, int]
+    delta_by_category: dict[str, int]

@@ -15,14 +15,17 @@ from app.domains.assets.model import Asset
 from app.domains.jobs.model import JobRun
 from app.domains.llm_analysis.schema import RunStatus
 from app.domains.raw_news.model import RawNewsEvent
+from app.domains.signals.snapshot_model import AssetSignalSnapshot
 from app.domains.watchlists.model import Watchlist
 from app.main import app
 from app.worker.jobs import analysis
 from app.worker.jobs import llm_analysis
 from app.worker.jobs import news
+from app.worker.jobs import signal_snapshots
 from app.worker.jobs.analysis import analyze_watchlist_job
 from app.worker.jobs.llm_analysis import run_llm_analysis_job
 from app.worker.jobs.news import collect_news_job
+from app.worker.jobs.signal_snapshots import snapshot_signal_states_job
 from tests.conftest import api_data, set_current_user
 
 engine = create_engine(
@@ -123,6 +126,25 @@ def test_collect_news_job_records_success_with_target_failure(
     assert job_run.status == "success"
     assert job_run.finished_at is not None
     assert db.scalars(select(RawNewsEvent)).all() == []
+
+
+def test_snapshot_signal_states_job_records_success(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    db.add(Asset(symbol="AAPL", name="Apple Inc.", market="NASDAQ"))
+    db.commit()
+    monkeypatch.setattr(signal_snapshots, "SessionLocal", TestingSessionLocal)
+
+    snapshot_signal_states_job()
+
+    job_run = db.scalars(select(JobRun)).one()
+    assert job_run.job_type == "signal_snapshot"
+    assert job_run.status == "success"
+    assert job_run.finished_at is not None
+    assert job_run.metadata_ == {"captured_count": 1}
+    snapshot = db.scalars(select(AssetSignalSnapshot)).one()
+    assert snapshot.asset_id == 1
+    assert snapshot.signal_id is None
+    assert snapshot.signal_type is None
+    assert snapshot.score is None
 
 
 def test_analyze_all_watchlists_job_isolates_watchlist_failures(

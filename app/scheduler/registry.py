@@ -5,6 +5,7 @@ from app.scheduler.interface import FunctionSchedulerJob, SchedulerJob
 from app.worker.jobs.analysis import analyze_all_watchlists_job
 from app.worker.jobs.news import collect_news_job
 from app.worker.jobs.prices import collect_prices_job
+from app.worker.jobs.signal_snapshots import snapshot_signal_states_job
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,14 @@ default_scheduler_registry = SchedulerRegistry(
             ),
             cron="0 9,11 * * 1-5",
             enabled=settings.ANALYSIS_SCHEDULE_ENABLED,
+        ),
+        ScheduleDefinition(
+            job=FunctionSchedulerJob(
+                name="signal_snapshot",
+                func=snapshot_signal_states_job,
+            ),
+            cron="30 11 * * 1-5",
+            enabled=True,
         ),
     ]
 )
