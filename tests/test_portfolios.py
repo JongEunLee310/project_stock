@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.adapters.market.base import MarketDataProvider, QuoteResult
 from app.domains.assets.model import Asset
+from app.domains.portfolios.service import _format_amount, _format_percent
 from tests.conftest import (
     TestingSessionLocal,
     api_data,
@@ -22,6 +23,16 @@ def assert_decimal_close(
     tolerance: Decimal = Decimal("0.000001"),
 ) -> None:
     assert abs(Decimal(actual) - expected) <= tolerance
+
+
+def test_format_percent_uses_one_decimal_place() -> None:
+    assert _format_percent(Decimal("0.6521739130434782608695652174")) == "65.2%"
+    assert _format_percent(Decimal("0.6000")) == "60.0%"
+
+
+def test_format_amount_strips_trailing_zeroes_without_exponent() -> None:
+    assert _format_amount(Decimal("586.920000000000")) == "586.92"
+    assert _format_amount(Decimal("1000.000000000000")) == "1000"
 
 
 def create_asset(
@@ -611,7 +622,11 @@ def test_get_portfolio_summary_returns_zero_weights_without_positions(
 
 def test_check_concentration_creates_risk_alert_signal(client: TestClient) -> None:
     set_current_user(1)
-    portfolio = create_portfolio(client, concentration_threshold="0.6")
+    portfolio = create_portfolio(
+        client,
+        concentration_threshold="0.6",
+        cash_balance="149.0240",
+    )
     apple = create_asset(client, "AAPL")
     microsoft = create_asset(client, "MSFT")
     add_position(client, portfolio["id"], apple["id"], quantity="3", avg_buy_price="100")
@@ -627,14 +642,14 @@ def test_check_concentration_creates_risk_alert_signal(client: TestClient) -> No
 
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
-    expected_weight = Decimal("586.92") / Decimal("750.92")
+    expected_weight = Decimal("586.92") / Decimal("899.944")
     assert_decimal_close(data["summary"]["positions"][0]["weight"], expected_weight)
     created_signals = data["created_signals"]
     assert len(created_signals) == 1
     signal = created_signals[0]
     assert signal["asset_id"] == apple["id"]
     assert signal["signal_type"] == "RISK_ALERT"
-    assert signal["score"] == 78
+    assert signal["score"] == 65
     assert signal["risk_level"] == "HIGH"
     assert signal["evidence"]["portfolio_id"] == portfolio["id"]
     assert_decimal_close(signal["evidence"]["weight"], expected_weight)
@@ -642,9 +657,11 @@ def test_check_concentration_creates_risk_alert_signal(client: TestClient) -> No
     assert Decimal(signal["evidence"]["cost_value"]) == Decimal("300.000000000000")
     assert Decimal(signal["evidence"]["market_value"]) == Decimal("586.920000000000")
     assert len(signal["key_points"]) == 2
-    assert str(expected_weight) in signal["key_points"][0]
-    assert "0.6000" in signal["key_points"][0]
-    assert "586.92" in signal["key_points"][1]
+    assert (
+        signal["key_points"][0]
+        == "현재 비중이 임계치를 초과했습니다 (65.2% > 60.0%)"
+    )
+    assert signal["key_points"][1] == "평가금액은 586.92입니다."
 
 
 def test_check_concentration_does_not_duplicate_active_signal(

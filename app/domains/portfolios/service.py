@@ -34,6 +34,14 @@ CASH_FLOOR_HIGH = Decimal("0.05")
 CASH_FLOOR_MEDIUM = Decimal("0.15")
 
 
+def _format_percent(value: Decimal) -> str:
+    return f"{value:.1%}"
+
+
+def _format_amount(value: Decimal) -> str:
+    return f"{value.normalize():f}"
+
+
 class PortfolioService:
     def __init__(self, db: Session) -> None:
         self.asset_repo = AssetRepository(db)
@@ -159,10 +167,11 @@ class PortfolioService:
                     reason="포트폴리오 단일 종목 비중이 임계치를 초과했습니다.",
                     key_points=[
                         (
-                            f"현재 비중 {position.weight}이 임계치 "
-                            f"{summary.concentration_threshold}를 초과했습니다."
+                            "현재 비중이 임계치를 초과했습니다 "
+                            f"({_format_percent(position.weight)} > "
+                            f"{_format_percent(summary.concentration_threshold)})"
                         ),
-                        f"평가금액은 {position.market_value}입니다.",
+                        f"평가금액은 {_format_amount(position.market_value)}입니다.",
                     ],
                     evidence={
                         "portfolio_id": portfolio.id,
