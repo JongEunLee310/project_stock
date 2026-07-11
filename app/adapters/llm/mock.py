@@ -12,6 +12,7 @@ DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
         "negative_factors": ["Mock negative factor"],
         "impact_level": "HIGH",
         "sentiment": "NEUTRAL",
+        "category": "OTHER",
     },
     "ThesisConflictResult": {
         "status": "NEUTRAL",

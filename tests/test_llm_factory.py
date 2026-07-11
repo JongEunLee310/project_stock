@@ -30,6 +30,7 @@ def test_get_llm_client_returns_seeded_mock_client() -> None:
         "negative_factors": ["Mock negative factor"],
         "impact_level": "HIGH",
         "sentiment": "NEUTRAL",
+        "category": "OTHER",
     }
     assert client.complete_json(
         [LLMMessage(role="user", content="check conflict")],
