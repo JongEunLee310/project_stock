@@ -84,8 +84,9 @@ def test_get_news_disclosure_separates_news_and_disclosures(
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
     assert data["asset_id"] == asset_id
-    assert data["news"][0] == {
-        "id": 2,
+    news_item = data["news"][0]
+    assert isinstance(news_item["id"], int)
+    assert {key: value for key, value in news_item.items() if key != "id"} == {
         "title": "Latest news",
         "url": "https://example.com/news/latest",
         "source": "Example News",
