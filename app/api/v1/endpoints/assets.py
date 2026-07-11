@@ -17,6 +17,8 @@ from app.domains.assets.schema import (
     AssetResponse,
 )
 from app.domains.assets.service import AssetService
+from app.domains.catalysts.schema import CatalystTimelineResponse
+from app.domains.catalysts.service import CatalystService
 from app.domains.decision_checklist.schema import (
     BuyChecklistNoteUpdate,
     BuyChecklistResponse,
@@ -140,6 +142,21 @@ def get_asset_news_disclosure(
             limit=limit,
         )
     )
+
+
+@router.get(
+    "/{asset_id}/catalysts",
+    response_model=ApiResponse[CatalystTimelineResponse],
+    summary="Get asset catalyst timeline",
+    description="Return deterministic mock upcoming catalyst events for an asset.",
+)
+def get_asset_catalysts(
+    asset_id: int,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[CatalystTimelineResponse]:
+    return success(CatalystService(db).get_timeline(asset_id, limit))
 
 
 @router.get(
