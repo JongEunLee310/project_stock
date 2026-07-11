@@ -21,6 +21,7 @@ class ResearchSummaryResponse(BaseModel):
     positive_factors: list[str] = Field(default_factory=list)
     caution_factors: list[str] = Field(default_factory=list)
     next_checks: list[str] = Field(default_factory=list)
+    counter_view: list[str] = Field(default_factory=list)
     confidence_basis: str | None = None
     key_risks: list[ResearchRisk]
     created_at: UtcDatetime

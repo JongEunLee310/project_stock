@@ -258,6 +258,8 @@ def test_get_research_summary_returns_deterministic_mock_data(
     assert first_data["stance_confidence"]
     assert first_data["headline"]
     assert first_data["body"]
+    assert 2 <= len(first_data["counter_view"]) <= 3
+    assert all(first_data["counter_view"])
     assert first_data["key_risks"]
     assert first_data["created_at"] == "2026-06-19T00:00:00Z"
 
@@ -286,6 +288,7 @@ def test_get_research_summary_returns_structured_fields_for_all_templates(
         assert 2 <= len(data["positive_factors"]) <= 3
         assert 2 <= len(data["caution_factors"]) <= 3
         assert 2 <= len(data["next_checks"]) <= 3
+        assert 2 <= len(data["counter_view"]) <= 3
         assert data["confidence_basis"]
         assert all(
             1 <= len(risk["evidence"]) <= 2 for risk in data["key_risks"]
