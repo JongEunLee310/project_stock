@@ -262,6 +262,36 @@ def test_get_research_summary_returns_deterministic_mock_data(
     assert first_data["created_at"] == "2026-06-19T00:00:00Z"
 
 
+def test_get_research_summary_returns_structured_fields_for_all_templates(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    assets = [
+        create_asset(client),
+        create_asset(
+            client,
+            {
+                "symbol": "MSFT",
+                "market": "NASDAQ",
+            },
+        ),
+    ]
+
+    for asset in assets:
+        response = client.get(f"/api/v1/assets/{asset['id']}/research-summary")
+
+        assert response.status_code == 200
+        data = cast(dict[str, Any], api_data(response))
+        assert data["stance_comment"]
+        assert 2 <= len(data["positive_factors"]) <= 3
+        assert 2 <= len(data["caution_factors"]) <= 3
+        assert 2 <= len(data["next_checks"]) <= 3
+        assert data["confidence_basis"]
+        assert all(
+            1 <= len(risk["evidence"]) <= 2 for risk in data["key_risks"]
+        )
+
+
 def test_get_research_summary_returns_404_when_missing(client: TestClient) -> None:
     set_current_user(1)
 

@@ -190,8 +190,13 @@ RESEARCH_SUMMARY_CONTRACT: Contract = {
     "asset_id": int,
     "stance": str,
     "stance_confidence": str,
+    "stance_comment": (str, type(None)),
     "headline": str,
     "body": str,
+    "positive_factors": list,
+    "caution_factors": list,
+    "next_checks": list,
+    "confidence_basis": (str, type(None)),
     "key_risks": list,
     "created_at": str,
 }
@@ -201,6 +206,7 @@ RESEARCH_RISK_CONTRACT: Contract = {
     "title": str,
     "level": str,
     "description": str,
+    "evidence": list,
 }
 
 ASSET_CONTRACT: Contract = {
