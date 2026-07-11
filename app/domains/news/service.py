@@ -10,6 +10,20 @@ from app.domains.news.schema import NewsSummaryResult
 from app.domains.raw_news.model import RawNewsEvent
 
 
+_NEWS_CATEGORIES = frozenset(
+    {
+        "EARNINGS",
+        "PRODUCT",
+        "PARTNERSHIP",
+        "REGULATION",
+        "PERSONNEL",
+        "CAPITAL",
+        "MARKET",
+        "OTHER",
+    }
+)
+
+
 class NewsAnalysisService:
     def __init__(self, db: Session, gateway: LLMGateway) -> None:
         self.db = db
@@ -30,7 +44,11 @@ class NewsAnalysisService:
             NewsSummaryResult,
             build_news_summary_system_prompt(),
         )
-        result = NewsSummaryResult.model_validate(completion.output)
+        output = dict(completion.output)
+        category = output.get("category")
+        if not isinstance(category, str) or category not in _NEWS_CATEGORIES:
+            output["category"] = None
+        result = NewsSummaryResult.model_validate(output)
         self.repository.update_summary(news_item_id, result)
         return result
 

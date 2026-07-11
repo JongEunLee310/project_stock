@@ -4,9 +4,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
+from app.core.error_codes import ErrorCode
+from app.core.exceptions import AppException
 from app.core.pagination import PaginationParams
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
+from app.domains.assets.repository import AssetRepository
 from app.domains.assets.schema import (
     AssetCreate,
     AssetDetailResponse,
@@ -19,6 +22,8 @@ from app.domains.decision_checklist.schema import (
     BuyChecklistResponse,
 )
 from app.domains.decision_checklist.service import DecisionChecklistService
+from app.domains.news.news_disclosure_service import NewsDisclosureService
+from app.domains.news.schema import NewsDisclosureResponse
 from app.domains.research_summary.schema import ResearchSummaryResponse
 from app.domains.research_summary.service import ResearchSummaryService
 from app.domains.users.model import User
@@ -107,6 +112,34 @@ def get_asset_research_summary(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[ResearchSummaryResponse]:
     return success(ResearchSummaryService(db).get_summary(asset_id))
+
+
+@router.get(
+    "/{asset_id}/news-disclosure",
+    response_model=ApiResponse[NewsDisclosureResponse],
+    summary="Get asset news and disclosures",
+    description="Return recent news and disclosures as separate metadata projections.",
+)
+def get_asset_news_disclosure(
+    asset_id: int,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[NewsDisclosureResponse]:
+    asset = AssetRepository(db).get_by_id(asset_id)
+    if asset is None:
+        raise AppException(
+            status_code=404,
+            detail="종목을 찾을 수 없습니다.",
+            error_code=ErrorCode.ASSET_NOT_FOUND,
+        )
+    return success(
+        NewsDisclosureService(db).get_news_and_disclosures(
+            asset_id=asset.id,
+            symbol=asset.symbol,
+            limit=limit,
+        )
+    )
 
 
 @router.get(

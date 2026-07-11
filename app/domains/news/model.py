@@ -21,6 +21,7 @@ class NewsItem(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str | None] = mapped_column(String(30), nullable=True)
     sentiment: Mapped[str | None] = mapped_column(String(20), nullable=True)
     impact_level: Mapped[str | None] = mapped_column(String(20), nullable=True)
     trust_level: Mapped[str | None] = mapped_column(String(20), nullable=True)

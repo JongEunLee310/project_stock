@@ -37,6 +37,7 @@ def news_item_payload(asset_id: int, raw_news_event_id: int | None = None) -> Ne
         source="Example News",
         published_at=datetime(2026, 6, 18, tzinfo=timezone.utc),
         summary="Production capacity increased.",
+        category="MARKET",
         sentiment="positive",
         impact_level="medium",
     )
@@ -53,6 +54,7 @@ def test_create_news_item_success(db: Session) -> None:
     assert item.asset_id == asset.id
     assert item.title == "Apple supplier expands production"
     assert item.summary == "Production capacity increased."
+    assert item.category == "MARKET"
     assert item.sentiment == "positive"
     assert item.impact_level == "medium"
 

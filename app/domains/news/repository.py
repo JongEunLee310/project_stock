@@ -31,6 +31,7 @@ class NewsItemRepository:
             raise ValueError("news item not found")
 
         item.summary = data.summary
+        item.category = data.category
         item.sentiment = data.sentiment
         item.impact_level = data.impact_level
         item.positive_factors = json.dumps(data.positive_factors, ensure_ascii=False)
@@ -44,5 +45,21 @@ class NewsItemRepository:
             select(NewsItem)
             .where(NewsItem.asset_id == asset_id)
             .order_by(NewsItem.created_at.desc(), NewsItem.id.desc())
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def list_by_asset_with_limit(
+        self,
+        asset_id: int,
+        limit: int = 20,
+    ) -> list[NewsItem]:
+        stmt = (
+            select(NewsItem)
+            .where(NewsItem.asset_id == asset_id)
+            .order_by(
+                NewsItem.published_at.desc().nullslast(),
+                NewsItem.id.desc(),
+            )
+            .limit(limit)
         )
         return list(self.db.scalars(stmt).all())

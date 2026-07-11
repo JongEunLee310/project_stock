@@ -106,6 +106,7 @@ def test_news_analysis_service_summarize_updates_news_item(db: Session) -> None:
                 "negative_factors": ["Execution risk"],
                 "impact_level": "HIGH",
                 "sentiment": "POSITIVE",
+                "category": "PARTNERSHIP",
             }
         }
     )
@@ -118,6 +119,8 @@ def test_news_analysis_service_summarize_updates_news_item(db: Session) -> None:
     assert updated.summary == result.summary
     assert updated.sentiment == "POSITIVE"
     assert updated.impact_level == "HIGH"
+    assert result.category == "PARTNERSHIP"
+    assert updated.category == "PARTNERSHIP"
     assert json.loads(updated.positive_factors or "[]") == [
         "Higher production capacity",
         "Lower costs",
@@ -168,6 +171,33 @@ def test_news_analysis_service_rejects_invalid_llm_response(
     assert unchanged.negative_factors is None
 
 
+@pytest.mark.parametrize("category", ["UNKNOWN", 123, {"value": "PRODUCT"}])
+def test_news_analysis_service_falls_back_to_none_for_invalid_category(
+    db: Session,
+    category: Any,
+) -> None:
+    item = create_news_item(db)
+    client = MockLLMClient(
+        {
+            "NewsSummaryResult": {
+                "summary": "Category could not be parsed.",
+                "positive_factors": [],
+                "negative_factors": [],
+                "impact_level": "LOW",
+                "sentiment": "NEUTRAL",
+                "category": category,
+            }
+        }
+    )
+
+    result = NewsAnalysisService(db, make_gateway(client)).summarize(item.id)
+
+    updated = db.get(NewsItem, item.id)
+    assert updated is not None
+    assert result.category is None
+    assert updated.category is None
+
+
 def test_news_analysis_service_raises_for_missing_news_item(db: Session) -> None:
     client = MockLLMClient()
 
@@ -182,3 +212,5 @@ def test_build_news_summary_system_prompt_includes_schema() -> None:
     assert "JSON Schema" in prompt
     assert "positive_factors" in prompt
     assert "negative_factors" in prompt
+    assert "EARNINGS" in prompt
+    assert "OTHER" in prompt
