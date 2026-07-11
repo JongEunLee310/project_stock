@@ -26,6 +26,8 @@ from app.domains.decision_checklist.schema import (
 from app.domains.decision_checklist.service import DecisionChecklistService
 from app.domains.news.news_disclosure_service import NewsDisclosureService
 from app.domains.news.schema import NewsDisclosureResponse
+from app.domains.research_coverage.schema import ResearchCoverageResponse
+from app.domains.research_coverage.service import ResearchCoverageService
 from app.domains.research_summary.schema import ResearchSummaryResponse
 from app.domains.research_summary.service import ResearchSummaryService
 from app.domains.users.model import User
@@ -114,6 +116,20 @@ def get_asset_research_summary(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[ResearchSummaryResponse]:
     return success(ResearchSummaryService(db).get_summary(asset_id))
+
+
+@router.get(
+    "/{asset_id}/research-coverage",
+    response_model=ApiResponse[ResearchCoverageResponse],
+    summary="Get asset research coverage",
+    description="Return collection coverage and freshness derived from stored research data.",
+)
+def get_asset_research_coverage(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[ResearchCoverageResponse]:
+    return success(ResearchCoverageService(db).get_coverage(asset_id))
 
 
 @router.get(

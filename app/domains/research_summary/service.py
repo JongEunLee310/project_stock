@@ -28,6 +28,7 @@ class _SummaryTemplate(TypedDict):
     positive_factors: list[str]
     caution_factors: list[str]
     next_checks: list[str]
+    counter_view: list[str]
     confidence_basis: str
     key_risks: list[_RiskTemplate]
 
@@ -50,6 +51,10 @@ _SUMMARY_TEMPLATES: tuple[_SummaryTemplate, ...] = (
         "next_checks": [
             "다음 실적 발표에서 제품군별 매출 성장률과 마진을 확인하세요.",
             "현금흐름 개선이 일회성이 아닌지 분기 추세를 점검하세요.",
+        ],
+        "counter_view": [
+            "현재 가격에 성장 기대가 과도하게 반영되어 추가 상승 여력이 제한적인지 점검하세요.",
+            "경쟁 심화로 점유율이나 수익성이 예상보다 빠르게 약화될 가능성을 확인하세요.",
         ],
         "confidence_basis": "매출 성장과 현금흐름 지표는 긍정적이지만 밸류에이션과 환율 변수의 불확실성이 남아 있습니다.",
         "key_risks": [
@@ -92,6 +97,10 @@ _SUMMARY_TEMPLATES: tuple[_SummaryTemplate, ...] = (
         "next_checks": [
             "다음 분기의 재고 회전율과 할인 판매 비중을 확인하세요.",
             "주요 규제 일정과 회사의 대응 계획을 점검하세요.",
+        ],
+        "counter_view": [
+            "비용 효율화와 신규 고객 증가가 예상보다 강해 관찰보다 적극적인 판단이 필요한지 확인하세요.",
+            "재고와 규제 우려가 이미 가격에 충분히 반영되어 상승 여력이 커졌는지 점검하세요.",
         ],
         "confidence_basis": "비용과 고객 지표는 개선됐지만 재고와 규제 영향의 확인 자료가 충분하지 않습니다.",
         "key_risks": [
@@ -144,6 +153,7 @@ class ResearchSummaryService:
             positive_factors=template["positive_factors"],
             caution_factors=template["caution_factors"],
             next_checks=template["next_checks"],
+            counter_view=template["counter_view"],
             confidence_basis=template["confidence_basis"],
             key_risks=[
                 ResearchRisk.model_validate(risk)

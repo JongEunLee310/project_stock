@@ -196,6 +196,7 @@ RESEARCH_SUMMARY_CONTRACT: Contract = {
     "positive_factors": list,
     "caution_factors": list,
     "next_checks": list,
+    "counter_view": list,
     "confidence_basis": (str, type(None)),
     "key_risks": list,
     "created_at": str,
@@ -207,6 +208,18 @@ RESEARCH_RISK_CONTRACT: Contract = {
     "level": str,
     "description": str,
     "evidence": list,
+}
+
+RESEARCH_COVERAGE_CONTRACT: Contract = {
+    "asset_id": int,
+    "axes": list,
+}
+
+COVERAGE_AXIS_CONTRACT: Contract = {
+    "axis": str,
+    "status": str,
+    "last_updated_at": (str, type(None)),
+    "item_count": int,
 }
 
 ASSET_CONTRACT: Contract = {
@@ -575,8 +588,23 @@ def test_research_summary_response_contract(client: TestClient) -> None:
     assert_contract(data, RESEARCH_SUMMARY_CONTRACT)
     assert data["headline"]
     assert data["body"]
+    assert data["counter_view"]
     assert data["key_risks"]
     assert_contract(data["key_risks"][0], RESEARCH_RISK_CONTRACT)
+
+
+def test_research_coverage_response_contract(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+
+    response = client.get(f"/api/v1/assets/{asset['id']}/research-coverage")
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, RESEARCH_COVERAGE_CONTRACT)
+    assert len(data["axes"]) == 5
+    assert_contract(data["axes"][0], COVERAGE_AXIS_CONTRACT)
 
 
 def test_buy_checklist_item_response_contract(client: TestClient) -> None:
@@ -829,6 +857,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/signals/{signal_id}",
         "/api/v1/assets/{asset_id}/detail",
         "/api/v1/assets/{asset_id}/research-summary",
+        "/api/v1/assets/{asset_id}/research-coverage",
         "/api/v1/portfolios/{portfolio_id}/summary",
         "/api/v1/portfolios/{portfolio_id}/briefing",
         "/api/v1/dashboard/briefing",
@@ -867,6 +896,8 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "DecisionLogResponse",
         "DecisionLogStatsResponse",
         "ReviewedDecisionItem",
+        "ResearchCoverageResponse",
+        "CoverageAxis",
     }
     assert expected_components <= set(schemas)
 
