@@ -222,6 +222,61 @@ COVERAGE_AXIS_CONTRACT: Contract = {
     "item_count": int,
 }
 
+VALUATION_METRICS_CONTRACT: Contract = {
+    "asset_id": int,
+    "profile": str,
+    "highlighted_metrics": list,
+    "metrics": list,
+}
+
+VALUATION_METRIC_CONTRACT: Contract = {
+    "metric": str,
+    "value": (str, type(None)),
+    "five_year_median": (str, type(None)),
+    "percentile": (int, type(None)),
+}
+
+EARNINGS_SUMMARY_CONTRACT: Contract = {
+    "asset_id": int,
+    "quarters": list,
+    "guidance": (str, type(None)),
+    "segments": list,
+}
+
+EARNINGS_QUARTER_CONTRACT: Contract = {
+    "period": str,
+    "revenue": str,
+    "operating_income": str,
+    "eps": str,
+    "revenue_yoy_percent": (str, type(None)),
+    "operating_margin_percent": str,
+    "eps_estimate": (str, type(None)),
+    "eps_surprise_percent": (str, type(None)),
+}
+
+SEGMENT_GROWTH_CONTRACT: Contract = {
+    "name": str,
+    "revenue_share_percent": str,
+    "yoy_growth_percent": str,
+}
+
+BENCHMARK_COMPARISON_CONTRACT: Contract = {
+    "asset_id": int,
+    "range": str,
+    "series": list,
+}
+
+BENCHMARK_SERIES_CONTRACT: Contract = {
+    "kind": str,
+    "label": str,
+    "points": list,
+}
+
+BENCHMARK_POINT_CONTRACT: Contract = {
+    "date": str,
+    "return_percent": str,
+}
+
 ASSET_CONTRACT: Contract = {
     "id": int,
     "symbol": str,
@@ -607,6 +662,51 @@ def test_research_coverage_response_contract(client: TestClient) -> None:
     assert_contract(data["axes"][0], COVERAGE_AXIS_CONTRACT)
 
 
+def test_valuation_metrics_response_contract(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+
+    response = client.get(
+        f"/api/v1/assets/{asset['id']}/valuation-metrics"
+    )
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, VALUATION_METRICS_CONTRACT)
+    assert_contract(data["metrics"][0], VALUATION_METRIC_CONTRACT)
+
+
+def test_earnings_summary_response_contract(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+
+    response = client.get(f"/api/v1/assets/{asset['id']}/earnings-summary")
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, EARNINGS_SUMMARY_CONTRACT)
+    assert_contract(data["quarters"][0], EARNINGS_QUARTER_CONTRACT)
+    assert_contract(data["segments"][0], SEGMENT_GROWTH_CONTRACT)
+
+
+def test_benchmark_comparison_response_contract(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+
+    response = client.get(
+        f"/api/v1/assets/{asset['id']}/benchmark-comparison"
+    )
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, BENCHMARK_COMPARISON_CONTRACT)
+    assert_contract(data["series"][0], BENCHMARK_SERIES_CONTRACT)
+    assert_contract(data["series"][0]["points"][0], BENCHMARK_POINT_CONTRACT)
+
+
 def test_buy_checklist_item_response_contract(client: TestClient) -> None:
     set_current_user(1)
     asset = create_asset(client)
@@ -858,6 +958,9 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/assets/{asset_id}/detail",
         "/api/v1/assets/{asset_id}/research-summary",
         "/api/v1/assets/{asset_id}/research-coverage",
+        "/api/v1/assets/{asset_id}/valuation-metrics",
+        "/api/v1/assets/{asset_id}/earnings-summary",
+        "/api/v1/assets/{asset_id}/benchmark-comparison",
         "/api/v1/portfolios/{portfolio_id}/summary",
         "/api/v1/portfolios/{portfolio_id}/briefing",
         "/api/v1/dashboard/briefing",
@@ -898,6 +1001,14 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "ReviewedDecisionItem",
         "ResearchCoverageResponse",
         "CoverageAxis",
+        "ValuationMetricsResponse",
+        "ValuationMetric",
+        "EarningsSummaryResponse",
+        "EarningsQuarter",
+        "SegmentGrowth",
+        "BenchmarkComparisonResponse",
+        "BenchmarkSeries",
+        "BenchmarkPoint",
     }
     assert expected_components <= set(schemas)
 
