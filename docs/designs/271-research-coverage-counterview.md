@@ -32,15 +32,23 @@
 - `axis: str` — enum 5값: `NEWS` / `PRICE` / `EARNINGS` / `VALUATION` /
   `DISCLOSURE`
 - `status: str` — `COLLECTED` / `NOT_COLLECTED`
-- `last_collected_at: UtcDatetime | None` — 해당 축 데이터의 마지막 수집
-  시각 (`created_at` 최댓값). 미확보면 null.
+- `last_updated_at: UtcDatetime | None` — 해당 축 데이터가 마지막으로
+  확보·갱신된 시각 (`updated_at` 최댓값). 미확보면 null.
 - `item_count: int` — 확보된 데이터 건수. 미확보면 0.
+
+시맨틱 (PR #275 리뷰 Q1로 확정): `created_at`은 행의 최초 삽입 시각이라
+"마지막 수집 시각"과 어긋납니다 — 뉴스는 URL 중복 스킵으로 새 기사가
+없으면 갱신되지 않고, 가격은 upsert가 기존 bar를 in-place 갱신해
+`created_at`이 변하지 않습니다. 따라서 이 필드는 "마지막으로 데이터가
+갱신된 시각"으로 정의하고 `updated_at`(onupdate 반영)에서 파생합니다.
+"수집 실행 시각"(파이프라인 상태)은 `job_runs` 기반의 별도 관심사로,
+실수집 라운드에서 필요 시 다룹니다.
 
 축별 파생 방법:
 
-- `NEWS` — `news_items`에서 `asset_id` 일치 행. `max(created_at)`, count.
+- `NEWS` — `news_items`에서 `asset_id` 일치 행. `max(updated_at)`, count.
 - `PRICE` — `stock_price_bars`에서 asset의 `symbol`+`market` 일치 행.
-  `max(created_at)`, count.
+  `max(updated_at)`, count.
 - `EARNINGS` / `VALUATION` / `DISCLOSURE` — 수집 파이프라인이 아직 없어
   항상 `NOT_COLLECTED`·null·0. (#270 밸류에이션·실적 계약, 공시 실수집이
   도입되면 그때 파생 로직을 추가합니다.)
