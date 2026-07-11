@@ -17,6 +17,11 @@ from app.domains.assets.schema import (
     AssetResponse,
 )
 from app.domains.assets.service import AssetService
+from app.domains.benchmark.schema import (
+    BenchmarkComparisonResponse,
+    BenchmarkRange,
+)
+from app.domains.benchmark.service import BenchmarkService
 from app.domains.catalysts.schema import CatalystTimelineResponse
 from app.domains.catalysts.service import CatalystService
 from app.domains.decision_checklist.schema import (
@@ -24,6 +29,8 @@ from app.domains.decision_checklist.schema import (
     BuyChecklistResponse,
 )
 from app.domains.decision_checklist.service import DecisionChecklistService
+from app.domains.earnings.schema import EarningsSummaryResponse
+from app.domains.earnings.service import EarningsService
 from app.domains.news.news_disclosure_service import NewsDisclosureService
 from app.domains.news.schema import NewsDisclosureResponse
 from app.domains.research_coverage.schema import ResearchCoverageResponse
@@ -31,6 +38,8 @@ from app.domains.research_coverage.service import ResearchCoverageService
 from app.domains.research_summary.schema import ResearchSummaryResponse
 from app.domains.research_summary.service import ResearchSummaryService
 from app.domains.users.model import User
+from app.domains.valuation.schema import ValuationMetricsResponse
+from app.domains.valuation.service import ValuationService
 
 router = APIRouter()
 
@@ -173,6 +182,51 @@ def get_asset_catalysts(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[CatalystTimelineResponse]:
     return success(CatalystService(db).get_timeline(asset_id, limit))
+
+
+@router.get(
+    "/{asset_id}/valuation-metrics",
+    response_model=ApiResponse[ValuationMetricsResponse],
+    summary="Get asset valuation metrics",
+    description="Return deterministic mock valuation metrics for an asset.",
+)
+def get_asset_valuation_metrics(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[ValuationMetricsResponse]:
+    return success(ValuationService(db).get_metrics(asset_id))
+
+
+@router.get(
+    "/{asset_id}/earnings-summary",
+    response_model=ApiResponse[EarningsSummaryResponse],
+    summary="Get asset earnings summary",
+    description="Return a deterministic mock quarterly earnings summary for an asset.",
+)
+def get_asset_earnings_summary(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[EarningsSummaryResponse]:
+    return success(EarningsService(db).get_summary(asset_id))
+
+
+@router.get(
+    "/{asset_id}/benchmark-comparison",
+    response_model=ApiResponse[BenchmarkComparisonResponse],
+    summary="Get asset benchmark comparison",
+    description="Return deterministic mock normalized asset and benchmark series.",
+)
+def get_asset_benchmark_comparison(
+    asset_id: int,
+    range_: Annotated[BenchmarkRange, Query(alias="range")] = (
+        BenchmarkRange.THREE_MONTHS
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[BenchmarkComparisonResponse]:
+    return success(BenchmarkService(db).get_comparison(asset_id, range_))
 
 
 @router.get(
