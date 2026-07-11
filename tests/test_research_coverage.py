@@ -3,10 +3,13 @@ from decimal import Decimal
 from typing import Any, cast
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from app.adapters.market.base import PriceBarResult
 from app.domains.assets.model import Asset
 from app.domains.news.model import NewsItem
 from app.domains.prices.model import StockPriceBar
+from app.domains.prices.repository import PriceBarRepository
 from tests.conftest import TestingSessionLocal, api_data, api_error, set_current_user
 
 
@@ -20,8 +23,8 @@ def create_asset(*, symbol: str = "AAPL", market: str = "NASDAQ") -> int:
 
 
 def create_collected_data(asset_id: int) -> tuple[datetime, datetime]:
-    news_collected_at = datetime(2026, 7, 10, 9, 30, tzinfo=UTC)
-    price_collected_at = datetime(2026, 7, 10, 10, 45, tzinfo=UTC)
+    news_updated_at = datetime(2026, 7, 10, 9, 30, tzinfo=UTC)
+    price_updated_at = datetime(2026, 7, 10, 10, 45, tzinfo=UTC)
     with TestingSessionLocal() as db:
         asset = db.get(Asset, asset_id)
         assert asset is not None
@@ -32,7 +35,7 @@ def create_collected_data(asset_id: int) -> tuple[datetime, datetime]:
                     title=f"뉴스 {index}",
                     url=f"https://example.com/news/{index}",
                     source="test",
-                    created_at=news_collected_at - timedelta(hours=1 - index),
+                    updated_at=news_updated_at - timedelta(hours=1 - index),
                 )
                 for index in range(2)
             ]
@@ -52,13 +55,13 @@ def create_collected_data(asset_id: int) -> tuple[datetime, datetime]:
                     volume=1000,
                     currency="USD",
                     source="test",
-                    created_at=price_collected_at - timedelta(hours=2 - index),
+                    updated_at=price_updated_at - timedelta(hours=2 - index),
                 )
                 for index in range(3)
             ]
         )
         db.commit()
-    return news_collected_at, price_collected_at
+    return news_updated_at, price_updated_at
 
 
 def test_get_research_coverage_derives_collected_axes(
@@ -66,7 +69,7 @@ def test_get_research_coverage_derives_collected_axes(
 ) -> None:
     set_current_user(1)
     asset_id = create_asset()
-    news_collected_at, price_collected_at = create_collected_data(asset_id)
+    news_updated_at, price_updated_at = create_collected_data(asset_id)
 
     response = client.get(f"/api/v1/assets/{asset_id}/research-coverage")
 
@@ -77,31 +80,31 @@ def test_get_research_coverage_derives_collected_axes(
         {
             "axis": "NEWS",
             "status": "COLLECTED",
-            "last_collected_at": news_collected_at.isoformat().replace("+00:00", "Z"),
+            "last_updated_at": news_updated_at.isoformat().replace("+00:00", "Z"),
             "item_count": 2,
         },
         {
             "axis": "PRICE",
             "status": "COLLECTED",
-            "last_collected_at": price_collected_at.isoformat().replace("+00:00", "Z"),
+            "last_updated_at": price_updated_at.isoformat().replace("+00:00", "Z"),
             "item_count": 3,
         },
         {
             "axis": "EARNINGS",
             "status": "NOT_COLLECTED",
-            "last_collected_at": None,
+            "last_updated_at": None,
             "item_count": 0,
         },
         {
             "axis": "VALUATION",
             "status": "NOT_COLLECTED",
-            "last_collected_at": None,
+            "last_updated_at": None,
             "item_count": 0,
         },
         {
             "axis": "DISCLOSURE",
             "status": "NOT_COLLECTED",
-            "last_collected_at": None,
+            "last_updated_at": None,
             "item_count": 0,
         },
     ]
@@ -126,9 +129,57 @@ def test_get_research_coverage_returns_all_axes_not_collected_without_data(
     ]
     assert all(
         axis["status"] == "NOT_COLLECTED"
-        and axis["last_collected_at"] is None
+        and axis["last_updated_at"] is None
         and axis["item_count"] == 0
         for axis in data["axes"]
+    )
+
+
+def test_get_research_coverage_reflects_price_upsert_updated_at(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    asset_id = create_asset()
+    _, initial_updated_at = create_collected_data(asset_id)
+
+    with TestingSessionLocal() as db:
+        bar = db.scalars(
+            select(StockPriceBar).where(
+                StockPriceBar.symbol == "AAPL",
+                StockPriceBar.market == "NASDAQ",
+                StockPriceBar.interval == "1d",
+                StockPriceBar.timestamp == datetime(2026, 7, 10, tzinfo=UTC),
+            )
+        ).one()
+        PriceBarRepository(db).upsert_many(
+            [
+                PriceBarResult(
+                    symbol=bar.symbol,
+                    market=bar.market,
+                    interval=bar.interval,
+                    timestamp=bar.timestamp,
+                    open_price=bar.open_price,
+                    high_price=bar.high_price,
+                    low_price=bar.low_price,
+                    close_price=Decimal("102"),
+                    adjusted_close_price=Decimal("102"),
+                    volume=bar.volume,
+                    currency=bar.currency,
+                    source=bar.source,
+                )
+            ]
+        )
+        db.refresh(bar)
+        upsert_updated_at = bar.updated_at.replace(tzinfo=UTC)
+
+    response = client.get(f"/api/v1/assets/{asset_id}/research-coverage")
+
+    assert response.status_code == 200
+    assert upsert_updated_at > initial_updated_at
+    data = cast(dict[str, Any], api_data(response))
+    price_axis = next(axis for axis in data["axes"] if axis["axis"] == "PRICE")
+    assert price_axis["last_updated_at"] == upsert_updated_at.isoformat().replace(
+        "+00:00", "Z"
     )
 
 

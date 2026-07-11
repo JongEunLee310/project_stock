@@ -30,8 +30,8 @@ class ResearchCoverageService:
                 error_code=ErrorCode.ASSET_NOT_FOUND,
             )
 
-        news_count, news_last_collected_at = self._news_coverage(asset.id)
-        price_count, price_last_collected_at = self._price_coverage(
+        news_count, news_last_updated_at = self._news_coverage(asset.id)
+        price_count, price_last_updated_at = self._price_coverage(
             asset.symbol,
             asset.market,
         )
@@ -41,12 +41,12 @@ class ResearchCoverageService:
                 self._collected_axis(
                     CoverageAxisName.NEWS,
                     news_count,
-                    news_last_collected_at,
+                    news_last_updated_at,
                 ),
                 self._collected_axis(
                     CoverageAxisName.PRICE,
                     price_count,
-                    price_last_collected_at,
+                    price_last_updated_at,
                 ),
                 self._not_collected_axis(CoverageAxisName.EARNINGS),
                 self._not_collected_axis(CoverageAxisName.VALUATION),
@@ -55,39 +55,41 @@ class ResearchCoverageService:
         )
 
     def _news_coverage(self, asset_id: int) -> tuple[int, datetime | None]:
-        stmt = select(func.count(NewsItem.id), func.max(NewsItem.created_at)).where(
+        # updated_at reflects post-insert enrichment as well as initial collection.
+        stmt = select(func.count(NewsItem.id), func.max(NewsItem.updated_at)).where(
             NewsItem.asset_id == asset_id
         )
-        item_count, last_collected_at = self.db.execute(stmt).one()
-        return item_count, last_collected_at
+        item_count, last_updated_at = self.db.execute(stmt).one()
+        return item_count, last_updated_at
 
     def _price_coverage(
         self,
         symbol: str,
         market: str,
     ) -> tuple[int, datetime | None]:
+        # Price upserts update existing bars without changing created_at.
         stmt = select(
             func.count(StockPriceBar.id),
-            func.max(StockPriceBar.created_at),
+            func.max(StockPriceBar.updated_at),
         ).where(
             StockPriceBar.symbol == symbol,
             StockPriceBar.market == market,
         )
-        item_count, last_collected_at = self.db.execute(stmt).one()
-        return item_count, last_collected_at
+        item_count, last_updated_at = self.db.execute(stmt).one()
+        return item_count, last_updated_at
 
     @staticmethod
     def _collected_axis(
         axis: CoverageAxisName,
         item_count: int,
-        last_collected_at: datetime | None,
+        last_updated_at: datetime | None,
     ) -> CoverageAxis:
         if item_count == 0:
             return ResearchCoverageService._not_collected_axis(axis)
         return CoverageAxis(
             axis=axis,
             status=CoverageStatus.COLLECTED,
-            last_collected_at=last_collected_at,
+            last_updated_at=last_updated_at,
             item_count=item_count,
         )
 
@@ -96,6 +98,6 @@ class ResearchCoverageService:
         return CoverageAxis(
             axis=axis,
             status=CoverageStatus.NOT_COLLECTED,
-            last_collected_at=None,
+            last_updated_at=None,
             item_count=0,
         )

@@ -3,6 +3,7 @@ from typing import Any, cast
 from fastapi.testclient import TestClient
 
 from app.domains.assets.model import Asset
+from app.domains.research_summary.service import _SUMMARY_TEMPLATES
 from tests.conftest import (
     TestingSessionLocal,
     api_data,
@@ -268,19 +269,21 @@ def test_get_research_summary_returns_structured_fields_for_all_templates(
     client: TestClient,
 ) -> None:
     set_current_user(1)
-    assets = [
-        create_asset(client),
-        create_asset(
-            client,
-            {
-                "symbol": "MSFT",
-                "market": "NASDAQ",
-            },
-        ),
-    ]
+    with TestingSessionLocal() as db:
+        assets = [
+            Asset(
+                symbol=f"TEST{index}",
+                name=f"Test Asset {index}",
+                market="TEST",
+            )
+            for index in range(len(_SUMMARY_TEMPLATES))
+        ]
+        db.add_all(assets)
+        db.commit()
+        asset_ids = [asset.id for asset in assets]
 
-    for asset in assets:
-        response = client.get(f"/api/v1/assets/{asset['id']}/research-summary")
+    for asset_id in asset_ids:
+        response = client.get(f"/api/v1/assets/{asset_id}/research-summary")
 
         assert response.status_code == 200
         data = cast(dict[str, Any], api_data(response))

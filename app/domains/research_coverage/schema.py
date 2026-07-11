@@ -21,7 +21,7 @@ class CoverageStatus(str, Enum):
 class CoverageAxis(BaseModel):
     axis: CoverageAxisName
     status: CoverageStatus
-    last_collected_at: UtcDatetime | None
+    last_updated_at: UtcDatetime | None
     item_count: int
 
 

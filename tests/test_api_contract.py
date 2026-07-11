@@ -218,7 +218,7 @@ RESEARCH_COVERAGE_CONTRACT: Contract = {
 COVERAGE_AXIS_CONTRACT: Contract = {
     "axis": str,
     "status": str,
-    "last_collected_at": (str, type(None)),
+    "last_updated_at": (str, type(None)),
     "item_count": int,
 }
 
