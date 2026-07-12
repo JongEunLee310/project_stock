@@ -9,16 +9,19 @@ from app.adapters.factory import (
     get_portfolio_provider,
     get_price_series_provider,
     get_symbol_lookup_provider,
+    get_valuation_provider,
 )
 from app.adapters.market.mock import (
     MockExchangeRateProvider,
     MockMarketDataProvider,
     MockPriceSeriesProvider,
     MockSymbolLookupProvider,
+    MockValuationProvider,
 )
 from app.adapters.market.yfinance import (
     YFinancePriceProvider,
     YFinanceSymbolLookupProvider,
+    YFinanceValuationProvider,
 )
 from app.adapters.news.mock import MockNewsAdapter
 from app.adapters.news.rss import RSSNewsAdapter
@@ -111,6 +114,7 @@ def test_factories_return_mock_providers(monkeypatch: pytest.MonkeyPatch) -> Non
     assert isinstance(get_price_series_provider(), MockPriceSeriesProvider)
     assert isinstance(get_exchange_rate_provider(), MockExchangeRateProvider)
     assert isinstance(get_symbol_lookup_provider(), MockSymbolLookupProvider)
+    assert isinstance(get_valuation_provider(), MockValuationProvider)
     assert isinstance(get_news_adapter(), MockNewsAdapter)
     assert isinstance(get_disclosure_provider(), MockDisclosureProvider)
     assert isinstance(get_portfolio_provider(), MockPortfolioProvider)
@@ -130,6 +134,14 @@ def test_symbol_lookup_factory_returns_yfinance_provider(
     monkeypatch.setattr(settings, "MARKET_PROVIDER", "yfinance")
 
     assert isinstance(get_symbol_lookup_provider(), YFinanceSymbolLookupProvider)
+
+
+def test_valuation_factory_returns_yfinance_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "MARKET_PROVIDER", "yfinance")
+
+    assert isinstance(get_valuation_provider(), YFinanceValuationProvider)
 
 
 def test_news_factory_returns_rss_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -153,6 +165,7 @@ def test_news_factory_returns_rss_adapter(monkeypatch: pytest.MonkeyPatch) -> No
         ("MARKET_PROVIDER", "get_price_series_provider"),
         ("MARKET_PROVIDER", "get_exchange_rate_provider"),
         ("MARKET_PROVIDER", "get_symbol_lookup_provider"),
+        ("MARKET_PROVIDER", "get_valuation_provider"),
         ("NEWS_PROVIDER", "get_news_adapter"),
         ("DISCLOSURE_PROVIDER", "get_disclosure_provider"),
         ("PORTFOLIO_PROVIDER", "get_portfolio_provider"),
@@ -168,6 +181,7 @@ def test_factories_fail_fast_for_real_providers(
         "get_price_series_provider": get_price_series_provider,
         "get_exchange_rate_provider": get_exchange_rate_provider,
         "get_symbol_lookup_provider": get_symbol_lookup_provider,
+        "get_valuation_provider": get_valuation_provider,
         "get_news_adapter": get_news_adapter,
         "get_disclosure_provider": get_disclosure_provider,
         "get_portfolio_provider": get_portfolio_provider,

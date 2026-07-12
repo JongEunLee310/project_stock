@@ -22,6 +22,7 @@ from app.worker.jobs import analysis
 from app.worker.jobs import llm_analysis
 from app.worker.jobs import news
 from app.worker.jobs import signal_snapshots
+from app.worker.jobs.valuation import collect_valuation_job
 from app.worker.jobs.analysis import analyze_watchlist_job
 from app.worker.jobs.llm_analysis import run_llm_analysis_job
 from app.worker.jobs.news import collect_news_job
@@ -340,6 +341,40 @@ def test_enqueue_news_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.status_code == 200
     data = cast(dict[str, str], api_data(response))
     assert data == {"job_id": "rq-job-1", "status": "queued"}
+
+
+def test_enqueue_valuation_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeJob:
+        id = "rq-job-valuation"
+
+    class FakeQueue:
+        def __init__(self, name: str, connection: object) -> None:
+            captured["name"] = name
+
+        def enqueue(self, func: object, symbols: list[str]) -> FakeJob:
+            captured["func"] = func
+            captured["symbols"] = symbols
+            return FakeJob()
+
+    monkeypatch.setattr("app.api.v1.endpoints.worker.Queue", FakeQueue)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.worker.get_redis_connection", lambda: object()
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/worker/jobs/valuation", json={"symbols": ["AAPL"]}
+        )
+
+    assert response.status_code == 200
+    assert api_data(response) == {"job_id": "rq-job-valuation", "status": "queued"}
+    assert captured == {
+        "name": "default",
+        "func": collect_valuation_job,
+        "symbols": ["AAPL"],
+    }
 
 
 def test_enqueue_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:

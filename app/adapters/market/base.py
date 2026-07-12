@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 
@@ -111,3 +111,22 @@ class SymbolLookupProvider(ABC):
         market: str | None = None,
     ) -> list[SymbolLookupResult]:
         """Return symbols matching the given symbol or company name query."""
+
+
+@dataclass(frozen=True)
+class ValuationResult:
+    per: Decimal | None
+    forward_per: Decimal | None
+    psr: Decimal | None
+    pbr: Decimal | None
+    ev_ebitda: Decimal | None
+    peg: Decimal | None
+    fcf_yield: Decimal | None
+    as_of: date
+    source: str
+
+
+class ValuationProvider(ABC):
+    @abstractmethod
+    def get_valuation(self, symbol: str, market: str) -> ValuationResult | None:
+        """Return the current valuation metrics, or None when unavailable."""

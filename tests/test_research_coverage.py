@@ -10,6 +10,7 @@ from app.domains.assets.model import Asset
 from app.domains.news.model import NewsItem
 from app.domains.prices.model import StockPriceBar
 from app.domains.prices.repository import PriceBarRepository
+from app.domains.valuation.model import ValuationSnapshot
 from tests.conftest import TestingSessionLocal, api_data, api_error, set_current_user
 
 
@@ -22,9 +23,10 @@ def create_asset(*, symbol: str = "AAPL", market: str = "NASDAQ") -> int:
         return asset.id
 
 
-def create_collected_data(asset_id: int) -> tuple[datetime, datetime]:
+def create_collected_data(asset_id: int) -> tuple[datetime, datetime, datetime]:
     news_updated_at = datetime(2026, 7, 10, 9, 30, tzinfo=UTC)
     price_updated_at = datetime(2026, 7, 10, 10, 45, tzinfo=UTC)
+    valuation_updated_at = datetime(2026, 7, 10, 11, 15, tzinfo=UTC)
     with TestingSessionLocal() as db:
         asset = db.get(Asset, asset_id)
         assert asset is not None
@@ -60,8 +62,24 @@ def create_collected_data(asset_id: int) -> tuple[datetime, datetime]:
                 for index in range(3)
             ]
         )
+        db.add(
+            ValuationSnapshot(
+                symbol=asset.symbol,
+                market=asset.market,
+                as_of=datetime(2026, 7, 10, tzinfo=UTC).date(),
+                per=Decimal("18.3"),
+                forward_per=Decimal("16.9"),
+                psr=Decimal("2.4"),
+                pbr=Decimal("3.1"),
+                ev_ebitda=Decimal("11.7"),
+                peg=Decimal("1.2"),
+                fcf_yield=Decimal("5.4"),
+                source="test",
+                updated_at=valuation_updated_at,
+            )
+        )
         db.commit()
-    return news_updated_at, price_updated_at
+    return news_updated_at, price_updated_at, valuation_updated_at
 
 
 def test_get_research_coverage_derives_collected_axes(
@@ -69,7 +87,9 @@ def test_get_research_coverage_derives_collected_axes(
 ) -> None:
     set_current_user(1)
     asset_id = create_asset()
-    news_updated_at, price_updated_at = create_collected_data(asset_id)
+    news_updated_at, price_updated_at, valuation_updated_at = create_collected_data(
+        asset_id
+    )
 
     response = client.get(f"/api/v1/assets/{asset_id}/research-coverage")
 
@@ -97,9 +117,11 @@ def test_get_research_coverage_derives_collected_axes(
         },
         {
             "axis": "VALUATION",
-            "status": "NOT_COLLECTED",
-            "last_updated_at": None,
-            "item_count": 0,
+            "status": "COLLECTED",
+            "last_updated_at": valuation_updated_at.isoformat().replace(
+                "+00:00", "Z"
+            ),
+            "item_count": 1,
         },
         {
             "axis": "DISCLOSURE",
@@ -140,7 +162,7 @@ def test_get_research_coverage_reflects_price_upsert_updated_at(
 ) -> None:
     set_current_user(1)
     asset_id = create_asset()
-    _, initial_updated_at = create_collected_data(asset_id)
+    _, initial_updated_at, _ = create_collected_data(asset_id)
 
     with TestingSessionLocal() as db:
         bar = db.scalars(

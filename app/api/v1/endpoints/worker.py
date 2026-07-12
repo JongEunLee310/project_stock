@@ -19,11 +19,16 @@ from app.worker.connection import get_redis_connection
 from app.worker.jobs.analysis import analyze_watchlist_job
 from app.worker.jobs.llm_analysis import run_llm_analysis_job
 from app.worker.jobs.news import collect_news_job
+from app.worker.jobs.valuation import collect_valuation_job
 
 router = APIRouter()
 
 
 class NewsJobRequest(BaseModel):
+    symbols: list[str] = Field(min_length=1)
+
+
+class ValuationJobRequest(BaseModel):
     symbols: list[str] = Field(min_length=1)
 
 
@@ -66,6 +71,20 @@ def get_scheduler_runner() -> ManualSchedulerRunner:
 def enqueue_news_job(payload: NewsJobRequest) -> ApiResponse[JobQueuedResponse]:
     queue = Queue("default", connection=get_redis_connection())
     job = queue.enqueue(collect_news_job, payload.symbols)
+    return success(JobQueuedResponse(job_id=str(job.id), status="queued"))
+
+
+@router.post(
+    "/jobs/valuation",
+    response_model=ApiResponse[JobQueuedResponse],
+    summary="Enqueue valuation collection job",
+    description="Queue a background job that collects valuation metrics for asset symbols.",
+)
+def enqueue_valuation_job(
+    payload: ValuationJobRequest,
+) -> ApiResponse[JobQueuedResponse]:
+    queue = Queue("default", connection=get_redis_connection())
+    job = queue.enqueue(collect_valuation_job, payload.symbols)
     return success(JobQueuedResponse(job_id=str(job.id), status="queued"))
 
 
