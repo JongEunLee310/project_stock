@@ -22,6 +22,7 @@ _RANGE_DELTAS: dict[BenchmarkRange, timedelta] = {
     BenchmarkRange.SIX_MONTHS: timedelta(days=183),
     BenchmarkRange.ONE_YEAR: timedelta(days=366),
 }
+_QUERY_START_PADDING = timedelta(days=14)
 _PERCENT_QUANTUM = Decimal("0.01")
 
 
@@ -54,8 +55,27 @@ class BenchmarkService:
                 sector_market,
             ),
         ]
+        latest_dates = [
+            self.price_repo.get_latest_close_date(symbol, market)
+            for _, _, symbol, market in series_specs
+        ]
+        if any(latest_date is None for latest_date in latest_dates):
+            return BenchmarkComparisonResponse(
+                asset_id=asset.id,
+                range=range_,
+                series=[
+                    BenchmarkSeries(kind=kind, label=label, points=[])
+                    for kind, label, _, _ in series_specs
+                ],
+            )
+
+        earliest_latest_date = min(
+            latest_date for latest_date in latest_dates if latest_date is not None
+        )
+        # 휴장일 차이로 공통 기준일이 더 이를 수 있어 조회 하한에 여유를 둔다.
+        start = earliest_latest_date - _RANGE_DELTAS[range_] - _QUERY_START_PADDING
         closes_by_kind = {
-            kind: dict(self.price_repo.get_daily_closes(symbol, market, start=None))
+            kind: dict(self.price_repo.get_daily_closes(symbol, market, start=start))
             for kind, _, symbol, market in series_specs
         }
         dates = self._common_dates(closes_by_kind, range_)

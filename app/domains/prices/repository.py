@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.adapters.market.base import PriceBarResult
@@ -85,6 +85,15 @@ class PriceBarRepository:
             .limit(limit)
         )
         return list(reversed(self.db.scalars(stmt).all()))
+
+    def get_latest_close_date(self, symbol: str, market: str) -> date | None:
+        stmt = select(func.max(StockPriceBar.timestamp)).where(
+            StockPriceBar.symbol == symbol,
+            StockPriceBar.market == market,
+            StockPriceBar.interval == "1d",
+        )
+        latest_timestamp = self.db.scalar(stmt)
+        return latest_timestamp.date() if latest_timestamp is not None else None
 
     def get_daily_closes(
         self,

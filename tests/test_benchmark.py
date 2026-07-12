@@ -10,6 +10,7 @@ from app.domains.assets.model import Asset
 from app.domains.benchmark.schema import BenchmarkRange, BenchmarkSeriesKind
 from app.domains.benchmark.sector_map import resolve_sector_etf
 from app.domains.prices.model import StockPriceBar
+from app.domains.prices.repository import PriceBarRepository
 from tests.conftest import TestingSessionLocal, api_data, api_error, set_current_user
 
 
@@ -135,6 +136,64 @@ def test_get_benchmark_comparison_derives_aligned_cumulative_returns(
         [Decimal("0.00"), Decimal("5.00"), Decimal("10.00")],
         [Decimal("0.00"), Decimal("10.00"), Decimal("20.00")],
     ]
+
+
+def test_get_benchmark_comparison_excludes_bars_before_bounded_query_start(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_current_user(1)
+    asset_id = create_asset()
+    old_date = date(2020, 1, 2)
+    first_date = date(2026, 4, 9)
+    reference_date = date(2026, 7, 10)
+    with TestingSessionLocal() as db:
+        for symbol, market in [
+            ("BMK", "NASDAQ"),
+            ("QQQ", "NASDAQ"),
+            ("XLK", "NYSE"),
+        ]:
+            add_daily_closes(
+                db,
+                symbol,
+                market,
+                {
+                    old_date: Decimal("1"),
+                    first_date: Decimal("100"),
+                    reference_date: Decimal("120"),
+                },
+            )
+
+    query_starts: list[date | None] = []
+    original_get_daily_closes = PriceBarRepository.get_daily_closes
+
+    def record_query_start(
+        repository: PriceBarRepository,
+        symbol: str,
+        market: str,
+        start: date | None,
+    ) -> list[tuple[date, Decimal]]:
+        query_starts.append(start)
+        return original_get_daily_closes(repository, symbol, market, start)
+
+    monkeypatch.setattr(PriceBarRepository, "get_daily_closes", record_query_start)
+
+    response = client.get(
+        f"/api/v1/assets/{asset_id}/benchmark-comparison",
+        params={"range": "3M"},
+    )
+
+    assert response.status_code == 200
+    assert query_starts == [date(2026, 3, 26)] * 3
+    data = cast(dict[str, Any], api_data(response))
+    assert [
+        [point["date"] for point in series["points"]]
+        for series in data["series"]
+    ] == [["2026-04-09", "2026-07-10"]] * 3
+    assert [
+        [Decimal(point["return_percent"]) for point in series["points"]]
+        for series in data["series"]
+    ] == [[Decimal("0.00"), Decimal("20.00")]] * 3
 
 
 @pytest.mark.parametrize(
