@@ -3,6 +3,8 @@ from decimal import Decimal
 from hashlib import sha256
 
 from app.adapters.market.base import (
+    EarningsProvider,
+    EarningsReportResult,
     ExchangeRateProvider,
     ExchangeRateResult,
     IndexQuoteProvider,
@@ -220,6 +222,42 @@ class MockValuationProvider(ValuationProvider):
             as_of=_VALUATION_AS_OF,
             source="mock",
         )
+
+
+class MockEarningsProvider(EarningsProvider):
+    def get_quarterly_earnings(
+        self, symbol: str, market: str
+    ) -> list[EarningsReportResult]:
+        period_ends = [
+            date(2024, 9, 30),
+            date(2024, 12, 31),
+            date(2025, 3, 31),
+            date(2025, 6, 30),
+            date(2025, 9, 30),
+            date(2025, 12, 31),
+            date(2026, 3, 31),
+            date(2026, 6, 30),
+        ]
+        reports: list[EarningsReportResult] = []
+        for index, period_end in enumerate(period_ends):
+            revenue = Decimal(90000 + index * 2500)
+            eps = Decimal("1.20") + Decimal(index) * Decimal("0.08")
+            estimate = (
+                None
+                if index == 5
+                else eps + (Decimal("0.05") if index % 2 else Decimal("-0.04"))
+            )
+            reports.append(
+                EarningsReportResult(
+                    period_end=period_end,
+                    revenue=revenue,
+                    operating_income=revenue * Decimal("0.28"),
+                    eps=eps,
+                    eps_estimate=estimate,
+                    source="mock",
+                )
+            )
+        return list(reversed(reports))
 
 
 class MockIndexQuoteProvider(IndexQuoteProvider):

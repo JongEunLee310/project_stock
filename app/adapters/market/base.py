@@ -130,3 +130,21 @@ class ValuationProvider(ABC):
     @abstractmethod
     def get_valuation(self, symbol: str, market: str) -> ValuationResult | None:
         """Return the current valuation metrics, or None when unavailable."""
+
+
+@dataclass(frozen=True)
+class EarningsReportResult:
+    period_end: date
+    revenue: Decimal | None
+    operating_income: Decimal | None
+    eps: Decimal | None
+    eps_estimate: Decimal | None
+    source: str
+
+
+class EarningsProvider(ABC):
+    @abstractmethod
+    def get_quarterly_earnings(
+        self, symbol: str, market: str
+    ) -> list[EarningsReportResult]:
+        """Return up to eight recent quarterly earnings reports."""

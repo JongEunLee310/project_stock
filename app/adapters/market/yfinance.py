@@ -7,6 +7,8 @@ from typing import Any, cast
 import yfinance as yf  # type: ignore[import-untyped]
 
 from app.adapters.market.base import (
+    EarningsProvider,
+    EarningsReportResult,
     PriceBarResult,
     PriceSeriesProvider,
     SymbolLookupProvider,
@@ -174,6 +176,93 @@ class YFinanceValuationProvider(ValuationProvider):
             )
             return None
         return valuation_from_info(info, as_of=date.today(), source=self.source)
+
+
+class YFinanceEarningsProvider(EarningsProvider):
+    source = "yfinance"
+
+    def get_quarterly_earnings(
+        self, symbol: str, market: str
+    ) -> list[EarningsReportResult]:
+        ticker_symbol = to_yfinance_ticker(symbol, market)
+        if ticker_symbol is None:
+            return []
+        try:
+            ticker = yf.Ticker(ticker_symbol)
+            return earnings_reports_from_frames(
+                ticker.quarterly_income_stmt,
+                ticker.earnings_dates,
+                source=self.source,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to collect quarterly earnings",
+                extra={"symbol": symbol.upper(), "market": market.upper()},
+            )
+            return []
+
+
+def earnings_reports_from_frames(
+    income_stmt: Any,
+    earnings_dates: Any,
+    *,
+    source: str,
+) -> list[EarningsReportResult]:
+    if income_stmt is None or getattr(income_stmt, "empty", True):
+        return []
+    estimates = _earnings_estimates(earnings_dates)
+    reports = [
+        EarningsReportResult(
+            period_end=_date_from_value(column),
+            revenue=_frame_decimal(income_stmt, "Total Revenue", column),
+            operating_income=_frame_decimal(income_stmt, "Operating Income", column),
+            eps=_frame_decimal(income_stmt, "Diluted EPS", column),
+            eps_estimate=_closest_estimate(_date_from_value(column), estimates),
+            source=source,
+        )
+        for column in income_stmt.columns
+    ]
+    return sorted(reports, key=lambda report: report.period_end, reverse=True)[:8]
+
+
+def period_from_end(period_end: date) -> str:
+    quarter = (period_end.month - 1) // 3 + 1
+    return f"{period_end.year}Q{quarter}"
+
+
+def _frame_decimal(frame: Any, row_name: str, column: Any) -> Decimal | None:
+    if row_name not in frame.index:
+        return None
+    return _optional_decimal(frame.at[row_name, column])
+
+
+def _earnings_estimates(frame: Any) -> list[tuple[date, Decimal]]:
+    if frame is None or getattr(frame, "empty", True):
+        return []
+    estimates: list[tuple[date, Decimal]] = []
+    for index, row in frame.iterrows():
+        estimate = _optional_decimal(row.get("EPS Estimate"))
+        if estimate is not None:
+            estimates.append((_date_from_value(index), estimate))
+    return estimates
+
+
+def _closest_estimate(
+    period_end: date, estimates: list[tuple[date, Decimal]]
+) -> Decimal | None:
+    if not estimates:
+        return None
+    return min(estimates, key=lambda item: abs(item[0] - period_end))[1]
+
+
+def _date_from_value(value: Any) -> date:
+    if hasattr(value, "date"):
+        result = value.date()
+        if isinstance(result, date):
+            return result
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value)[:10])
 
 
 def valuation_from_info(

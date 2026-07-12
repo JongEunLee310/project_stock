@@ -9,6 +9,7 @@ from app.adapters.llm.local import LocalLLMProvider
 from app.adapters.llm.mock import DEFAULT_MOCK_RESPONSES, MockLLMClient
 from app.adapters.llm.openai import OpenAIClient
 from app.adapters.market.base import (
+    EarningsProvider,
     ExchangeRateProvider,
     IndexQuoteProvider,
     MarketDataProvider,
@@ -17,6 +18,7 @@ from app.adapters.market.base import (
     ValuationProvider,
 )
 from app.adapters.market.mock import (
+    MockEarningsProvider,
     MockExchangeRateProvider,
     MockIndexQuoteProvider,
     MockMarketDataProvider,
@@ -25,6 +27,7 @@ from app.adapters.market.mock import (
     MockValuationProvider,
 )
 from app.adapters.market.yfinance import (
+    YFinanceEarningsProvider,
     YFinancePriceProvider,
     YFinanceSymbolLookupProvider,
     YFinanceValuationProvider,
@@ -79,6 +82,14 @@ def get_valuation_provider() -> ValuationProvider:
         return MockValuationProvider()
     if settings.MARKET_PROVIDER == "yfinance":
         return YFinanceValuationProvider()
+    raise NotImplementedError("market real provider 미구현")
+
+
+def get_earnings_provider() -> EarningsProvider:
+    if settings.MARKET_PROVIDER == "mock":
+        return MockEarningsProvider()
+    if settings.MARKET_PROVIDER == "yfinance":
+        return YFinanceEarningsProvider()
     raise NotImplementedError("market real provider 미구현")
 
 

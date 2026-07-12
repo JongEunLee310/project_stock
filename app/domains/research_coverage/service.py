@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.assets.repository import AssetRepository
+from app.domains.earnings.repository import EarningsRepository
 from app.domains.news.model import NewsItem
 from app.domains.prices.model import StockPriceBar
 from app.domains.research_coverage.schema import (
@@ -21,6 +22,7 @@ class ResearchCoverageService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.asset_repo = AssetRepository(db)
+        self.earnings_repo = EarningsRepository(db)
         self.valuation_repo = ValuationRepository(db)
 
     def get_coverage(self, asset_id: int) -> ResearchCoverageResponse:
@@ -41,6 +43,10 @@ class ResearchCoverageService:
             asset.symbol,
             asset.market,
         )
+        earnings_count, earnings_last_updated_at = self.earnings_repo.get_coverage(
+            asset.symbol,
+            asset.market,
+        )
         return ResearchCoverageResponse(
             asset_id=asset.id,
             axes=[
@@ -54,7 +60,11 @@ class ResearchCoverageService:
                     price_count,
                     price_last_updated_at,
                 ),
-                self._not_collected_axis(CoverageAxisName.EARNINGS),
+                self._collected_axis(
+                    CoverageAxisName.EARNINGS,
+                    earnings_count,
+                    earnings_last_updated_at,
+                ),
                 self._collected_axis(
                     CoverageAxisName.VALUATION,
                     valuation_count,
