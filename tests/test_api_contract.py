@@ -14,6 +14,7 @@ from app.domains.alert_candidates.types import AlertCandidateType, AlertImportan
 from app.domains.alerts.service import AlertService
 from app.domains.prices.model import StockPriceBar
 from app.domains.valuation.model import ValuationSnapshot
+from app.domains.earnings.model import EarningsReport
 from app.domains.signals.repository import SignalRepository
 from app.main import app
 from tests.conftest import TestingSessionLocal, api_data, api_meta, set_current_user
@@ -702,6 +703,22 @@ def test_valuation_metrics_response_contract(client: TestClient) -> None:
 def test_earnings_summary_response_contract(client: TestClient) -> None:
     set_current_user(1)
     asset = create_asset(client)
+    with TestingSessionLocal() as db:
+        db.add(
+            EarningsReport(
+                symbol=asset["symbol"],
+                market=asset["market"],
+                period="2026Q1",
+                period_end=datetime(2026, 3, 31, tzinfo=UTC).date(),
+                # Source: docs/designs/280-earnings-real-collection.md fixture.
+                revenue=Decimal("100"),
+                operating_income=Decimal("25"),
+                eps=Decimal("1.2"),
+                eps_estimate=Decimal("1.1"),
+                source="fixture",
+            )
+        )
+        db.commit()
 
     response = client.get(f"/api/v1/assets/{asset['id']}/earnings-summary")
 
@@ -710,7 +727,8 @@ def test_earnings_summary_response_contract(client: TestClient) -> None:
     data = cast(dict[str, Any], api_data(response))
     assert_contract(data, EARNINGS_SUMMARY_CONTRACT)
     assert_contract(data["quarters"][0], EARNINGS_QUARTER_CONTRACT)
-    assert_contract(data["segments"][0], SEGMENT_GROWTH_CONTRACT)
+    assert data["guidance"] is None
+    assert data["segments"] == []
 
 
 def test_benchmark_comparison_response_contract(client: TestClient) -> None:

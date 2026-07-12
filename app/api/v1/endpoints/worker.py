@@ -17,6 +17,7 @@ from app.scheduler.runner import (
 )
 from app.worker.connection import get_redis_connection
 from app.worker.jobs.analysis import analyze_watchlist_job
+from app.worker.jobs.earnings import collect_earnings_job
 from app.worker.jobs.llm_analysis import run_llm_analysis_job
 from app.worker.jobs.news import collect_news_job
 from app.worker.jobs.valuation import collect_valuation_job
@@ -29,6 +30,10 @@ class NewsJobRequest(BaseModel):
 
 
 class ValuationJobRequest(BaseModel):
+    symbols: list[str] = Field(min_length=1)
+
+
+class EarningsJobRequest(BaseModel):
     symbols: list[str] = Field(min_length=1)
 
 
@@ -85,6 +90,20 @@ def enqueue_valuation_job(
 ) -> ApiResponse[JobQueuedResponse]:
     queue = Queue("default", connection=get_redis_connection())
     job = queue.enqueue(collect_valuation_job, payload.symbols)
+    return success(JobQueuedResponse(job_id=str(job.id), status="queued"))
+
+
+@router.post(
+    "/jobs/earnings",
+    response_model=ApiResponse[JobQueuedResponse],
+    summary="Enqueue earnings collection job",
+    description="Queue a background job that collects quarterly earnings.",
+)
+def enqueue_earnings_job(
+    payload: EarningsJobRequest,
+) -> ApiResponse[JobQueuedResponse]:
+    queue = Queue("default", connection=get_redis_connection())
+    job = queue.enqueue(collect_earnings_job, payload.symbols)
     return success(JobQueuedResponse(job_id=str(job.id), status="queued"))
 
 

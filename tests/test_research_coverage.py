@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.adapters.market.base import PriceBarResult
 from app.domains.assets.model import Asset
+from app.domains.earnings.model import EarningsReport
 from app.domains.news.model import NewsItem
 from app.domains.prices.model import StockPriceBar
 from app.domains.prices.repository import PriceBarRepository
@@ -23,10 +24,13 @@ def create_asset(*, symbol: str = "AAPL", market: str = "NASDAQ") -> int:
         return asset.id
 
 
-def create_collected_data(asset_id: int) -> tuple[datetime, datetime, datetime]:
+def create_collected_data(
+    asset_id: int,
+) -> tuple[datetime, datetime, datetime, datetime]:
     news_updated_at = datetime(2026, 7, 10, 9, 30, tzinfo=UTC)
     price_updated_at = datetime(2026, 7, 10, 10, 45, tzinfo=UTC)
     valuation_updated_at = datetime(2026, 7, 10, 11, 15, tzinfo=UTC)
+    earnings_updated_at = datetime(2026, 7, 10, 11, 45, tzinfo=UTC)
     with TestingSessionLocal() as db:
         asset = db.get(Asset, asset_id)
         assert asset is not None
@@ -78,8 +82,28 @@ def create_collected_data(asset_id: int) -> tuple[datetime, datetime, datetime]:
                 updated_at=valuation_updated_at,
             )
         )
+        db.add(
+            EarningsReport(
+                symbol=asset.symbol,
+                market=asset.market,
+                period="2026Q1",
+                period_end=datetime(2026, 3, 31, tzinfo=UTC).date(),
+                # Source: docs/designs/280-earnings-real-collection.md fixture.
+                revenue=Decimal("100"),
+                operating_income=Decimal("25"),
+                eps=Decimal("1.2"),
+                eps_estimate=Decimal("1.1"),
+                source="test",
+                updated_at=earnings_updated_at,
+            )
+        )
         db.commit()
-    return news_updated_at, price_updated_at, valuation_updated_at
+    return (
+        news_updated_at,
+        price_updated_at,
+        earnings_updated_at,
+        valuation_updated_at,
+    )
 
 
 def test_get_research_coverage_derives_collected_axes(
@@ -87,8 +111,8 @@ def test_get_research_coverage_derives_collected_axes(
 ) -> None:
     set_current_user(1)
     asset_id = create_asset()
-    news_updated_at, price_updated_at, valuation_updated_at = create_collected_data(
-        asset_id
+    news_updated_at, price_updated_at, earnings_updated_at, valuation_updated_at = (
+        create_collected_data(asset_id)
     )
 
     response = client.get(f"/api/v1/assets/{asset_id}/research-coverage")
@@ -111,9 +135,11 @@ def test_get_research_coverage_derives_collected_axes(
         },
         {
             "axis": "EARNINGS",
-            "status": "NOT_COLLECTED",
-            "last_updated_at": None,
-            "item_count": 0,
+            "status": "COLLECTED",
+            "last_updated_at": earnings_updated_at.isoformat().replace(
+                "+00:00", "Z"
+            ),
+            "item_count": 1,
         },
         {
             "axis": "VALUATION",
@@ -162,7 +188,7 @@ def test_get_research_coverage_reflects_price_upsert_updated_at(
 ) -> None:
     set_current_user(1)
     asset_id = create_asset()
-    _, initial_updated_at, _ = create_collected_data(asset_id)
+    _, initial_updated_at, _, _ = create_collected_data(asset_id)
 
     with TestingSessionLocal() as db:
         bar = db.scalars(
