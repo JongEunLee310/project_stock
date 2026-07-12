@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import UTC, date, datetime, time
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -84,3 +85,26 @@ class PriceBarRepository:
             .limit(limit)
         )
         return list(reversed(self.db.scalars(stmt).all()))
+
+    def get_daily_closes(
+        self,
+        symbol: str,
+        market: str,
+        start: date | None,
+    ) -> list[tuple[date, Decimal]]:
+        stmt = (
+            select(StockPriceBar.timestamp, StockPriceBar.close_price)
+            .where(
+                StockPriceBar.symbol == symbol,
+                StockPriceBar.market == market,
+                StockPriceBar.interval == "1d",
+            )
+            .order_by(StockPriceBar.timestamp)
+        )
+        if start is not None:
+            start_timestamp = datetime.combine(start, time.min, tzinfo=UTC)
+            stmt = stmt.where(StockPriceBar.timestamp >= start_timestamp)
+        return [
+            (timestamp.date(), close_price)
+            for timestamp, close_price in self.db.execute(stmt).all()
+        ]

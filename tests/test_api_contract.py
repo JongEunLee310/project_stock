@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any, cast
 
 import pytest
@@ -11,6 +12,7 @@ from app.domains.alert_candidates.schema import AlertCandidateCreate
 from app.domains.alert_candidates.service import AlertCandidateService
 from app.domains.alert_candidates.types import AlertCandidateType, AlertImportance
 from app.domains.alerts.service import AlertService
+from app.domains.prices.model import StockPriceBar
 from app.domains.signals.repository import SignalRepository
 from app.main import app
 from tests.conftest import TestingSessionLocal, api_data, api_meta, set_current_user
@@ -694,6 +696,29 @@ def test_earnings_summary_response_contract(client: TestClient) -> None:
 def test_benchmark_comparison_response_contract(client: TestClient) -> None:
     set_current_user(1)
     asset = create_asset(client)
+    with TestingSessionLocal() as db:
+        for symbol, market in [
+            (asset["symbol"], asset["market"]),
+            ("QQQ", "NASDAQ"),
+            ("XLK", "NYSE"),
+        ]:
+            db.add(
+                StockPriceBar(
+                    symbol=symbol,
+                    market=market,
+                    interval="1d",
+                    timestamp=datetime(2026, 7, 10, tzinfo=UTC),
+                    open_price=Decimal("100"),
+                    high_price=Decimal("100"),
+                    low_price=Decimal("100"),
+                    close_price=Decimal("100"),
+                    adjusted_close_price=Decimal("100"),
+                    volume=1000,
+                    currency="USD",
+                    source="fixture",
+                )
+            )
+        db.commit()
 
     response = client.get(
         f"/api/v1/assets/{asset['id']}/benchmark-comparison"

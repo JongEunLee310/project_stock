@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any, cast
@@ -21,6 +22,7 @@ from app.domains.prices.normalizer import PriceNormalizer
 from app.domains.portfolios.model import Portfolio, Position
 from app.domains.prices.ingestion_service import PriceIngestionService
 from app.domains.prices.model import StockPriceBar
+from app.domains.prices.repository import PriceBarRepository
 from app.domains.prices.validator import PriceValidator
 from app.domains.prices.universe import PriceUniverseResolver
 from app.domains.raw_prices.model import RawPrice
@@ -292,6 +294,31 @@ def test_price_ingestion_upsert_is_idempotent(db: Session) -> None:
     assert db.scalar(select(func.count()).select_from(StockPriceBar)) == 1
 
 
+def test_get_daily_closes_filters_start_interval_and_orders(db: Session) -> None:
+    first_date = date(2026, 7, 1)
+    start_date = date(2026, 7, 2)
+    last_date = date(2026, 7, 3)
+    daily_bars = [
+        price_bar(date=last_date, close=Decimal("103")),
+        price_bar(date=first_date, close=Decimal("101")),
+        price_bar(date=start_date, close=Decimal("102")),
+    ]
+    intraday_bar = replace(
+        price_bar(date=last_date, close=Decimal("999")),
+        interval="15m",
+        timestamp=datetime.combine(last_date, time(12), tzinfo=UTC),
+    )
+    repository = PriceBarRepository(db)
+    repository.upsert_bars([*daily_bars, intraday_bar])
+
+    closes = repository.get_daily_closes("AAPL", "NASDAQ", start=start_date)
+
+    assert closes == [
+        (start_date, Decimal("102.0000")),
+        (last_date, Decimal("103.0000")),
+    ]
+
+
 def test_raw_price_service_skips_duplicate_payload(db: Session) -> None:
     service = RawPriceService(db)
     payload = {"ticker": "AAPL", "rows": [{"close": "100"}]}
@@ -348,8 +375,18 @@ def test_raw_price_processing_status_accepts_pipeline_states(db: Session) -> Non
 def test_price_universe_resolver_deduplicates_watchlist_and_portfolio(
     db: Session,
 ) -> None:
-    aapl = Asset(symbol="aapl", name="Apple Inc.", market="nasdaq")
-    samsung = Asset(symbol="005930", name="Samsung", market="KOSPI")
+    aapl = Asset(
+        symbol="aapl",
+        name="Apple Inc.",
+        market="nasdaq",
+        sector="Technology",
+    )
+    samsung = Asset(
+        symbol="005930",
+        name="Samsung",
+        market="KOSPI",
+        sector="Unknown Sector",
+    )
     db.add_all([aapl, samsung])
     db.commit()
     db.refresh(aapl)
@@ -377,11 +414,37 @@ def test_price_universe_resolver_deduplicates_watchlist_and_portfolio(
     assert PriceUniverseResolver(db).resolve() == [
         ("005930", "KOSPI"),
         ("AAPL", "NASDAQ"),
+        ("QQQ", "NASDAQ"),
+        ("XLK", "NYSE"),
+        ("SPY", "NYSE"),
     ]
 
 
-def test_price_universe_resolver_empty_noop(db: Session) -> None:
-    assert PriceUniverseResolver(db).resolve() == []
+def test_price_universe_resolver_empty_includes_index_benchmark(db: Session) -> None:
+    assert PriceUniverseResolver(db).resolve() == [("QQQ", "NASDAQ")]
+
+
+def test_price_universe_resolver_deduplicates_benchmark_assets(db: Session) -> None:
+    qqq = Asset(
+        symbol="qqq",
+        name="NASDAQ 100 ETF",
+        market="nasdaq",
+        sector="Technology",
+    )
+    db.add(qqq)
+    db.commit()
+    db.refresh(qqq)
+    watchlist = Watchlist(user_id=1, name="Main")
+    db.add(watchlist)
+    db.commit()
+    db.refresh(watchlist)
+    db.add(WatchlistItem(watchlist_id=watchlist.id, asset_id=qqq.id))
+    db.commit()
+
+    assert PriceUniverseResolver(db).resolve() == [
+        ("QQQ", "NASDAQ"),
+        ("XLK", "NYSE"),
+    ]
 
 
 def test_collect_prices_job_records_success_with_target_failure(
@@ -414,7 +477,7 @@ def test_collect_prices_job_records_success_with_target_failure(
     assert job_run.job_type == "price_collection"
     assert job_run.status == "success"
     assert job_run.finished_at is not None
-    assert db.scalar(select(func.count()).select_from(StockPriceBar)) == 1
+    assert db.scalar(select(func.count()).select_from(StockPriceBar)) == 3
 
 
 class StaticPriceProvider(PriceSeriesProvider):

@@ -1,57 +1,250 @@
+from datetime import UTC, date, datetime, time
+from decimal import Decimal
 from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app.domains.assets.model import Asset
-from app.domains.benchmark.schema import BenchmarkSeriesKind
-from app.domains.benchmark.service import _POINT_COUNTS
+from app.domains.benchmark.schema import BenchmarkRange, BenchmarkSeriesKind
+from app.domains.benchmark.sector_map import resolve_sector_etf
+from app.domains.prices.model import StockPriceBar
 from tests.conftest import TestingSessionLocal, api_data, api_error, set_current_user
 
 
-def create_asset() -> int:
+def create_asset(*, sector: str | None = "Technology") -> int:
     with TestingSessionLocal() as db:
-        asset = Asset(symbol="BMK", name="Benchmark", market="NASDAQ")
+        asset = Asset(
+            symbol="BMK",
+            name="Benchmark",
+            market="NASDAQ",
+            sector=sector,
+        )
         db.add(asset)
         db.commit()
         db.refresh(asset)
         return asset.id
 
 
-@pytest.mark.parametrize("range_", list(_POINT_COUNTS))
-def test_get_benchmark_comparison_returns_aligned_deterministic_series(
+def add_daily_closes(
+    db: Session,
+    symbol: str,
+    market: str,
+    closes: dict[date, Decimal],
+) -> None:
+    db.add_all(
+        [
+            StockPriceBar(
+                symbol=symbol,
+                market=market,
+                interval="1d",
+                timestamp=datetime.combine(point_date, time.min, tzinfo=UTC),
+                open_price=close,
+                high_price=close,
+                low_price=close,
+                close_price=close,
+                adjusted_close_price=close,
+                volume=1000,
+                currency="USD",
+                source="fixture",
+            )
+            for point_date, close in closes.items()
+        ]
+    )
+    db.commit()
+
+
+def test_get_benchmark_comparison_derives_aligned_cumulative_returns(
     client: TestClient,
-    range_: str,
 ) -> None:
     set_current_user(1)
     asset_id = create_asset()
+    outside_range = date(2026, 4, 8)
+    first_date = date(2026, 4, 9)
+    second_date = date(2026, 4, 10)
+    excluded_date = date(2026, 6, 1)
+    reference_date = date(2026, 7, 10)
+    with TestingSessionLocal() as db:
+        add_daily_closes(
+            db,
+            "BMK",
+            "NASDAQ",
+            {
+                outside_range: Decimal("90"),
+                first_date: Decimal("100"),
+                second_date: Decimal("110"),
+                excluded_date: Decimal("999"),
+                reference_date: Decimal("120"),
+            },
+        )
+        add_daily_closes(
+            db,
+            "QQQ",
+            "NASDAQ",
+            {
+                outside_range: Decimal("180"),
+                first_date: Decimal("200"),
+                second_date: Decimal("210"),
+                excluded_date: Decimal("230"),
+                reference_date: Decimal("220"),
+            },
+        )
+        add_daily_closes(
+            db,
+            "XLK",
+            "NYSE",
+            {
+                outside_range: Decimal("45"),
+                first_date: Decimal("50"),
+                second_date: Decimal("55"),
+                reference_date: Decimal("60"),
+            },
+        )
 
-    first_response = client.get(
+    response = client.get(
         f"/api/v1/assets/{asset_id}/benchmark-comparison",
-        params={"range": range_},
-    )
-    second_response = client.get(
-        f"/api/v1/assets/{asset_id}/benchmark-comparison",
-        params={"range": range_},
+        params={"range": "3M"},
     )
 
-    assert first_response.status_code == 200
-    assert second_response.status_code == 200
-    first_data = cast(dict[str, Any], api_data(first_response))
-    second_data = cast(dict[str, Any], api_data(second_response))
-    assert first_data == second_data
-    assert first_data["asset_id"] == asset_id
-    assert first_data["range"] == range_
-    assert [series["kind"] for series in first_data["series"]] == [
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["asset_id"] == asset_id
+    assert data["range"] == "3M"
+    assert [series["kind"] for series in data["series"]] == [
         kind.value for kind in BenchmarkSeriesKind
     ]
-    date_axes = [
-        [point["date"] for point in series["points"]]
-        for series in first_data["series"]
+    assert [series["label"] for series in data["series"]] == [
+        "BMK",
+        "NASDAQ 100",
+        "XLK",
     ]
-    assert all(date_axis == date_axes[0] for date_axis in date_axes)
-    assert all(len(series["points"]) == _POINT_COUNTS[range_] for series in first_data["series"])
-    assert all(series["points"][0]["return_percent"] == "0" for series in first_data["series"])
+    expected_dates = ["2026-04-09", "2026-04-10", "2026-07-10"]
+    assert [
+        [point["date"] for point in series["points"]]
+        for series in data["series"]
+    ] == [expected_dates, expected_dates, expected_dates]
+    # BMK: 110 / 100 - 1 = 10%, 120 / 100 - 1 = 20%.
+    # QQQ: 210 / 200 - 1 = 5%, 220 / 200 - 1 = 10%.
+    # XLK: 55 / 50 - 1 = 10%, 60 / 50 - 1 = 20%.
+    assert [
+        [Decimal(point["return_percent"]) for point in series["points"]]
+        for series in data["series"]
+    ] == [
+        [Decimal("0.00"), Decimal("10.00"), Decimal("20.00")],
+        [Decimal("0.00"), Decimal("5.00"), Decimal("10.00")],
+        [Decimal("0.00"), Decimal("10.00"), Decimal("20.00")],
+    ]
+
+
+@pytest.mark.parametrize(
+    ("range_", "expected_first_date"),
+    [
+        (BenchmarkRange.ONE_MONTH, date(2026, 6, 9)),
+        (BenchmarkRange.THREE_MONTHS, date(2026, 4, 9)),
+        (BenchmarkRange.SIX_MONTHS, date(2026, 1, 8)),
+        (BenchmarkRange.ONE_YEAR, date(2025, 7, 9)),
+    ],
+)
+def test_get_benchmark_comparison_filters_from_reference_date(
+    client: TestClient,
+    range_: BenchmarkRange,
+    expected_first_date: date,
+) -> None:
+    set_current_user(1)
+    asset_id = create_asset()
+    dates = [
+        date(2025, 7, 8),
+        date(2025, 7, 9),
+        date(2026, 1, 8),
+        date(2026, 4, 9),
+        date(2026, 6, 9),
+        date(2026, 7, 10),
+    ]
+    with TestingSessionLocal() as db:
+        for symbol, market in [
+            ("BMK", "NASDAQ"),
+            ("QQQ", "NASDAQ"),
+            ("XLK", "NYSE"),
+        ]:
+            add_daily_closes(
+                db,
+                symbol,
+                market,
+                {
+                    point_date: Decimal(index + 1)
+                    for index, point_date in enumerate(dates)
+                },
+            )
+
+    response = client.get(
+        f"/api/v1/assets/{asset_id}/benchmark-comparison",
+        params={"range": range_.value},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["series"][0]["points"][0]["date"] == expected_first_date.isoformat()
+
+
+def test_get_benchmark_comparison_returns_empty_points_when_a_series_is_missing(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    asset_id = create_asset()
+    with TestingSessionLocal() as db:
+        add_daily_closes(
+            db,
+            "BMK",
+            "NASDAQ",
+            {date(2026, 7, 10): Decimal("100")},
+        )
+
+    response = client.get(f"/api/v1/assets/{asset_id}/benchmark-comparison")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert [series["points"] for series in data["series"]] == [[], [], []]
+    assert [series["label"] for series in data["series"]] == [
+        "BMK",
+        "NASDAQ 100",
+        "XLK",
+    ]
+
+
+@pytest.mark.parametrize("sector", [None, "Unknown Sector"])
+def test_get_benchmark_comparison_uses_spy_for_unmapped_sector(
+    client: TestClient,
+    sector: str | None,
+) -> None:
+    set_current_user(1)
+    asset_id = create_asset(sector=sector)
+    with TestingSessionLocal() as db:
+        for symbol, market in [
+            ("BMK", "NASDAQ"),
+            ("QQQ", "NASDAQ"),
+            ("SPY", "NYSE"),
+        ]:
+            add_daily_closes(
+                db,
+                symbol,
+                market,
+                {date(2026, 7, 10): Decimal("100")},
+            )
+
+    response = client.get(f"/api/v1/assets/{asset_id}/benchmark-comparison")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["series"][2]["label"] == "S&P 500"
+    assert Decimal(data["series"][2]["points"][0]["return_percent"]) == Decimal(
+        "0.00"
+    )
+
+
+def test_resolve_sector_etf_uses_shared_mapping_and_fallback() -> None:
+    assert resolve_sector_etf("Technology") == ("XLK", "NYSE", "XLK")
+    assert resolve_sector_etf(None) == ("SPY", "NYSE", "S&P 500")
 
 
 def test_get_benchmark_comparison_defaults_to_three_months(
