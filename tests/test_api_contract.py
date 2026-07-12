@@ -13,6 +13,7 @@ from app.domains.alert_candidates.service import AlertCandidateService
 from app.domains.alert_candidates.types import AlertCandidateType, AlertImportance
 from app.domains.alerts.service import AlertService
 from app.domains.prices.model import StockPriceBar
+from app.domains.valuation.model import ValuationSnapshot
 from app.domains.signals.repository import SignalRepository
 from app.main import app
 from tests.conftest import TestingSessionLocal, api_data, api_meta, set_current_user
@@ -667,6 +668,24 @@ def test_research_coverage_response_contract(client: TestClient) -> None:
 def test_valuation_metrics_response_contract(client: TestClient) -> None:
     set_current_user(1)
     asset = create_asset(client)
+    with TestingSessionLocal() as db:
+        db.add(
+            ValuationSnapshot(
+                symbol=asset["symbol"],
+                market=asset["market"],
+                as_of=datetime(2026, 7, 12, tzinfo=UTC).date(),
+                # Source: docs/designs/279-valuation-real-collection.md fixture.
+                per=Decimal("18.3"),
+                forward_per=None,
+                psr=None,
+                pbr=None,
+                ev_ebitda=None,
+                peg=None,
+                fcf_yield=None,
+                source="fixture",
+            )
+        )
+        db.commit()
 
     response = client.get(
         f"/api/v1/assets/{asset['id']}/valuation-metrics"
@@ -677,6 +696,7 @@ def test_valuation_metrics_response_contract(client: TestClient) -> None:
     data = cast(dict[str, Any], api_data(response))
     assert_contract(data, VALUATION_METRICS_CONTRACT)
     assert_contract(data["metrics"][0], VALUATION_METRIC_CONTRACT)
+    assert data["metrics"][0]["value"] == "18.3000"
 
 
 def test_earnings_summary_response_contract(client: TestClient) -> None:

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 import logging
 import math
@@ -11,6 +11,8 @@ from app.adapters.market.base import (
     PriceSeriesProvider,
     SymbolLookupProvider,
     SymbolLookupResult,
+    ValuationProvider,
+    ValuationResult,
 )
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
@@ -156,6 +158,54 @@ class YFinanceSymbolLookupProvider(SymbolLookupProvider):
         return results
 
 
+class YFinanceValuationProvider(ValuationProvider):
+    source = "yfinance"
+
+    def get_valuation(self, symbol: str, market: str) -> ValuationResult | None:
+        ticker_symbol = to_yfinance_ticker(symbol, market)
+        if ticker_symbol is None:
+            return None
+        try:
+            info = yf.Ticker(ticker_symbol).info
+        except Exception:
+            logger.exception(
+                "Failed to collect valuation",
+                extra={"symbol": symbol.upper(), "market": market.upper()},
+            )
+            return None
+        return valuation_from_info(info, as_of=date.today(), source=self.source)
+
+
+def valuation_from_info(
+    info: Any,
+    *,
+    as_of: date,
+    source: str,
+) -> ValuationResult | None:
+    if not isinstance(info, dict):
+        return None
+    free_cash_flow = _optional_decimal(info.get("freeCashflow"))
+    market_cap = _optional_decimal(info.get("marketCap"))
+    fcf_yield = (
+        free_cash_flow / market_cap * Decimal("100")
+        if free_cash_flow is not None
+        and market_cap is not None
+        and market_cap != Decimal("0")
+        else None
+    )
+    return ValuationResult(
+        per=_optional_decimal(info.get("trailingPE")),
+        forward_per=_optional_decimal(info.get("forwardPE")),
+        psr=_optional_decimal(info.get("priceToSalesTrailing12Months")),
+        pbr=_optional_decimal(info.get("priceToBook")),
+        ev_ebitda=_optional_decimal(info.get("enterpriseToEbitda")),
+        peg=_optional_decimal(info.get("trailingPegRatio")),
+        fcf_yield=fcf_yield,
+        as_of=as_of,
+        source=source,
+    )
+
+
 def to_yfinance_ticker(symbol: str, market: str) -> str | None:
     suffix = _MARKET_SUFFIXES.get(market.upper())
     if suffix is None:
@@ -287,6 +337,16 @@ def _to_decimal(value: Any) -> Decimal:
     if value is None or _is_nan(value):
         raise ValueError("missing price value")
     return Decimal(str(value))
+
+
+def _optional_decimal(value: Any) -> Decimal | None:
+    if value is None or _is_nan(value):
+        return None
+    try:
+        result = Decimal(str(value))
+    except (ValueError, TypeError):
+        return None
+    return result if result.is_finite() else None
 
 
 def _to_json_value(value: Any) -> str | int | float | None:

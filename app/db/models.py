@@ -17,4 +17,5 @@ import app.domains.signals.snapshot_model  # noqa: F401 — registers signal sna
 import app.domains.theses.conflict_model  # noqa: F401 — registers thesis conflict model
 import app.domains.theses.model  # noqa: F401 — registers InvestmentThesis model for autogenerate
 import app.domains.users.model  # noqa: F401 — registers User model for autogenerate
+import app.domains.valuation.model  # noqa: F401 — registers valuation snapshot model
 import app.domains.watchlists.model  # noqa: F401 — registers Watchlist models for autogenerate

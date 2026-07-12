@@ -14,12 +14,14 @@ from app.domains.research_coverage.schema import (
     CoverageStatus,
     ResearchCoverageResponse,
 )
+from app.domains.valuation.repository import ValuationRepository
 
 
 class ResearchCoverageService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.asset_repo = AssetRepository(db)
+        self.valuation_repo = ValuationRepository(db)
 
     def get_coverage(self, asset_id: int) -> ResearchCoverageResponse:
         asset = self.asset_repo.get_by_id(asset_id)
@@ -32,6 +34,10 @@ class ResearchCoverageService:
 
         news_count, news_last_updated_at = self._news_coverage(asset.id)
         price_count, price_last_updated_at = self._price_coverage(
+            asset.symbol,
+            asset.market,
+        )
+        valuation_count, valuation_last_updated_at = self.valuation_repo.get_coverage(
             asset.symbol,
             asset.market,
         )
@@ -49,7 +55,11 @@ class ResearchCoverageService:
                     price_last_updated_at,
                 ),
                 self._not_collected_axis(CoverageAxisName.EARNINGS),
-                self._not_collected_axis(CoverageAxisName.VALUATION),
+                self._collected_axis(
+                    CoverageAxisName.VALUATION,
+                    valuation_count,
+                    valuation_last_updated_at,
+                ),
                 self._not_collected_axis(CoverageAxisName.DISCLOSURE),
             ],
         )

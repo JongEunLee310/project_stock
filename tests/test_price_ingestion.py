@@ -418,6 +418,10 @@ def test_price_universe_resolver_deduplicates_watchlist_and_portfolio(
         ("XLK", "NYSE"),
         ("SPY", "NYSE"),
     ]
+    assert PriceUniverseResolver(db).resolve_assets() == [
+        ("005930", "KOSPI"),
+        ("AAPL", "NASDAQ"),
+    ]
 
 
 def test_price_universe_resolver_empty_includes_index_benchmark(db: Session) -> None:

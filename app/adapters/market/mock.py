@@ -13,10 +13,13 @@ from app.adapters.market.base import (
     QuoteResult,
     SymbolLookupProvider,
     SymbolLookupResult,
+    ValuationProvider,
+    ValuationResult,
 )
 
 _AS_OF = datetime(2026, 6, 19, 0, 0, tzinfo=timezone.utc)
 _PRICE_SERIES_END_DATE = date(2026, 6, 25)
+_VALUATION_AS_OF = date(2026, 7, 12)
 _INTRADAY_BAR_COUNT = 26
 _RANGE_COUNTS = {
     "1M": 22,
@@ -202,6 +205,23 @@ class MockPriceSeriesProvider(PriceSeriesProvider):
         return bars
 
 
+class MockValuationProvider(ValuationProvider):
+    def get_valuation(self, symbol: str, market: str) -> ValuationResult | None:
+        seed = _stable_seed(f"{symbol.upper()}:{market.upper()}:valuation")
+        deficit = seed % 5 == 0
+        return ValuationResult(
+            per=None if deficit else _ratio(seed, 9, 120, 10),
+            forward_per=None if deficit else _ratio(seed, 7, 100, 10),
+            psr=_ratio(seed, 1, 80, 10),
+            pbr=_ratio(seed, 1, 60, 10),
+            ev_ebitda=None if seed % 7 == 0 else _ratio(seed, 5, 150, 10),
+            peg=None if seed % 3 == 0 else _ratio(seed, 1, 40, 10),
+            fcf_yield=_ratio(seed, -50, 150, 10),
+            as_of=_VALUATION_AS_OF,
+            source="mock",
+        )
+
+
 class MockIndexQuoteProvider(IndexQuoteProvider):
     def get_quotes(self, symbols: list[str]) -> list[IndexQuoteResult]:
         return [_index_quote(symbol) for symbol in symbols]
@@ -283,6 +303,10 @@ def _business_days_ending_on(end_date: date, count: int) -> list[date]:
 
 def _stable_seed(value: str) -> int:
     return int(sha256(value.encode("utf-8")).hexdigest()[:12], 16)
+
+
+def _ratio(seed: int, minimum: int, span: int, scale: int) -> Decimal:
+    return Decimal(minimum + seed % span) / Decimal(scale)
 
 
 def _money(value: Decimal) -> Decimal:

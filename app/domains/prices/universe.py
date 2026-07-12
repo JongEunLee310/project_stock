@@ -12,12 +12,14 @@ class PriceUniverseResolver:
         self.db = db
 
     def resolve(self) -> list[tuple[str, str]]:
+        return self._deduplicate([*self.resolve_assets(), *self._benchmark_targets()])
+
+    def resolve_assets(self) -> list[tuple[str, str]]:
+        return self._deduplicate(self._watchlist_targets() + self._portfolio_targets())
+
+    @staticmethod
+    def _deduplicate(all_targets: list[tuple[str, str]]) -> list[tuple[str, str]]:
         targets: dict[tuple[str, str], None] = {}
-        all_targets = (
-            self._watchlist_targets()
-            + self._portfolio_targets()
-            + self._benchmark_targets()
-        )
         for symbol, market in all_targets:
             targets[(symbol.upper(), market.upper())] = None
         return list(targets)
