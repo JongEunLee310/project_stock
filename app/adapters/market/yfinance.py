@@ -10,8 +10,14 @@ from app.adapters.market.base import (
     EarningsEventResult,
     EarningsProvider,
     EarningsReportResult,
+    ExchangeRateProvider,
+    ExchangeRateResult,
+    IndexQuoteProvider,
+    IndexQuoteResult,
+    MarketDataProvider,
     PriceBarResult,
     PriceSeriesProvider,
+    QuoteResult,
     SymbolLookupProvider,
     SymbolLookupResult,
     ValuationProvider,
@@ -40,6 +46,212 @@ _YFINANCE_EXCHANGE_MARKETS = {
     "KSC": "KOSPI",
     "KQ": "KOSDAQ",
 }
+_INDEX_TICKERS = {
+    "SPX": "^GSPC",
+    "IXIC": "^IXIC",
+    "KOSPI": "^KS11",
+    "VIX": "^VIX",
+}
+_INDEX_NAMES = {
+    "SPX": "S&P 500",
+    "IXIC": "NASDAQ Composite",
+    "KOSPI": "KOSPI",
+    "VIX": "VIX",
+}
+_EXCHANGE_RATE_TICKERS = {"USD/KRW": "KRW=X"}
+_PERCENT_QUANTUM = Decimal("0.01")
+_FAST_INFO_DICT_KEYS = {
+    "last_price": "lastPrice",
+    "previous_close": "previousClose",
+    "currency": "currency",
+    "market_cap": "marketCap",
+    "year_low": "yearLow",
+    "year_high": "yearHigh",
+}
+
+
+class YFinanceMarketDataProvider(MarketDataProvider):
+    def get_quote(self, symbols: list[str]) -> list[QuoteResult]:
+        results: list[QuoteResult] = []
+        for symbol in symbols:
+            normalized_symbol = symbol.upper()
+            try:
+                fast_info = yf.Ticker(
+                    to_yfinance_quote_ticker(normalized_symbol)
+                ).fast_info
+                result = quote_result_from_fast_info(
+                    normalized_symbol,
+                    fast_info,
+                    as_of=datetime.now(UTC),
+                )
+                if result is None:
+                    raise ValueError("required quote value is missing")
+            except Exception:
+                logger.exception(
+                    "Failed to collect market quote",
+                    extra={"symbol": normalized_symbol},
+                )
+                continue
+            results.append(result)
+        return results
+
+
+class YFinanceIndexQuoteProvider(IndexQuoteProvider):
+    def get_quotes(self, symbols: list[str]) -> list[IndexQuoteResult]:
+        results: list[IndexQuoteResult] = []
+        for symbol in symbols:
+            normalized_symbol = symbol.upper()
+            ticker_symbol = _INDEX_TICKERS.get(normalized_symbol)
+            if ticker_symbol is None:
+                continue
+            try:
+                result = index_quote_result_from_fast_info(
+                    normalized_symbol,
+                    yf.Ticker(ticker_symbol).fast_info,
+                    reference_at=datetime.now(UTC),
+                )
+                if result is None:
+                    raise ValueError("required index quote value is missing")
+            except Exception:
+                logger.exception(
+                    "Failed to collect index quote",
+                    extra={"symbol": normalized_symbol},
+                )
+                continue
+            results.append(result)
+        return results
+
+
+class YFinanceExchangeRateProvider(ExchangeRateProvider):
+    def get_rates(self, pairs: list[str]) -> list[ExchangeRateResult]:
+        results: list[ExchangeRateResult] = []
+        for pair in pairs:
+            normalized_pair = pair.upper()
+            ticker_symbol = _EXCHANGE_RATE_TICKERS.get(normalized_pair)
+            if ticker_symbol is None:
+                continue
+            try:
+                result = exchange_rate_result_from_fast_info(
+                    normalized_pair,
+                    yf.Ticker(ticker_symbol).fast_info,
+                    as_of=datetime.now(UTC),
+                )
+                if result is None:
+                    raise ValueError("required exchange rate value is missing")
+            except Exception:
+                logger.exception(
+                    "Failed to collect exchange rate",
+                    extra={"pair": normalized_pair},
+                )
+                continue
+            results.append(result)
+        return results
+
+
+def to_yfinance_quote_ticker(symbol: str) -> str:
+    normalized_symbol = symbol.upper()
+    # Market is absent from the provider contract; six-digit KRX symbols are numeric.
+    suffix = ".KS" if normalized_symbol.isdigit() else ""
+    return f"{normalized_symbol}{suffix}"
+
+
+def quote_result_from_fast_info(
+    symbol: str,
+    fast_info: Any,
+    *,
+    as_of: datetime,
+) -> QuoteResult | None:
+    price = _optional_decimal(_fast_info_value(fast_info, "last_price"))
+    previous_close = _optional_decimal(
+        _fast_info_value(fast_info, "previous_close")
+    )
+    currency = _fast_info_value(fast_info, "currency")
+    if (
+        price is None
+        or previous_close is None
+        or not isinstance(currency, str)
+        or not currency.strip()
+    ):
+        return None
+    change = (price - previous_close).quantize(_PERCENT_QUANTUM)
+    return QuoteResult(
+        symbol=symbol.upper(),
+        name=symbol.upper(),
+        price=price,
+        previous_close=previous_close,
+        change=change,
+        change_percent=_change_percent(price, previous_close),
+        currency=currency.strip().upper(),
+        as_of=as_of,
+        market_cap=_optional_decimal(_fast_info_value(fast_info, "market_cap")),
+        fifty_two_week_low=_optional_decimal(
+            _fast_info_value(fast_info, "year_low")
+        ),
+        fifty_two_week_high=_optional_decimal(
+            _fast_info_value(fast_info, "year_high")
+        ),
+    )
+
+
+def index_quote_result_from_fast_info(
+    symbol: str,
+    fast_info: Any,
+    *,
+    reference_at: datetime,
+) -> IndexQuoteResult | None:
+    price = _optional_decimal(_fast_info_value(fast_info, "last_price"))
+    previous_close = _optional_decimal(
+        _fast_info_value(fast_info, "previous_close")
+    )
+    if price is None or previous_close is None:
+        return None
+    return IndexQuoteResult(
+        symbol=symbol,
+        name=_INDEX_NAMES[symbol],
+        value=price,
+        change_percent=_change_percent(price, previous_close),
+        reference_at=reference_at,
+    )
+
+
+def exchange_rate_result_from_fast_info(
+    pair: str,
+    fast_info: Any,
+    *,
+    as_of: datetime,
+) -> ExchangeRateResult | None:
+    rate = _optional_decimal(_fast_info_value(fast_info, "last_price"))
+    previous_close = _optional_decimal(
+        _fast_info_value(fast_info, "previous_close")
+    )
+    if rate is None or previous_close is None:
+        return None
+    return ExchangeRateResult(
+        pair=pair,
+        rate=rate,
+        change_percent=_change_percent(rate, previous_close),
+        as_of=as_of,
+    )
+
+
+def _change_percent(current: Decimal, previous_close: Decimal) -> Decimal:
+    if previous_close == Decimal("0"):
+        return Decimal("0.00")
+    return ((current - previous_close) / previous_close * Decimal("100")).quantize(
+        _PERCENT_QUANTUM
+    )
+
+
+def _fast_info_value(fast_info: Any, key: str) -> Any:
+    if fast_info is None:
+        return None
+    attribute_value = getattr(fast_info, key, None)
+    if attribute_value is not None:
+        return attribute_value
+    try:
+        return fast_info.get(_FAST_INFO_DICT_KEYS.get(key, key))
+    except (AttributeError, KeyError):
+        return None
 
 
 class YFinancePriceProvider(PriceSeriesProvider):

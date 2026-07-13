@@ -1,4 +1,6 @@
-from datetime import date
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -7,6 +9,7 @@ from app.adapters.factory import (
     get_disclosure_provider,
     get_exchange_rate_provider,
     get_earnings_provider,
+    get_index_quote_provider,
     get_market_provider,
     get_news_adapter,
     get_portfolio_provider,
@@ -17,6 +20,7 @@ from app.adapters.factory import (
 from app.adapters.market.mock import (
     MockEarningsProvider,
     MockExchangeRateProvider,
+    MockIndexQuoteProvider,
     MockMarketDataProvider,
     MockPriceSeriesProvider,
     MockSymbolLookupProvider,
@@ -24,9 +28,19 @@ from app.adapters.market.mock import (
 )
 from app.adapters.market.yfinance import (
     YFinanceEarningsProvider,
+    YFinanceExchangeRateProvider,
+    YFinanceIndexQuoteProvider,
+    YFinanceMarketDataProvider,
     YFinancePriceProvider,
     YFinanceSymbolLookupProvider,
     YFinanceValuationProvider,
+    quote_result_from_fast_info,
+    to_yfinance_quote_ticker,
+)
+from app.adapters.market.cache import (
+    CachedExchangeRateProvider,
+    CachedIndexQuoteProvider,
+    CachedMarketDataProvider,
 )
 from app.adapters.news.mock import MockNewsAdapter
 from app.adapters.news.rss import RSSNewsAdapter
@@ -43,6 +57,154 @@ def test_mock_market_data_provider_returns_deterministic_quotes() -> None:
     assert first_result == second_result
     assert [quote.symbol for quote in first_result] == ["AAPL", "MSFT"]
     assert first_result[0].name == "Apple Inc."
+
+
+def test_quote_result_from_fast_info_derives_required_values() -> None:
+    as_of = datetime(2026, 7, 13, 1, 2, tzinfo=UTC)
+
+    result = quote_result_from_fast_info(
+        "aapl",
+        {
+            # FastInfo exposes camelCase keys through its mapping interface.
+            "lastPrice": 195.64,
+            "previousClose": 193.20,
+            "currency": "usd",
+            "marketCap": 3_000_000_000_000,
+            "yearLow": 164.08,
+            "yearHigh": 237.49,
+        },
+        as_of=as_of,
+    )
+
+    assert result is not None
+    assert result.symbol == "AAPL"
+    assert result.name == "AAPL"
+    assert result.price == Decimal("195.64")
+    assert result.previous_close == Decimal("193.2")
+    assert result.change == Decimal("2.44")
+    assert result.change_percent == Decimal("1.26")
+    assert result.currency == "USD"
+    assert result.market_cap == Decimal("3000000000000")
+    assert result.fifty_two_week_low == Decimal("164.08")
+    assert result.fifty_two_week_high == Decimal("237.49")
+    assert result.per is None
+    assert result.target_price is None
+    assert result.as_of == as_of
+
+
+@pytest.mark.parametrize(
+    ("previous_close", "expected"),
+    [(None, None), (0, Decimal("0.00"))],
+)
+def test_quote_result_from_fast_info_guards_previous_close(
+    previous_close: float | None,
+    expected: Decimal | None,
+) -> None:
+    result = quote_result_from_fast_info(
+        "AAPL",
+        {"lastPrice": 10, "previousClose": previous_close, "currency": "usd"},
+        as_of=datetime(2026, 7, 13, tzinfo=UTC),
+    )
+
+    if expected is None:
+        assert result is None
+    else:
+        assert result is not None
+        assert result.change_percent == expected
+
+
+@pytest.mark.parametrize(
+    ("symbol", "expected"),
+    [("005930", "005930.KS"), ("AAPL", "AAPL"), ("BRK-B", "BRK-B")],
+)
+def test_to_yfinance_quote_ticker_uses_numeric_krx_heuristic(
+    symbol: str,
+    expected: str,
+) -> None:
+    assert to_yfinance_quote_ticker(symbol) == expected
+
+
+class StubFastInfo(dict[str, Any]):
+    _DICT_KEYS = {
+        "last_price": "lastPrice",
+        "previous_close": "previousClose",
+        "currency": "currency",
+        "market_cap": "marketCap",
+        "year_low": "yearLow",
+        "year_high": "yearHigh",
+    }
+
+    def __init__(self, **attributes: Any) -> None:
+        super().__init__(
+            (self._DICT_KEYS[key], value) for key, value in attributes.items()
+        )
+        for key, value in attributes.items():
+            setattr(self, key, value)
+
+
+class StubTicker:
+    fast_info_by_symbol: dict[str, Any] = {}
+
+    def __init__(self, symbol: str) -> None:
+        self.fast_info = self.fast_info_by_symbol[symbol]
+
+
+def test_yfinance_market_provider_skips_individual_symbol_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    StubTicker.fast_info_by_symbol = {
+        "AAPL": StubFastInfo(
+            last_price=195.64,
+            previous_close=193.20,
+            currency="usd",
+        )
+    }
+    assert StubTicker.fast_info_by_symbol["AAPL"].get("last_price") is None
+    monkeypatch.setattr("app.adapters.market.yfinance.yf.Ticker", StubTicker)
+
+    results = YFinanceMarketDataProvider().get_quote(["AAPL", "MISSING"])
+
+    assert [result.symbol for result in results] == ["AAPL"]
+
+
+def test_yfinance_index_provider_maps_symbols_and_preserves_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    StubTicker.fast_info_by_symbol = {
+        "^GSPC": StubFastInfo(last_price=5600, previous_close=5572),
+        "^IXIC": StubFastInfo(last_price=18000, previous_close=18000),
+        "^KS11": StubFastInfo(last_price=3200, previous_close=3200),
+        "^VIX": StubFastInfo(last_price=15, previous_close=15),
+    }
+    monkeypatch.setattr("app.adapters.market.yfinance.yf.Ticker", StubTicker)
+
+    results = YFinanceIndexQuoteProvider().get_quotes(
+        ["SPX", "UNKNOWN", "IXIC", "KOSPI", "VIX"]
+    )
+
+    assert [(result.symbol, result.name) for result in results] == [
+        ("SPX", "S&P 500"),
+        ("IXIC", "NASDAQ Composite"),
+        ("KOSPI", "KOSPI"),
+        ("VIX", "VIX"),
+    ]
+    # Synthetic fixture: (5600 - 5572) / 5572 * 100.
+    assert results[0].change_percent == Decimal("0.50")
+
+
+def test_yfinance_exchange_rate_provider_maps_pair_and_guards_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    StubTicker.fast_info_by_symbol = {
+        "KRW=X": StubFastInfo(last_price=1384.5, previous_close=0),
+    }
+    monkeypatch.setattr("app.adapters.market.yfinance.yf.Ticker", StubTicker)
+
+    results = YFinanceExchangeRateProvider().get_rates(["USD/KRW", "EUR/KRW"])
+
+    assert [result.pair for result in results] == ["USD/KRW"]
+    assert results[0].rate == Decimal("1384.5")
+    assert results[0].change_percent == Decimal("0.00")
 
 
 def test_mock_price_series_provider_returns_deterministic_bars() -> None:
@@ -138,6 +300,7 @@ def test_factories_return_mock_providers(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert isinstance(get_market_provider(), MockMarketDataProvider)
     assert isinstance(get_price_series_provider(), MockPriceSeriesProvider)
+    assert isinstance(get_index_quote_provider(), MockIndexQuoteProvider)
     assert isinstance(get_exchange_rate_provider(), MockExchangeRateProvider)
     assert isinstance(get_symbol_lookup_provider(), MockSymbolLookupProvider)
     assert isinstance(get_valuation_provider(), MockValuationProvider)
@@ -179,6 +342,16 @@ def test_earnings_factory_returns_yfinance_provider(
     assert isinstance(get_earnings_provider(), YFinanceEarningsProvider)
 
 
+def test_quote_index_and_fx_factories_wrap_yfinance_providers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "MARKET_PROVIDER", "yfinance")
+
+    assert isinstance(get_market_provider(), CachedMarketDataProvider)
+    assert isinstance(get_index_quote_provider(), CachedIndexQuoteProvider)
+    assert isinstance(get_exchange_rate_provider(), CachedExchangeRateProvider)
+
+
 def test_news_factory_returns_rss_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "NEWS_PROVIDER", "rss")
     monkeypatch.setattr(
@@ -198,6 +371,7 @@ def test_news_factory_returns_rss_adapter(monkeypatch: pytest.MonkeyPatch) -> No
     [
         ("MARKET_PROVIDER", "get_market_provider"),
         ("MARKET_PROVIDER", "get_price_series_provider"),
+        ("MARKET_PROVIDER", "get_index_quote_provider"),
         ("MARKET_PROVIDER", "get_exchange_rate_provider"),
         ("MARKET_PROVIDER", "get_symbol_lookup_provider"),
         ("MARKET_PROVIDER", "get_valuation_provider"),
@@ -215,6 +389,7 @@ def test_factories_fail_fast_for_real_providers(
     factories = {
         "get_market_provider": get_market_provider,
         "get_price_series_provider": get_price_series_provider,
+        "get_index_quote_provider": get_index_quote_provider,
         "get_exchange_rate_provider": get_exchange_rate_provider,
         "get_symbol_lookup_provider": get_symbol_lookup_provider,
         "get_valuation_provider": get_valuation_provider,
