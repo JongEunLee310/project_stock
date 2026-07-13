@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
 
@@ -6,6 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.domains.assets.model import Asset
+from app.domains.earnings.model import EarningsReport
+from app.domains.prices.model import StockPriceBar
 from app.domains.valuation.model import ValuationSnapshot
 from app.domains.valuation.schema import ValuationMetricName
 from tests.conftest import TestingSessionLocal, api_data, api_error, set_current_user
@@ -46,6 +48,60 @@ def create_snapshot(symbol: str, **overrides: object) -> None:
         db.commit()
 
 
+def create_per_history(symbol: str) -> None:
+    with TestingSessionLocal() as db:
+        db.add_all(
+            [
+                EarningsReport(
+                    symbol=symbol,
+                    market="NASDAQ",
+                    period=f"2025-Q{quarter}",
+                    period_end=period_end,
+                    revenue=None,
+                    operating_income=None,
+                    eps=Decimal("2.5"),
+                    eps_estimate=None,
+                    source="fixture",
+                )
+                for quarter, period_end in enumerate(
+                    [
+                        date(2025, 3, 31),
+                        date(2025, 6, 30),
+                        date(2025, 9, 30),
+                        date(2025, 12, 31),
+                    ],
+                    start=1,
+                )
+            ]
+        )
+        first_date = date.today() - timedelta(days=30)
+        db.add_all(
+            [
+                StockPriceBar(
+                    symbol=symbol,
+                    market="NASDAQ",
+                    interval="1d",
+                    timestamp=datetime.combine(
+                        first_date + timedelta(days=index),
+                        datetime.min.time(),
+                        tzinfo=UTC,
+                    ),
+                    open_price=close,
+                    high_price=close,
+                    low_price=close,
+                    close_price=close,
+                    adjusted_close_price=close,
+                    volume=1000,
+                    currency="USD",
+                    source="fixture",
+                )
+                for index in range(20)
+                for close in [Decimal("100") + index]
+            ]
+        )
+        db.commit()
+
+
 def test_get_valuation_metrics_uses_latest_snapshot_and_preserves_order(
     client: TestClient,
 ) -> None:
@@ -81,6 +137,29 @@ def test_get_valuation_metrics_without_snapshot_returns_null_values(
     data = cast(dict[str, Any], api_data(response))
     assert data["profile"] == "GENERAL"
     assert all(item["value"] is None for item in data["metrics"])
+
+
+def test_get_valuation_metrics_derives_history_for_per_only(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    asset_id = create_asset(symbol="HISTORY")
+    create_snapshot("HISTORY")
+    create_per_history("HISTORY")
+
+    response = client.get(f"/api/v1/assets/{asset_id}/valuation-metrics")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    metrics = {item["metric"]: item for item in data["metrics"]}
+    # Source: deterministic fixture with TTM EPS 10 and closes 100 through 119.
+    assert metrics["PER"]["five_year_median"] == "10.95"
+    assert metrics["PER"]["percentile"] == 100
+    assert all(
+        item["five_year_median"] is None and item["percentile"] is None
+        for item in data["metrics"]
+        if item["metric"] != "PER"
+    )
 
 
 @pytest.mark.parametrize(

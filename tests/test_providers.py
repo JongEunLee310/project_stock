@@ -53,6 +53,14 @@ def test_mock_price_series_provider_returns_deterministic_bars() -> None:
     assert first_result[0].timestamp.tzinfo is not None
 
 
+def test_mock_price_series_provider_supports_five_year_range() -> None:
+    bars = MockPriceSeriesProvider().get_daily_bars(
+        "AAPL", "NASDAQ", "5Y", adjusted=True
+    )
+
+    assert len(bars) == 1260
+
+
 def test_mock_symbol_lookup_provider_matches_symbol_partially() -> None:
     provider = MockSymbolLookupProvider()
 

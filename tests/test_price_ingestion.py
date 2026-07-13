@@ -11,6 +11,7 @@ from app.adapters.market.base import PriceBarResult, PriceSeriesProvider, Symbol
 from app.adapters.market.yfinance import (
     YFinancePriceProvider,
     YFinanceSymbolLookupProvider,
+    _range_to_period,
     to_yfinance_ticker,
 )
 from app.core.error_codes import ErrorCode
@@ -37,6 +38,10 @@ def test_yfinance_ticker_mapping() -> None:
     assert to_yfinance_ticker("035720", "KOSDAQ") == "035720.KQ"
     assert to_yfinance_ticker("AAPL", "NASDAQ") == "AAPL"
     assert to_yfinance_ticker("VOD", "LSE") is None
+
+
+def test_yfinance_range_mapping_supports_five_years() -> None:
+    assert _range_to_period("5Y") == "5y"
 
 
 def test_yfinance_provider_parses_history_without_network(
@@ -244,6 +249,16 @@ def test_price_ingestion_validates_and_saves_counts(db: Session) -> None:
     assert result.dropped_bar_count == 2
     assert result.warning_count == 2
     assert db.scalar(select(func.count()).select_from(StockPriceBar)) == 2
+
+
+def test_price_ingestion_passes_range_and_preserves_default(db: Session) -> None:
+    provider = StaticPriceProvider([], {"fixture": "range"})
+    service = PriceIngestionService(db)
+
+    service.collect_and_save(provider, [("AAPL", "NASDAQ")])
+    service.collect_and_save(provider, [("AAPL", "NASDAQ")], range_value="5Y")
+
+    assert provider.requested_ranges == ["3M", "5Y"]
 
 
 def test_price_validator_preserves_drop_and_warning_counts() -> None:
@@ -456,7 +471,8 @@ def test_collect_prices_job_records_success_with_target_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(prices, "SessionLocal", lambda: db)
-    monkeypatch.setattr(prices, "get_price_series_provider", lambda: MixedProvider())
+    provider = MixedProvider()
+    monkeypatch.setattr(prices, "get_price_series_provider", lambda: provider)
     aapl = Asset(symbol="AAPL", name="Apple Inc.", market="NASDAQ")
     fail = Asset(symbol="FAIL", name="Failure Corp.", market="NASDAQ")
     db.add_all([aapl, fail])
@@ -475,13 +491,15 @@ def test_collect_prices_job_records_success_with_target_failure(
     )
     db.commit()
 
-    collect_prices_job()
+    collect_prices_job(range_value="5Y")
 
     job_run = db.scalars(select(JobRun)).one()
     assert job_run.job_type == "price_collection"
     assert job_run.status == "success"
     assert job_run.finished_at is not None
     assert db.scalar(select(func.count()).select_from(StockPriceBar)) == 3
+    assert provider.requested_ranges
+    assert set(provider.requested_ranges) == {"5Y"}
 
 
 class StaticPriceProvider(PriceSeriesProvider):
@@ -494,6 +512,7 @@ class StaticPriceProvider(PriceSeriesProvider):
     ) -> None:
         self.bars = bars
         self.last_payload = payload
+        self.requested_ranges: list[str] = []
 
     def get_daily_bars(
         self,
@@ -502,6 +521,7 @@ class StaticPriceProvider(PriceSeriesProvider):
         range_value: str,
         adjusted: bool,
     ) -> list[PriceBarResult]:
+        self.requested_ranges.append(range_value)
         return self.bars
 
     def get_intraday_bars(
@@ -515,6 +535,9 @@ class StaticPriceProvider(PriceSeriesProvider):
 class MixedProvider(PriceSeriesProvider):
     source = "fixture"
 
+    def __init__(self) -> None:
+        self.requested_ranges: list[str] = []
+
     def get_daily_bars(
         self,
         symbol: str,
@@ -522,6 +545,7 @@ class MixedProvider(PriceSeriesProvider):
         range_value: str,
         adjusted: bool,
     ) -> list[PriceBarResult]:
+        self.requested_ranges.append(range_value)
         if symbol == "FAIL":
             raise RuntimeError("target failed")
         self.last_payload = {"symbol": symbol, "market": market}

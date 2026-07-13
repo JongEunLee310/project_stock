@@ -5,7 +5,10 @@ from app.domains.prices.ingestion_service import PriceIngestionService
 from app.domains.prices.universe import PriceUniverseResolver
 
 
-def collect_prices_job(symbols: list[str] | None = None) -> None:
+def collect_prices_job(
+    symbols: list[str] | None = None,
+    range_value: str = "3M",
+) -> None:
     db = SessionLocal()
     job_run_service = JobRunService(db)
     job_run_id: int | None = None
@@ -23,6 +26,7 @@ def collect_prices_job(symbols: list[str] | None = None) -> None:
         PriceIngestionService(db).collect_and_save(
             get_price_series_provider(),
             targets,
+            range_value=range_value,
         )
         job_run_service.succeed(job_run.id)
         return None

@@ -28,6 +28,7 @@ _RANGE_COUNTS = {
     "3M": 66,
     "6M": 132,
     "1Y": 252,
+    "5Y": 1260,
 }
 MARKET_INDEX_SYMBOLS = ["SPX", "IXIC", "KOSPI", "VIX"]
 _SAMPLE_EXCHANGE_RATES: dict[str, ExchangeRateResult] = {
