@@ -219,6 +219,32 @@ RESEARCH_COVERAGE_CONTRACT: Contract = {
     "axes": list,
 }
 
+RESEARCH_QUEUE_DATA_CONTRACT: Contract = {
+    "summary": dict,
+    "items": list,
+}
+
+RESEARCH_QUEUE_SUMMARY_CONTRACT: Contract = {
+    "total_research_count": int,
+    "needs_attention_count": int,
+    "updated_today_count": int,
+    "insufficient_count": int,
+}
+
+RESEARCH_QUEUE_ITEM_CONTRACT: Contract = {
+    "asset_id": int,
+    "symbol": str,
+    "name": str,
+    "market": str,
+    "research_status": str,
+    "completeness_pct": int,
+    "stance": (str, type(None)),
+    "headline": (str, type(None)),
+    "key_issue": (str, type(None)),
+    "last_updated_at": (str, type(None)),
+    "signal_type": (str, type(None)),
+}
+
 COVERAGE_AXIS_CONTRACT: Contract = {
     "axis": str,
     "status": str,
@@ -680,6 +706,21 @@ def test_research_coverage_response_contract(client: TestClient) -> None:
     assert_contract(data["axes"][0], COVERAGE_AXIS_CONTRACT)
 
 
+def test_research_queue_response_contract(client: TestClient) -> None:
+    set_current_user(1)
+    create_asset(client)
+
+    response = client.get("/api/v1/research-queue")
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=True)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, RESEARCH_QUEUE_DATA_CONTRACT)
+    assert_contract(data["summary"], RESEARCH_QUEUE_SUMMARY_CONTRACT)
+    assert_contract(data["items"][0], RESEARCH_QUEUE_ITEM_CONTRACT)
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 1}
+
+
 def test_valuation_metrics_response_contract(client: TestClient) -> None:
     set_current_user(1)
     asset = create_asset(client)
@@ -1064,6 +1105,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/assets/{asset_id}/detail",
         "/api/v1/assets/{asset_id}/research-summary",
         "/api/v1/assets/{asset_id}/research-coverage",
+        "/api/v1/research-queue",
         "/api/v1/assets/{asset_id}/valuation-metrics",
         "/api/v1/assets/{asset_id}/earnings-summary",
         "/api/v1/assets/{asset_id}/events",
@@ -1108,6 +1150,11 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "ReviewedDecisionItem",
         "ResearchCoverageResponse",
         "CoverageAxis",
+        "ResearchQueueData",
+        "ResearchQueueItemProjection",
+        "ResearchQueueSummaryProjection",
+        "ResearchStatus",
+        "ResearchQueueFilter",
         "ValuationMetricsResponse",
         "ValuationMetric",
         "EarningsSummaryResponse",
