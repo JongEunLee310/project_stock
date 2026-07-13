@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
@@ -198,28 +198,11 @@ class SignalService:
         limit: int,
         since: date | None,
     ) -> list[SignalChangeTimelineItem]:
-        snapshots = self.snapshot_repo.list_all_ordered()
-        previous_by_asset: dict[int, AssetSignalSnapshot | None] = {}
-        change_rows: list[tuple[AssetSignalSnapshot, SignalChange]] = []
-        for snapshot in snapshots:
-            previous = previous_by_asset.get(snapshot.asset_id)
-            previous_by_asset[snapshot.asset_id] = snapshot
-            if since is not None and snapshot.snapshot_date < since:
-                continue
-            change = build_change(snapshot, previous)
-            if change is None or change.direction == SignalChangeDirection.UNCHANGED:
-                continue
-            change_rows.append((snapshot, change))
-
-        change_rows.sort(
-            key=lambda row: (row[0].snapshot_date, row[0].captured_at, row[0].id),
-            reverse=True,
-        )
-        limited_rows = change_rows[:limit]
+        change_rows = self.snapshot_repo.list_change_rows(since=since, limit=limit)
         assets = {
             asset.id: asset
             for asset in self.asset_repo.list_by_ids(
-                [snapshot.asset_id for snapshot, _change in limited_rows]
+                [row.asset_id for row in change_rows]
             )
         }
         return [
@@ -232,21 +215,28 @@ class SignalService:
                     change_percent="0",
                     sector=asset.sector,
                 ),
-                snapshot_date=snapshot.snapshot_date,
-                captured_at=snapshot.captured_at,
-                change=change,
+                snapshot_date=row.snapshot_date,
+                captured_at=row.captured_at,
+                change=_build_change(
+                    latest_signal_type=row.signal_type,
+                    latest_score=row.score,
+                    has_previous=row.has_previous,
+                    previous_signal_type=row.prev_signal_type,
+                    previous_score=row.prev_score,
+                    previous_captured_at=row.prev_captured_at,
+                ),
                 dominant=(
                     SignalDominantSummary(
-                        signal_id=snapshot.signal_id,
-                        signal_type=snapshot.signal_type,
-                        score=snapshot.score,
+                        signal_id=row.signal_id,
+                        signal_type=row.signal_type,
+                        score=row.score,
                     )
-                    if snapshot.signal_type is not None and snapshot.score is not None
+                    if row.signal_type is not None and row.score is not None
                     else None
                 ),
             )
-            for snapshot, change in limited_rows
-            if (asset := assets.get(snapshot.asset_id)) is not None
+            for row in change_rows
+            if (asset := assets.get(row.asset_id)) is not None
         ]
 
     def summary(self, view: str) -> SignalSummary:
@@ -289,31 +279,47 @@ def build_change(
     if latest is None:
         return None
 
+    return _build_change(
+        latest_signal_type=latest.signal_type,
+        latest_score=latest.score,
+        has_previous=previous is not None,
+        previous_signal_type=previous.signal_type if previous is not None else None,
+        previous_score=previous.score if previous is not None else None,
+        previous_captured_at=(previous.captured_at if previous is not None else None),
+    )
+
+
+def _build_change(
+    *,
+    latest_signal_type: str | None,
+    latest_score: int | None,
+    has_previous: bool,
+    previous_signal_type: str | None,
+    previous_score: int | None,
+    previous_captured_at: datetime | None,
+) -> SignalChange:
+
     score_delta = (
-        latest.score - previous.score
-        if previous is not None
-        and latest.score is not None
-        and previous.score is not None
+        latest_score - previous_score
+        if has_previous and latest_score is not None and previous_score is not None
         else None
     )
-    previous_type = previous.signal_type if previous is not None else None
-    previous_captured_at = previous.captured_at if previous is not None else None
 
-    if previous is None:
+    if not has_previous:
         direction = (
             SignalChangeDirection.UNCHANGED
-            if latest.signal_type is None
+            if latest_signal_type is None
             else SignalChangeDirection.NEW
         )
-    elif previous.signal_type is None and latest.signal_type is not None:
+    elif previous_signal_type is None and latest_signal_type is not None:
         direction = SignalChangeDirection.NEW
-    elif previous.signal_type is not None and latest.signal_type is None:
+    elif previous_signal_type is not None and latest_signal_type is None:
         direction = SignalChangeDirection.CLEARED
-    elif latest.signal_type == previous.signal_type:
+    elif latest_signal_type == previous_signal_type:
         direction = SignalChangeDirection.UNCHANGED
     else:
-        latest_rank = signal_priority_rank(latest.signal_type)
-        previous_rank = signal_priority_rank(previous.signal_type)
+        latest_rank = signal_priority_rank(latest_signal_type)
+        previous_rank = signal_priority_rank(previous_signal_type)
         if (
             latest_rank is not None
             and previous_rank is not None
@@ -332,7 +338,7 @@ def build_change(
     return SignalChange(
         direction=direction,
         score_delta=score_delta,
-        previous_type=previous_type,
+        previous_type=previous_signal_type,
         previous_captured_at=previous_captured_at,
     )
 
