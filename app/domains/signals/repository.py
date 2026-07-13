@@ -1,8 +1,9 @@
 import json
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select, type_coerce
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,21 @@ from app.domains.signals.schema import SignalCreate
 from app.domains.signals.snapshot_model import AssetSignalSnapshot
 from app.domains.signals.time import utc_now
 from app.domains.signals.types import WATCHLIST_STATUS_PRIORITY
+
+
+@dataclass(frozen=True)
+class SignalChangeRow:
+    id: int
+    asset_id: int
+    snapshot_date: date
+    signal_id: int | None
+    signal_type: str | None
+    score: int | None
+    captured_at: datetime
+    prev_signal_type: str | None
+    prev_score: int | None
+    prev_captured_at: datetime | None
+    has_previous: bool
 
 
 class SignalRepository:
@@ -351,14 +367,86 @@ class SignalSnapshotRepository:
             pairs[snapshot.asset_id] = (latest, previous)
         return pairs
 
-    def list_all_ordered(self) -> list[AssetSignalSnapshot]:
-        stmt = select(AssetSignalSnapshot).order_by(
-            AssetSignalSnapshot.asset_id.asc(),
+    def list_change_rows(
+        self,
+        *,
+        since: date | None,
+        limit: int,
+    ) -> list[SignalChangeRow]:
+        window_order = (
             AssetSignalSnapshot.snapshot_date.asc(),
             AssetSignalSnapshot.captured_at.asc(),
             AssetSignalSnapshot.id.asc(),
         )
-        return list(self.db.scalars(stmt).all())
+        history = select(
+            AssetSignalSnapshot.id.label("id"),
+            AssetSignalSnapshot.asset_id.label("asset_id"),
+            AssetSignalSnapshot.snapshot_date.label("snapshot_date"),
+            AssetSignalSnapshot.signal_id.label("signal_id"),
+            AssetSignalSnapshot.signal_type.label("signal_type"),
+            AssetSignalSnapshot.score.label("score"),
+            AssetSignalSnapshot.captured_at.label("captured_at"),
+            func.lag(AssetSignalSnapshot.signal_type)
+            .over(
+                partition_by=AssetSignalSnapshot.asset_id,
+                order_by=window_order,
+            )
+            .label("prev_signal_type"),
+            func.lag(AssetSignalSnapshot.score)
+            .over(
+                partition_by=AssetSignalSnapshot.asset_id,
+                order_by=window_order,
+            )
+            .label("prev_score"),
+            type_coerce(
+                func.lag(AssetSignalSnapshot.captured_at).over(
+                    partition_by=AssetSignalSnapshot.asset_id,
+                    order_by=window_order,
+                ),
+                AssetSignalSnapshot.captured_at.type,
+            )
+            .label("prev_captured_at"),
+            func.lag(AssetSignalSnapshot.id)
+            .over(
+                partition_by=AssetSignalSnapshot.asset_id,
+                order_by=window_order,
+            )
+            .label("prev_id"),
+        ).subquery()
+        changed = or_(
+            and_(
+                history.c.prev_id.is_(None),
+                history.c.signal_type.is_not(None),
+            ),
+            and_(
+                history.c.prev_id.is_not(None),
+                history.c.signal_type.is_distinct_from(history.c.prev_signal_type),
+            ),
+        )
+        stmt = select(history).where(changed)
+        if since is not None:
+            stmt = stmt.where(history.c.snapshot_date >= since)
+        stmt = stmt.order_by(
+            history.c.snapshot_date.desc(),
+            history.c.captured_at.desc(),
+            history.c.id.desc(),
+        ).limit(limit)
+        return [
+            SignalChangeRow(
+                id=row.id,
+                asset_id=row.asset_id,
+                snapshot_date=row.snapshot_date,
+                signal_id=row.signal_id,
+                signal_type=row.signal_type,
+                score=row.score,
+                captured_at=row.captured_at,
+                prev_signal_type=row.prev_signal_type,
+                prev_score=row.prev_score,
+                prev_captured_at=row.prev_captured_at,
+                has_previous=row.prev_id is not None,
+            )
+            for row in self.db.execute(stmt)
+        ]
 
     def latest_snapshot_date(self) -> date | None:
         stmt = select(func.max(AssetSignalSnapshot.snapshot_date))
