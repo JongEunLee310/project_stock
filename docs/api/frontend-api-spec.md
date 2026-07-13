@@ -144,6 +144,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 
 | Purpose | Method | Path | Auth | Notes |
 | --- | --- | --- | --- | --- |
+| 리서치 큐 목록·상단 요약 | `GET` | `/api/v1/research-queue?filter={filter}&page=1&size=20` | Required | 상태·완성도·stance를 단일 요청으로 조회. |
 | 리포트 목록 | `GET` | `/api/v1/reports?asset_id={asset_id}&page=1&size=20` | Required | thesis conflict 필드는 report payload에 포함. |
 | 종목 요약 카드 | `GET` | `/api/v1/assets/{asset_id}/research-summary` | Required | Mock 요약. |
 | 리포트 상세 | `GET` | `/api/v1/reports/{report_id}` | Required | 요약/근거/위험 수준 표시. |
@@ -397,6 +398,52 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 
 - Success `200`: same `BuyChecklistResponse` envelope as checklist get.
 - Representative error `422 VALIDATION_ERROR`: see Auth section.
+
+### Research Queue
+
+#### `GET /api/v1/research-queue`
+
+- Auth: Required
+- Query: `filter?: needs_research | risk_increasing | earnings_upcoming | recently_updated`, `page: int = 1`, `size: int = 20`
+- Success `200`:
+
+```json
+{
+  "data": {
+    "summary": {
+      "total_research_count": 3,
+      "needs_attention_count": 1,
+      "updated_today_count": 2,
+      "insufficient_count": 1
+    },
+    "items": [
+      {
+        "asset_id": 1,
+        "symbol": "AAPL",
+        "name": "Apple Inc.",
+        "market": "NASDAQ",
+        "research_status": "NEEDS_ATTENTION",
+        "completeness_pct": 100,
+        "stance": "WATCH",
+        "headline": "비용 효율화는 긍정적이나 단기 과열 여부를 확인해야 합니다.",
+        "key_issue": "투자 가설 훼손 가능성을 재검토해야 합니다.",
+        "last_updated_at": "2026-07-13T01:20:00Z",
+        "signal_type": "RISK_ALERT"
+      }
+    ]
+  },
+  "message": null,
+  "error": null,
+  "meta": { "page": 1, "size": 20, "total": 2 }
+}
+```
+
+- `summary`는 `filter` 적용 전 전체 활성 자산 기준이고, `meta.total`은 필터 적용 후 페이지 절단 전 건수다.
+- `completeness_pct`는 NEWS·PRICE·EARNINGS·VALUATION 4축의 데이터 확보 여부를 축당 25점으로 계산한다. AI 확신도가 아니다.
+- `research_status`는 `NEEDS_ATTENTION`, `INSUFFICIENT`, `COLLECTING`, `STALE`, `ANALYZED` 중 하나다. `stance`와 별개의 데이터 준비도 필드다.
+- `last_updated_at`은 저장된 뉴스·리포트·시그널의 최신 생성 시각이며, 세 소스가 모두 없으면 `null`이다.
+- 알 수 없는 `filter`, 범위를 벗어난 `page`/`size`는 `422 VALIDATION_ERROR`로 거부한다.
+- Representative error `401 AUTH_INVALID_TOKEN`: see Auth section.
 
 ### Watchlists
 
@@ -1033,6 +1080,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - [x] `POST /api/v1/assets`
 - [x] `GET /api/v1/assets`
 - [x] `GET /api/v1/assets/{asset_id}`
+- [x] `GET /api/v1/research-queue`
 - [x] `POST /api/v1/watchlists`
 - [x] `GET /api/v1/watchlists`
 - [x] `POST /api/v1/watchlists/{watchlist_id}/items`
