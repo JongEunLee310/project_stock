@@ -80,7 +80,7 @@ dataclass, 형태는 구현 재량).
 ### 계약 불변
 
 `GET /api/v1/signals/changes`의 쿼리 파라미터(`limit`·`since`)와 응답
-스키마는 변경하지 않는다. `docs/designs/frontend-api-spec.md` 등 계약
+스키마는 변경하지 않는다. `docs/api/frontend-api-spec.md` 등 계약
 문서 갱신 불필요.
 
 ## Files
