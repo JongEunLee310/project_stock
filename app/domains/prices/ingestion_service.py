@@ -38,10 +38,13 @@ class PriceIngestionService:
         self,
         provider: PriceSeriesProvider,
         targets: list[tuple[str, str]],
+        range_value: str = "3M",
     ) -> IngestionResult:
         result = IngestionResult(target_count=len(targets))
         for symbol, market in targets:
-            result = self._collect_target(provider, symbol, market, result)
+            result = self._collect_target(
+                provider, symbol, market, range_value, result
+            )
         return result
 
     def _collect_target(
@@ -49,6 +52,7 @@ class PriceIngestionService:
         provider: PriceSeriesProvider,
         symbol: str,
         market: str,
+        range_value: str,
         result: IngestionResult,
     ) -> IngestionResult:
         normalized_symbol = self.normalizer.canonicalize_symbol(symbol)
@@ -57,7 +61,7 @@ class PriceIngestionService:
             bars = provider.get_daily_bars(
                 normalized_symbol,
                 normalized_market,
-                "3M",
+                range_value,
                 adjusted=True,
             )
             payload = _provider_payload(provider, normalized_symbol, normalized_market, bars)
