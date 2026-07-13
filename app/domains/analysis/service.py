@@ -95,16 +95,15 @@ class WatchlistAnalysisService:
         market = asset.market.upper()
         collected_results = self.news_adapter.fetch_query(asset.name, market)
         raw_news_service = RawNewsService(self.db)
-        new_results = [
-            result
-            for result in collected_results
-            if raw_news_service.save_with_symbol(
+        new_results: list[NewsAdapterResult] = []
+        for result in collected_results:
+            saved_event = raw_news_service.save_with_symbol(
                 result,
                 asset.symbol,
                 market,
             )
-            is not None
-        ]
+            if saved_event is not None:
+                new_results.append(result)
         news_items = self._create_new_items(asset, new_results)
         thesis = self.thesis_repo.get_latest_by_asset(asset.id, user_id)
 

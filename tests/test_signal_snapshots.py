@@ -314,6 +314,94 @@ def test_signal_changes_endpoint_filters_orders_limits_and_since(
     assert data[0]["dominant"] is None
 
 
+def test_list_change_rows_partitions_assets_and_filters_unchanged(
+    db: Session,
+) -> None:
+    first = _add_asset(db, "FIRST")
+    second = _add_asset(db, "SECOND")
+    empty = _add_asset(db, "EMPTY")
+    _add_snapshot(db, first.id, date(2026, 7, 1), SignalType.WATCH.value, 40)
+    _add_snapshot(db, first.id, date(2026, 7, 2), SignalType.WATCH.value, 45)
+    _add_snapshot(db, first.id, date(2026, 7, 3), SignalType.RISK_ALERT.value, 80)
+    _add_snapshot(db, second.id, date(2026, 7, 2), SignalType.RISK_ALERT.value, 70)
+    _add_snapshot(db, empty.id, date(2026, 7, 1), None, None)
+    _add_snapshot(db, empty.id, date(2026, 7, 2), None, None)
+
+    rows = SignalSnapshotRepository(db).list_change_rows(since=None, limit=10)
+
+    assert [(row.asset_id, row.snapshot_date) for row in rows] == [
+        (first.id, date(2026, 7, 3)),
+        (second.id, date(2026, 7, 2)),
+        (first.id, date(2026, 7, 1)),
+    ]
+    second_row = rows[1]
+    assert second_row.has_previous is False
+    assert second_row.prev_signal_type is None
+
+
+def test_list_change_rows_uses_history_before_since(db: Session) -> None:
+    asset = _add_asset(db, "SINCE")
+    previous = _add_snapshot(
+        db,
+        asset.id,
+        date(2026, 7, 1),
+        SignalType.WATCH.value,
+        40,
+    )
+    _add_snapshot(
+        db,
+        asset.id,
+        date(2026, 7, 3),
+        SignalType.RISK_ALERT.value,
+        80,
+    )
+
+    rows = SignalSnapshotRepository(db).list_change_rows(
+        since=date(2026, 7, 3),
+        limit=10,
+    )
+
+    assert len(rows) == 1
+    assert rows[0].has_previous is True
+    assert rows[0].prev_signal_type == SignalType.WATCH.value
+    assert rows[0].prev_score == 40
+    assert rows[0].prev_captured_at == previous.captured_at
+
+
+def test_list_change_rows_orders_before_applying_limit(db: Session) -> None:
+    first = _add_asset(db, "LIMIT1")
+    second = _add_asset(db, "LIMIT2")
+    third = _add_asset(db, "LIMIT3")
+    _add_snapshot(
+        db,
+        first.id,
+        date(2026, 7, 3),
+        SignalType.WATCH.value,
+        40,
+        captured_at=datetime(2026, 7, 3, 8, tzinfo=timezone.utc),
+    )
+    second_snapshot = _add_snapshot(
+        db,
+        second.id,
+        date(2026, 7, 3),
+        SignalType.RISK_ALERT.value,
+        70,
+        captured_at=datetime(2026, 7, 3, 9, tzinfo=timezone.utc),
+    )
+    third_snapshot = _add_snapshot(
+        db,
+        third.id,
+        date(2026, 7, 3),
+        SignalType.BUY_CANDIDATE.value,
+        60,
+        captured_at=datetime(2026, 7, 3, 9, tzinfo=timezone.utc),
+    )
+
+    rows = SignalSnapshotRepository(db).list_change_rows(since=None, limit=2)
+
+    assert [row.id for row in rows] == [third_snapshot.id, second_snapshot.id]
+
+
 def test_upsert_daily_integrity_recovery_preserves_prior_flush(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
