@@ -3,6 +3,7 @@ from decimal import Decimal
 from hashlib import sha256
 
 from app.adapters.market.base import (
+    EarningsEventResult,
     EarningsProvider,
     EarningsReportResult,
     ExchangeRateProvider,
@@ -259,6 +260,42 @@ class MockEarningsProvider(EarningsProvider):
                 )
             )
         return list(reversed(reports))
+
+    def get_earnings_events(
+        self, symbol: str, market: str
+    ) -> list[EarningsEventResult]:
+        event_dates = [
+            date(2024, 7, 25),
+            date(2024, 10, 24),
+            date(2025, 1, 30),
+            date(2025, 4, 24),
+            date(2025, 7, 31),
+            date(2025, 10, 30),
+            date(2026, 1, 29),
+            date(2026, 4, 30),
+            date.today() + timedelta(days=30),
+        ]
+        events: list[EarningsEventResult] = []
+        for index, event_date in enumerate(event_dates):
+            actual = Decimal("1.20") + Decimal(index) * Decimal("0.08")
+            events.append(
+                EarningsEventResult(
+                    event_date=event_date,
+                    eps_actual=None if index == 2 else actual,
+                    eps_estimate=(
+                        None
+                        if index == 5
+                        else actual
+                        + (
+                            Decimal("0.05")
+                            if index % 2
+                            else Decimal("-0.04")
+                        )
+                    ),
+                    source="mock",
+                )
+            )
+        return events
 
 
 class MockIndexQuoteProvider(IndexQuoteProvider):

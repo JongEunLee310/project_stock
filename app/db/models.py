@@ -4,7 +4,7 @@ import app.domains.alerts.model  # noqa: F401 — registers Alert model for auto
 import app.domains.assets.model  # noqa: F401 — registers Asset model for autogenerate
 import app.domains.decision_checklist.model  # noqa: F401 — registers checklist model
 import app.domains.decision_logs.model  # noqa: F401 — registers decision log model
-import app.domains.earnings.model  # noqa: F401 — registers earnings report model
+import app.domains.earnings.model  # noqa: F401 — registers earnings models
 import app.domains.jobs.model  # noqa: F401 — registers JobRun model for autogenerate
 import app.domains.llm_analysis.model  # noqa: F401 — registers LLM analysis run model
 import app.domains.news.model  # noqa: F401 — registers NewsItem model for autogenerate

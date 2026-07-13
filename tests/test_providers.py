@@ -1,9 +1,12 @@
+from datetime import date
+
 import pytest
 
 from app.adapters.disclosure.mock import MockDisclosureProvider
 from app.adapters.factory import (
     get_disclosure_provider,
     get_exchange_rate_provider,
+    get_earnings_provider,
     get_market_provider,
     get_news_adapter,
     get_portfolio_provider,
@@ -12,6 +15,7 @@ from app.adapters.factory import (
     get_valuation_provider,
 )
 from app.adapters.market.mock import (
+    MockEarningsProvider,
     MockExchangeRateProvider,
     MockMarketDataProvider,
     MockPriceSeriesProvider,
@@ -19,6 +23,7 @@ from app.adapters.market.mock import (
     MockValuationProvider,
 )
 from app.adapters.market.yfinance import (
+    YFinanceEarningsProvider,
     YFinancePriceProvider,
     YFinanceSymbolLookupProvider,
     YFinanceValuationProvider,
@@ -59,6 +64,19 @@ def test_mock_price_series_provider_supports_five_year_range() -> None:
     )
 
     assert len(bars) == 1260
+
+
+def test_mock_earnings_provider_returns_deterministic_event_history() -> None:
+    provider = MockEarningsProvider()
+
+    first_result = provider.get_earnings_events("AAPL", "NASDAQ")
+    second_result = provider.get_earnings_events("AAPL", "NASDAQ")
+
+    assert first_result == second_result
+    assert len(first_result) == 9
+    assert sum(result.eps_actual is None for result in first_result) == 1
+    assert sum(result.eps_estimate is None for result in first_result) == 1
+    assert sum(result.event_date > date.today() for result in first_result) == 1
 
 
 def test_mock_symbol_lookup_provider_matches_symbol_partially() -> None:
@@ -123,6 +141,7 @@ def test_factories_return_mock_providers(monkeypatch: pytest.MonkeyPatch) -> Non
     assert isinstance(get_exchange_rate_provider(), MockExchangeRateProvider)
     assert isinstance(get_symbol_lookup_provider(), MockSymbolLookupProvider)
     assert isinstance(get_valuation_provider(), MockValuationProvider)
+    assert isinstance(get_earnings_provider(), MockEarningsProvider)
     assert isinstance(get_news_adapter(), MockNewsAdapter)
     assert isinstance(get_disclosure_provider(), MockDisclosureProvider)
     assert isinstance(get_portfolio_provider(), MockPortfolioProvider)
@@ -152,6 +171,14 @@ def test_valuation_factory_returns_yfinance_provider(
     assert isinstance(get_valuation_provider(), YFinanceValuationProvider)
 
 
+def test_earnings_factory_returns_yfinance_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "MARKET_PROVIDER", "yfinance")
+
+    assert isinstance(get_earnings_provider(), YFinanceEarningsProvider)
+
+
 def test_news_factory_returns_rss_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "NEWS_PROVIDER", "rss")
     monkeypatch.setattr(
@@ -174,6 +201,7 @@ def test_news_factory_returns_rss_adapter(monkeypatch: pytest.MonkeyPatch) -> No
         ("MARKET_PROVIDER", "get_exchange_rate_provider"),
         ("MARKET_PROVIDER", "get_symbol_lookup_provider"),
         ("MARKET_PROVIDER", "get_valuation_provider"),
+        ("MARKET_PROVIDER", "get_earnings_provider"),
         ("NEWS_PROVIDER", "get_news_adapter"),
         ("DISCLOSURE_PROVIDER", "get_disclosure_provider"),
         ("PORTFOLIO_PROVIDER", "get_portfolio_provider"),
@@ -190,6 +218,7 @@ def test_factories_fail_fast_for_real_providers(
         "get_exchange_rate_provider": get_exchange_rate_provider,
         "get_symbol_lookup_provider": get_symbol_lookup_provider,
         "get_valuation_provider": get_valuation_provider,
+        "get_earnings_provider": get_earnings_provider,
         "get_news_adapter": get_news_adapter,
         "get_disclosure_provider": get_disclosure_provider,
         "get_portfolio_provider": get_portfolio_provider,

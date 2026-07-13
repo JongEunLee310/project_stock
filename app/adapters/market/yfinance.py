@@ -7,6 +7,7 @@ from typing import Any, cast
 import yfinance as yf  # type: ignore[import-untyped]
 
 from app.adapters.market.base import (
+    EarningsEventResult,
     EarningsProvider,
     EarningsReportResult,
     PriceBarResult,
@@ -201,6 +202,24 @@ class YFinanceEarningsProvider(EarningsProvider):
             )
             return []
 
+    def get_earnings_events(
+        self, symbol: str, market: str
+    ) -> list[EarningsEventResult]:
+        ticker_symbol = to_yfinance_ticker(symbol, market)
+        if ticker_symbol is None:
+            return []
+        try:
+            return earnings_events_from_frame(
+                yf.Ticker(ticker_symbol).earnings_dates,
+                source=self.source,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to collect earnings events",
+                extra={"symbol": symbol.upper(), "market": market.upper()},
+            )
+            return []
+
 
 def earnings_reports_from_frames(
     income_stmt: Any,
@@ -245,6 +264,31 @@ def _earnings_estimates(frame: Any) -> list[tuple[date, Decimal]]:
         if estimate is not None:
             estimates.append((_date_from_value(index), estimate))
     return estimates
+
+
+def earnings_events_from_frame(
+    frame: Any,
+    *,
+    source: str,
+) -> list[EarningsEventResult]:
+    if frame is None or getattr(frame, "empty", True):
+        return []
+    events: list[EarningsEventResult] = []
+    seen_dates: set[date] = set()
+    for index, row in frame.iterrows():
+        event_date = _date_from_value(index)
+        if event_date in seen_dates:
+            continue
+        seen_dates.add(event_date)
+        events.append(
+            EarningsEventResult(
+                event_date=event_date,
+                eps_actual=_optional_decimal(row.get("Reported EPS")),
+                eps_estimate=_optional_decimal(row.get("EPS Estimate")),
+                source=source,
+            )
+        )
+    return events
 
 
 def _closest_estimate(

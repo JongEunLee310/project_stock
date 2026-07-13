@@ -43,6 +43,17 @@ class EarningsIngestionService:
                         normalized_symbol, normalized_market, report
                     )
                     saved_count += 1
+                events = provider.get_earnings_events(
+                    normalized_symbol, normalized_market
+                )
+                if not events:
+                    failure_count += 1
+                    continue
+                for event in events:
+                    self.repository.upsert_event(
+                        normalized_symbol, normalized_market, event
+                    )
+                    saved_count += 1
                 success_count += 1
             except Exception:
                 self.db.rollback()

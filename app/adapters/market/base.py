@@ -142,9 +142,23 @@ class EarningsReportResult:
     source: str
 
 
+@dataclass(frozen=True)
+class EarningsEventResult:
+    event_date: date
+    eps_actual: Decimal | None
+    eps_estimate: Decimal | None
+    source: str
+
+
 class EarningsProvider(ABC):
     @abstractmethod
     def get_quarterly_earnings(
         self, symbol: str, market: str
     ) -> list[EarningsReportResult]:
         """Return up to eight recent quarterly earnings reports."""
+
+    @abstractmethod
+    def get_earnings_events(
+        self, symbol: str, market: str
+    ) -> list[EarningsEventResult]:
+        """Return available earnings events, or an empty list on failure."""
