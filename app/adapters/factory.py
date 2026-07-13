@@ -17,6 +17,11 @@ from app.adapters.market.base import (
     SymbolLookupProvider,
     ValuationProvider,
 )
+from app.adapters.market.cache import (
+    CachedExchangeRateProvider,
+    CachedIndexQuoteProvider,
+    CachedMarketDataProvider,
+)
 from app.adapters.market.mock import (
     MockEarningsProvider,
     MockExchangeRateProvider,
@@ -28,6 +33,9 @@ from app.adapters.market.mock import (
 )
 from app.adapters.market.yfinance import (
     YFinanceEarningsProvider,
+    YFinanceExchangeRateProvider,
+    YFinanceIndexQuoteProvider,
+    YFinanceMarketDataProvider,
     YFinancePriceProvider,
     YFinanceSymbolLookupProvider,
     YFinanceValuationProvider,
@@ -46,6 +54,8 @@ LOCAL_PROXY_OPENAI_API_KEY = "local-proxy"
 def get_market_provider() -> MarketDataProvider:
     if settings.MARKET_PROVIDER == "mock":
         return MockMarketDataProvider()
+    if settings.MARKET_PROVIDER == "yfinance":
+        return CachedMarketDataProvider(YFinanceMarketDataProvider())
     raise NotImplementedError("market real provider 미구현")
 
 
@@ -60,12 +70,16 @@ def get_price_series_provider() -> PriceSeriesProvider:
 def get_index_quote_provider() -> IndexQuoteProvider:
     if settings.MARKET_PROVIDER == "mock":
         return MockIndexQuoteProvider()
+    if settings.MARKET_PROVIDER == "yfinance":
+        return CachedIndexQuoteProvider(YFinanceIndexQuoteProvider())
     raise NotImplementedError("market real provider 미구현")
 
 
 def get_exchange_rate_provider() -> ExchangeRateProvider:
     if settings.MARKET_PROVIDER == "mock":
         return MockExchangeRateProvider()
+    if settings.MARKET_PROVIDER == "yfinance":
+        return CachedExchangeRateProvider(YFinanceExchangeRateProvider())
     raise NotImplementedError("market real provider 미구현")
 
 
