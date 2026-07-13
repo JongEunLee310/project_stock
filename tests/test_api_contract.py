@@ -14,7 +14,7 @@ from app.domains.alert_candidates.types import AlertCandidateType, AlertImportan
 from app.domains.alerts.service import AlertService
 from app.domains.prices.model import StockPriceBar
 from app.domains.valuation.model import ValuationSnapshot
-from app.domains.earnings.model import EarningsReport
+from app.domains.earnings.model import EarningsEvent, EarningsReport
 from app.domains.signals.repository import SignalRepository
 from app.main import app
 from tests.conftest import TestingSessionLocal, api_data, api_meta, set_current_user
@@ -254,6 +254,20 @@ EARNINGS_QUARTER_CONTRACT: Contract = {
     "eps": str,
     "revenue_yoy_percent": (str, type(None)),
     "operating_margin_percent": str,
+    "eps_estimate": (str, type(None)),
+    "eps_surprise_percent": (str, type(None)),
+}
+
+ASSET_EVENT_HISTORY_CONTRACT: Contract = {
+    "asset_id": int,
+    "range": str,
+    "events": list,
+}
+
+ASSET_EVENT_PROJECTION_CONTRACT: Contract = {
+    "event_date": str,
+    "event_type": str,
+    "eps_actual": (str, type(None)),
     "eps_estimate": (str, type(None)),
     "eps_surprise_percent": (str, type(None)),
 }
@@ -731,6 +745,35 @@ def test_earnings_summary_response_contract(client: TestClient) -> None:
     assert data["segments"] == []
 
 
+def test_asset_event_history_response_contract(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+    with TestingSessionLocal() as db:
+        db.add(
+            EarningsEvent(
+                symbol=asset["symbol"],
+                market=asset["market"],
+                event_date=datetime.now(UTC).date(),
+                # Source: docs/designs/282-earnings-event-history.md fixture.
+                eps_actual=Decimal("1.2"),
+                eps_estimate=Decimal("1.0"),
+                source="fixture",
+            )
+        )
+        db.commit()
+
+    response = client.get(f"/api/v1/assets/{asset['id']}/events")
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, ASSET_EVENT_HISTORY_CONTRACT)
+    assert_contract(data["events"][0], ASSET_EVENT_PROJECTION_CONTRACT)
+    assert data["range"] == "3M"
+    assert data["events"][0]["event_type"] == "EARNINGS"
+    assert data["events"][0]["eps_surprise_percent"] == "20.00"
+
+
 def test_benchmark_comparison_response_contract(client: TestClient) -> None:
     set_current_user(1)
     asset = create_asset(client)
@@ -1023,6 +1066,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/assets/{asset_id}/research-coverage",
         "/api/v1/assets/{asset_id}/valuation-metrics",
         "/api/v1/assets/{asset_id}/earnings-summary",
+        "/api/v1/assets/{asset_id}/events",
         "/api/v1/assets/{asset_id}/benchmark-comparison",
         "/api/v1/portfolios/{portfolio_id}/summary",
         "/api/v1/portfolios/{portfolio_id}/briefing",
@@ -1068,6 +1112,10 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "ValuationMetric",
         "EarningsSummaryResponse",
         "EarningsQuarter",
+        "AssetEventHistoryResponse",
+        "AssetEventProjection",
+        "AssetEventRange",
+        "AssetEventType",
         "SegmentGrowth",
         "BenchmarkComparisonResponse",
         "BenchmarkSeries",

@@ -9,6 +9,8 @@ from app.core.exceptions import AppException
 from app.core.pagination import PaginationParams
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
+from app.domains.asset_events.schema import AssetEventHistoryResponse, AssetEventRange
+from app.domains.asset_events.service import AssetEventService
 from app.domains.assets.repository import AssetRepository
 from app.domains.assets.schema import (
     AssetCreate,
@@ -210,6 +212,23 @@ def get_asset_earnings_summary(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[EarningsSummaryResponse]:
     return success(EarningsService(db).get_summary(asset_id))
+
+
+@router.get(
+    "/{asset_id}/events",
+    response_model=ApiResponse[AssetEventHistoryResponse],
+    summary="Get asset event history",
+    description="Return stored historical earnings events for an asset.",
+)
+def get_asset_event_history(
+    asset_id: int,
+    range_: Annotated[AssetEventRange, Query(alias="range")] = (
+        AssetEventRange.THREE_MONTHS
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[AssetEventHistoryResponse]:
+    return success(AssetEventService(db).get_history(asset_id, range_))
 
 
 @router.get(
