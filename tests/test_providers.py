@@ -65,13 +65,13 @@ def test_quote_result_from_fast_info_derives_required_values() -> None:
     result = quote_result_from_fast_info(
         "aapl",
         {
-            # Fixture values are synthetic yfinance fast_info-shaped data.
-            "last_price": 195.64,
-            "previous_close": 193.20,
+            # FastInfo exposes camelCase keys through its mapping interface.
+            "lastPrice": 195.64,
+            "previousClose": 193.20,
             "currency": "usd",
-            "market_cap": 3_000_000_000_000,
-            "year_low": 164.08,
-            "year_high": 237.49,
+            "marketCap": 3_000_000_000_000,
+            "yearLow": 164.08,
+            "yearHigh": 237.49,
         },
         as_of=as_of,
     )
@@ -102,7 +102,7 @@ def test_quote_result_from_fast_info_guards_previous_close(
 ) -> None:
     result = quote_result_from_fast_info(
         "AAPL",
-        {"last_price": 10, "previous_close": previous_close, "currency": "usd"},
+        {"lastPrice": 10, "previousClose": previous_close, "currency": "usd"},
         as_of=datetime(2026, 7, 13, tzinfo=UTC),
     )
 
@@ -124,6 +124,24 @@ def test_to_yfinance_quote_ticker_uses_numeric_krx_heuristic(
     assert to_yfinance_quote_ticker(symbol) == expected
 
 
+class StubFastInfo(dict[str, Any]):
+    _DICT_KEYS = {
+        "last_price": "lastPrice",
+        "previous_close": "previousClose",
+        "currency": "currency",
+        "market_cap": "marketCap",
+        "year_low": "yearLow",
+        "year_high": "yearHigh",
+    }
+
+    def __init__(self, **attributes: Any) -> None:
+        super().__init__(
+            (self._DICT_KEYS[key], value) for key, value in attributes.items()
+        )
+        for key, value in attributes.items():
+            setattr(self, key, value)
+
+
 class StubTicker:
     fast_info_by_symbol: dict[str, Any] = {}
 
@@ -135,12 +153,13 @@ def test_yfinance_market_provider_skips_individual_symbol_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     StubTicker.fast_info_by_symbol = {
-        "AAPL": {
-            "last_price": 195.64,
-            "previous_close": 193.20,
-            "currency": "usd",
-        }
+        "AAPL": StubFastInfo(
+            last_price=195.64,
+            previous_close=193.20,
+            currency="usd",
+        )
     }
+    assert StubTicker.fast_info_by_symbol["AAPL"].get("last_price") is None
     monkeypatch.setattr("app.adapters.market.yfinance.yf.Ticker", StubTicker)
 
     results = YFinanceMarketDataProvider().get_quote(["AAPL", "MISSING"])
@@ -152,10 +171,10 @@ def test_yfinance_index_provider_maps_symbols_and_preserves_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     StubTicker.fast_info_by_symbol = {
-        "^GSPC": {"last_price": 5600, "previous_close": 5572},
-        "^IXIC": {"last_price": 18000, "previous_close": 18000},
-        "^KS11": {"last_price": 3200, "previous_close": 3200},
-        "^VIX": {"last_price": 15, "previous_close": 15},
+        "^GSPC": StubFastInfo(last_price=5600, previous_close=5572),
+        "^IXIC": StubFastInfo(last_price=18000, previous_close=18000),
+        "^KS11": StubFastInfo(last_price=3200, previous_close=3200),
+        "^VIX": StubFastInfo(last_price=15, previous_close=15),
     }
     monkeypatch.setattr("app.adapters.market.yfinance.yf.Ticker", StubTicker)
 
@@ -177,8 +196,7 @@ def test_yfinance_exchange_rate_provider_maps_pair_and_guards_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     StubTicker.fast_info_by_symbol = {
-        # Fixture values are synthetic yfinance fast_info-shaped data.
-        "KRW=X": {"last_price": 1384.5, "previous_close": 0},
+        "KRW=X": StubFastInfo(last_price=1384.5, previous_close=0),
     }
     monkeypatch.setattr("app.adapters.market.yfinance.yf.Ticker", StubTicker)
 

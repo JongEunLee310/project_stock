@@ -60,6 +60,14 @@ _INDEX_NAMES = {
 }
 _EXCHANGE_RATE_TICKERS = {"USD/KRW": "KRW=X"}
 _PERCENT_QUANTUM = Decimal("0.01")
+_FAST_INFO_DICT_KEYS = {
+    "last_price": "lastPrice",
+    "previous_close": "previousClose",
+    "currency": "currency",
+    "market_cap": "marketCap",
+    "year_low": "yearLow",
+    "year_high": "yearHigh",
+}
 
 
 class YFinanceMarketDataProvider(MarketDataProvider):
@@ -237,10 +245,13 @@ def _change_percent(current: Decimal, previous_close: Decimal) -> Decimal:
 def _fast_info_value(fast_info: Any, key: str) -> Any:
     if fast_info is None:
         return None
+    attribute_value = getattr(fast_info, key, None)
+    if attribute_value is not None:
+        return attribute_value
     try:
-        return fast_info.get(key)
+        return fast_info.get(_FAST_INFO_DICT_KEYS.get(key, key))
     except (AttributeError, KeyError):
-        return getattr(fast_info, key, None)
+        return None
 
 
 class YFinancePriceProvider(PriceSeriesProvider):
