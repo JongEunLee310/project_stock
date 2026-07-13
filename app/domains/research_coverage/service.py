@@ -54,22 +54,30 @@ class ResearchCoverageService:
                     CoverageAxisName.NEWS,
                     news_count,
                     news_last_updated_at,
-                ),
+                )
+                if news_count > 0
+                else self._not_collected_axis(CoverageAxisName.NEWS),
                 self._collected_axis(
                     CoverageAxisName.PRICE,
                     price_count,
                     price_last_updated_at,
-                ),
+                )
+                if price_count > 0
+                else self._not_collected_axis(CoverageAxisName.PRICE),
                 self._collected_axis(
                     CoverageAxisName.EARNINGS,
                     earnings_count,
                     earnings_last_updated_at,
-                ),
+                )
+                if earnings_count > 0
+                else self._not_collected_axis(CoverageAxisName.EARNINGS),
                 self._collected_axis(
                     CoverageAxisName.VALUATION,
                     valuation_count,
                     valuation_last_updated_at,
-                ),
+                )
+                if valuation_count > 0
+                else self._not_collected_axis(CoverageAxisName.VALUATION),
                 self._not_collected_axis(CoverageAxisName.DISCLOSURE),
             ],
         )
@@ -104,8 +112,6 @@ class ResearchCoverageService:
         item_count: int,
         last_updated_at: datetime | None,
     ) -> CoverageAxis:
-        if item_count == 0:
-            return ResearchCoverageService._not_collected_axis(axis)
         return CoverageAxis(
             axis=axis,
             status=CoverageStatus.COLLECTED,

@@ -1,3 +1,4 @@
+import os
 from collections.abc import Generator
 from typing import Any
 
@@ -7,11 +8,26 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.v1.deps import get_current_user
-from app.db.base import Base
-from app.db.session import get_db
-from app.domains.users.model import User
-from app.main import app
+# OS environment variables must win over local .env values during Settings import.
+_PROVIDER_SETTINGS = (
+    "MARKET_PROVIDER",
+    "NEWS_PROVIDER",
+    "DISCLOSURE_PROVIDER",
+    "PORTFOLIO_PROVIDER",
+)
+for _provider_setting in _PROVIDER_SETTINGS:
+    os.environ[_provider_setting] = "mock"
+
+from app.core.config import settings  # noqa: E402
+from app.api.v1.deps import get_current_user  # noqa: E402
+from app.db.base import Base  # noqa: E402
+from app.db.session import get_db  # noqa: E402
+from app.domains.users.model import User  # noqa: E402
+from app.main import app  # noqa: E402
+
+# Also reset the cached object in case another pytest plugin imported it first.
+for _provider_setting in _PROVIDER_SETTINGS:
+    setattr(settings, _provider_setting, "mock")
 
 engine = create_engine(
     "sqlite://",
