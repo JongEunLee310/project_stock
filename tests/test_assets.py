@@ -261,6 +261,7 @@ def test_get_research_summary_returns_deterministic_mock_data(
     assert first_data["body"]
     assert 2 <= len(first_data["counter_view"]) <= 3
     assert all(first_data["counter_view"])
+    assert len(first_data["counter_points"]) == 2
     assert first_data["key_risks"]
     assert first_data["created_at"] == "2026-06-19T00:00:00Z"
 
@@ -282,6 +283,7 @@ def test_get_research_summary_returns_structured_fields_for_all_templates(
         db.commit()
         asset_ids = [asset.id for asset in assets]
 
+    counter_points_by_stance: dict[str, list[dict[str, Any]]] = {}
     for asset_id in asset_ids:
         response = client.get(f"/api/v1/assets/{asset_id}/research-summary")
 
@@ -292,10 +294,38 @@ def test_get_research_summary_returns_structured_fields_for_all_templates(
         assert 2 <= len(data["caution_factors"]) <= 3
         assert 2 <= len(data["next_checks"]) <= 3
         assert 2 <= len(data["counter_view"]) <= 3
+        counter_points = cast(list[dict[str, Any]], data["counter_points"])
+        assert len(counter_points) == 2
+        assert all(
+            set(point)
+            == {
+                "id",
+                "claim",
+                "basis",
+                "basis_type",
+                "strength",
+                "source_label",
+            }
+            for point in counter_points
+        )
+        assert all(point["id"] for point in counter_points)
+        assert all(point["claim"] for point in counter_points)
+        assert all(point["basis"] for point in counter_points)
+        assert all(point["source_label"] == "AI 분석" for point in counter_points)
+        counter_points_by_stance[data["stance"]] = counter_points
         assert data["confidence_basis"]
         assert all(
             1 <= len(risk["evidence"]) <= 2 for risk in data["key_risks"]
         )
+
+    assert [
+        (point["basis_type"], point["strength"])
+        for point in counter_points_by_stance["BUY_CANDIDATE"]
+    ] == [("VALUATION", "MODERATE"), ("COMPETITION", "WEAK")]
+    assert [
+        (point["basis_type"], point["strength"])
+        for point in counter_points_by_stance["WATCH"]
+    ] == [("FUNDAMENTALS", "MODERATE"), ("SENTIMENT", "WEAK")]
 
 
 def test_get_research_summary_returns_404_when_missing(client: TestClient) -> None:
