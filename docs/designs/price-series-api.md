@@ -24,7 +24,7 @@ GET /api/v1/stocks/{symbol}/prices
 지원할 주요 조회 조건:
 
 ```text
-- market: 시장 구분, 예: KRX, NASDAQ, NYSE
+- market: 시장 구분, 예: KOSPI, KOSDAQ, NASDAQ, NYSE
 - range: 조회 기간, 예: 1M, 3M, 6M, 1Y
 - interval: 봉 단위, MVP에서는 1d
 - adjusted: 수정주가 사용 여부
@@ -170,7 +170,7 @@ GET /api/v1/stocks/{symbol}/prices
 ### 쿼리 파라미터 (확정)
 | 파라미터 | 필수 | 기본 | 허용값 | 위반 시 |
 |----------|------|------|--------|---------|
-| `market` | 필수 | — | `KRX` `NASDAQ` `NYSE` | VALIDATION_ERROR (422) |
+| `market` | 필수 | — | `KOSPI` `KOSDAQ` `NASDAQ` `NYSE` | VALIDATION_ERROR (422) |
 | `range` | 선택 | `3M` | `1M` `3M` `6M` `1Y` | INVALID_PRICE_RANGE (400) |
 | `interval` | 선택 | `1d` | `1d` (MVP 한정) | INVALID_PRICE_INTERVAL (400) |
 | `adjusted` | 선택 | `true` | bool | — |
@@ -184,7 +184,7 @@ GET /api/v1/stocks/{symbol}/prices
 {
   "data": {
     "symbol": "005930",
-    "market": "KRX",
+    "market": "KOSPI",
     "currency": "KRW",
     "interval": "1d",
     "range": "3M",
