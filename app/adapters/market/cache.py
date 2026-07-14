@@ -12,6 +12,7 @@ from app.adapters.market.base import (
     IndexQuoteProvider,
     IndexQuoteResult,
     MarketDataProvider,
+    PriceTargetResult,
     QuoteResult,
 )
 from app.worker.connection import get_redis_connection
@@ -19,6 +20,7 @@ from app.worker.connection import get_redis_connection
 logger = logging.getLogger(__name__)
 
 QUOTE_CACHE_TTL_SECONDS = 60
+PRICE_TARGET_CACHE_TTL_SECONDS = 60 * 60
 INDEX_CACHE_TTL_SECONDS = 60
 FX_CACHE_TTL_SECONDS = 300
 _TYPE_KEY = "__market_cache_type__"
@@ -69,6 +71,15 @@ class CachedMarketDataProvider(MarketDataProvider):
         )
         return _quote_results_from_dicts(payload)
 
+    def get_price_targets(self, symbols: list[str]) -> list[PriceTargetResult]:
+        key = _cache_key("price-target", symbols)
+        payload = fetch_json_cached(
+            key,
+            PRICE_TARGET_CACHE_TTL_SECONDS,
+            lambda: _dataclasses_to_dicts(self.provider.get_price_targets(symbols)),
+        )
+        return _price_target_results_from_dicts(payload)
+
 
 class CachedIndexQuoteProvider(IndexQuoteProvider):
     def __init__(self, provider: IndexQuoteProvider) -> None:
@@ -109,6 +120,10 @@ def _dataclasses_to_dicts(items: list[Any]) -> list[dict[str, Any]]:
 
 def _quote_results_from_dicts(payload: Any) -> list[QuoteResult]:
     return [QuoteResult(**cast(dict[str, Any], item)) for item in payload]
+
+
+def _price_target_results_from_dicts(payload: Any) -> list[PriceTargetResult]:
+    return [PriceTargetResult(**cast(dict[str, Any], item)) for item in payload]
 
 
 def _index_results_from_dicts(payload: Any) -> list[IndexQuoteResult]:

@@ -24,10 +24,23 @@ class QuoteResult:
     target_upside_percent: Decimal | None = None
 
 
+@dataclass(frozen=True)
+class PriceTargetResult:
+    symbol: str
+    target_price: Decimal | None = None
+    target_price_high: Decimal | None = None
+    target_price_low: Decimal | None = None
+    target_analyst_count: int | None = None
+
+
 class MarketDataProvider(ABC):
     @abstractmethod
     def get_quote(self, symbols: list[str]) -> list[QuoteResult]:
         """Return current market quotes for the given symbols."""
+
+    def get_price_targets(self, symbols: list[str]) -> list[PriceTargetResult]:
+        """Return price target consensus without requiring quote callers to fetch it."""
+        return [PriceTargetResult(symbol=symbol.upper()) for symbol in symbols]
 
 
 @dataclass(frozen=True)
