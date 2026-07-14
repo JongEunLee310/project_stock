@@ -14,6 +14,9 @@ FUNDAMENTAL_FIELDS = (
     "fifty_two_week_low",
     "fifty_two_week_high",
     "target_price",
+    "target_price_high",
+    "target_price_low",
+    "target_analyst_count",
     "target_upside_percent",
 )
 
@@ -96,7 +99,7 @@ def test_list_assets_symbol_filter_combined_with_is_active(client: TestClient) -
 
 
 def test_asset_detail_contains_fundamental_fields(client: TestClient) -> None:
-    """AssetDetailResponse에 신규 펀더멘털 필드 6개가 모두 존재한다."""
+    """AssetDetailResponse에 nullable 펀더멘털·컨센서스 필드가 존재한다."""
     asset = create_asset(client, symbol="AAPL")
 
     response = client.get(f"/api/v1/assets/{asset['id']}/detail")
@@ -119,6 +122,9 @@ def test_asset_detail_aapl_fundamental_values_from_mock(client: TestClient) -> N
     assert data["fifty_two_week_low"] == "164.08"
     assert data["fifty_two_week_high"] == "237.49"
     assert data["target_price"] == "220.00"
+    assert data["target_price_high"] == "250.00"
+    assert data["target_price_low"] == "180.00"
+    assert data["target_analyst_count"] == 42
     assert data["target_upside_percent"] == "12.45"
 
 
