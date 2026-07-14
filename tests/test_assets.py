@@ -264,8 +264,7 @@ def test_get_research_summary_returns_deterministic_mock_data(
     assert first_data["stance_confidence"]
     assert first_data["headline"]
     assert first_data["body"]
-    assert 2 <= len(first_data["counter_view"]) <= 3
-    assert all(first_data["counter_view"])
+    assert "counter_view" not in first_data
     assert len(first_data["counter_points"]) == 2
     assert first_data["key_risks"]
     assert first_data["created_at"] == "2026-06-19T00:00:00Z"
@@ -298,7 +297,7 @@ def test_get_research_summary_returns_structured_fields_for_all_templates(
         assert 2 <= len(data["positive_factors"]) <= 3
         assert 2 <= len(data["caution_factors"]) <= 3
         assert 2 <= len(data["next_checks"]) <= 3
-        assert 2 <= len(data["counter_view"]) <= 3
+        assert "counter_view" not in data
         counter_points = cast(list[dict[str, Any]], data["counter_points"])
         assert len(counter_points) == 2
         assert all(
