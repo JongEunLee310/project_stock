@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from urllib.parse import urlsplit, urlunsplit
 
+from app.domains.news.categorizer import categorize
 from app.domains.news.schema import NewsItemCreate
 from app.domains.raw_news.model import RawNewsEvent
 
@@ -42,4 +43,5 @@ class NewsNormalizer:
             url=self.canonicalize_url(event.url),
             source=event.source.strip(),
             published_at=self.normalize_published_at(event.published_at),
+            category=categorize(event.title, None),
         )

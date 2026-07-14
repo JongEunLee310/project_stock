@@ -209,7 +209,9 @@ def test_watchlist_analysis_flow_creates_news_report_signal_and_alert(
     assert result.created_signals == 1
     assert result.created_alerts == 1
     assert result.failures == []
-    assert db.scalar(select(NewsItem).where(NewsItem.asset_id == asset.id)) is not None
+    news_item = db.scalar(select(NewsItem).where(NewsItem.asset_id == asset.id))
+    assert news_item is not None
+    assert news_item.category == "OTHER"
     assert db.scalar(select(ResearchReport)) is not None
     assert db.scalar(select(Signal)) is not None
     assert db.scalar(select(Alert).where(Alert.user_id == user.id)) is not None
