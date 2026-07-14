@@ -17,6 +17,7 @@ Claude Code creates a Codex handoff task using `.codex/task-template.md`.
 ## 4. Codex Implementation
 
 Codex implements only the handoff scope, updates tests, and runs local verification.
+`tests/conftest.py`가 환경 변수와 import 후 `settings` 객체를 두 단계로 mock provider에 격리하므로, 별도 env 접두사 없이 `uv run pytest`가 통과한다.
 
 ## 5. PR Creation
 

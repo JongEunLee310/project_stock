@@ -220,6 +220,7 @@ class MockValuationProvider(ValuationProvider):
             pbr=_ratio(seed, 1, 60, 10),
             ev_ebitda=None if seed % 7 == 0 else _ratio(seed, 5, 150, 10),
             peg=None if seed % 3 == 0 else _ratio(seed, 1, 40, 10),
+            # Negative yield intentionally covers companies that consume cash.
             fcf_yield=_ratio(seed, -50, 150, 10),
             as_of=_VALUATION_AS_OF,
             source="mock",

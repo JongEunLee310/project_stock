@@ -136,6 +136,10 @@ def test_ingestion_skips_empty_and_failed_targets(db: Session) -> None:
     assert result.success_count == 1
     assert result.failure_count == 2
     assert result.saved_count == 2
+    assert result.report_success_count == 1
+    assert result.report_failure_count == 2
+    assert result.event_success_count == 1
+    assert result.event_failure_count == 0
 
 
 def test_ingestion_counts_event_collection_failure(db: Session) -> None:
@@ -149,7 +153,24 @@ def test_ingestion_counts_event_collection_failure(db: Session) -> None:
 
     assert result.success_count == 0
     assert result.failure_count == 1
+    assert result.report_success_count == 1
+    assert result.report_failure_count == 0
+    assert result.event_success_count == 0
+    assert result.event_failure_count == 1
     assert db.scalar(select(func.count()).select_from(EarningsEvent)) == 0
+
+
+def test_ingestion_counts_empty_events_separately(db: Session) -> None:
+    result = EarningsIngestionService(db).collect_and_save(
+        StaticEarningsProvider({"AAPL": [report()]}, {"AAPL": []}),
+        [("AAPL", "NASDAQ")],
+    )
+
+    assert result.success_count == 0
+    assert result.failure_count == 1
+    assert result.report_success_count == 1
+    assert result.event_failure_count == 1
+    assert db.scalar(select(func.count()).select_from(EarningsReport)) == 1
 
 
 def test_yfinance_mapping_handles_missing_rows_and_matches_estimates() -> None:

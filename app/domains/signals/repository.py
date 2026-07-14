@@ -398,6 +398,7 @@ class SignalSnapshotRepository:
                 order_by=window_order,
             )
             .label("prev_score"),
+            # DateTime LAG needs an explicit SQL type for dialect result conversion.
             type_coerce(
                 func.lag(AssetSignalSnapshot.captured_at).over(
                     partition_by=AssetSignalSnapshot.asset_id,

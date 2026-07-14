@@ -74,10 +74,15 @@ class BenchmarkService:
         )
         # 휴장일 차이로 공통 기준일이 더 이를 수 있어 조회 하한에 여유를 둔다.
         start = earliest_latest_date - _RANGE_DELTAS[range_] - _QUERY_START_PADDING
-        closes_by_kind = {
-            kind: dict(self.price_repo.get_daily_closes(symbol, market, start=start))
-            for kind, _, symbol, market in series_specs
-        }
+        closes_by_target: dict[tuple[str, str], dict[date, Decimal]] = {}
+        closes_by_kind: dict[BenchmarkSeriesKind, dict[date, Decimal]] = {}
+        for kind, _, symbol, market in series_specs:
+            target = (symbol, market)
+            if target not in closes_by_target:
+                closes_by_target[target] = dict(
+                    self.price_repo.get_daily_closes(symbol, market, start=start)
+                )
+            closes_by_kind[kind] = closes_by_target[target]
         dates = self._common_dates(closes_by_kind, range_)
 
         return BenchmarkComparisonResponse(

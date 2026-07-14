@@ -204,7 +204,7 @@ def get_asset_valuation_metrics(
     "/{asset_id}/earnings-summary",
     response_model=ApiResponse[EarningsSummaryResponse],
     summary="Get asset earnings summary",
-    description="Return a deterministic mock quarterly earnings summary for an asset.",
+    description="Return a quarterly earnings summary derived from collected reports.",
 )
 def get_asset_earnings_summary(
     asset_id: int,
