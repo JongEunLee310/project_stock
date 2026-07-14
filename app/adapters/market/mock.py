@@ -24,7 +24,7 @@ from app.adapters.market.base import (
 _AS_OF = datetime(2026, 6, 19, 0, 0, tzinfo=timezone.utc)
 _PRICE_SERIES_END_DATE = date(2026, 6, 25)
 _VALUATION_AS_OF = date(2026, 7, 12)
-_INTRADAY_BAR_COUNT = 26
+_INTRADAY_BAR_COUNT = 78
 _RANGE_COUNTS = {
     "1M": 22,
     "3M": 66,
@@ -197,8 +197,8 @@ class MockPriceSeriesProvider(PriceSeriesProvider):
                 PriceBarResult(
                     symbol=normalized_symbol,
                     market=normalized_market,
-                    interval="15m",
-                    timestamp=session_start + timedelta(minutes=15 * index),
+                    interval="5m",
+                    timestamp=session_start + timedelta(minutes=5 * index),
                     open_price=open_price,
                     high_price=high_price,
                     low_price=low_price,

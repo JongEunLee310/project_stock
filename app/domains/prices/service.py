@@ -12,14 +12,14 @@ from app.domains.prices.repository import PriceBarRepository
 from app.domains.prices.schema import PriceBar, PriceSeriesResponse
 
 _RANGE_COUNTS = {
-    "1D": 26,
+    "1D": 78,
     "1M": 22,
     "3M": 66,
     "6M": 132,
     "1Y": 252,
 }
 _RANGE_INTERVALS = {
-    "1D": "15m",
+    "1D": "5m",
     "1M": "1d",
     "3M": "1d",
     "6M": "1d",
@@ -49,7 +49,7 @@ class PriceSeriesService:
 
         try:
             provider = get_price_series_provider()
-            if selected_interval == "15m":
+            if selected_interval == "5m":
                 generated_bars = provider.get_intraday_bars(
                     normalized_symbol,
                     normalized_market,

@@ -361,6 +361,13 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - `market_cap`과 가격·펀더멘털 필드(`per`, `peg`, `fifty_two_week_low`, `fifty_two_week_high`, `target_price`, `target_price_high`, `target_price_low`, `target_upside_percent`)는 모두 **nullable 문자열 Decimal**이다(C5). `target_price`는 평균 목표가이며 `target_upside_percent`는 현재가 대비 평균 목표가의 상승 여력이다. `target_analyst_count`는 nullable 정수이고 `next_earnings_date`는 nullable ISO date 문자열이다. provider가 컨센서스를 제공하지 않으면 목표가 평균·최고·최저와 애널리스트 수는 `null`이다. 현재 mock provider는 AAPL에 목표가 컨센서스를 채우며 그 외 심볼은 nullable 컨센서스 필드가 `null`이다. FE 어댑터는 `null` 표시 fallback(예: "—")을 둔다.
 - Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
 
+#### `GET /api/v1/stocks/{symbol}/prices`
+
+- Auth: Not required
+- Query: `market: KOSPI | KOSDAQ | NASDAQ | NYSE`, `range: 1D | 1M | 3M | 6M | 1Y = 3M`, `interval?: string`, `adjusted: bool = true`
+- `interval`은 `range`에서 파생된다. `range=1D`는 `5m`이며 정규장 기준 최대 78개 바를 반환하고, 나머지 범위는 `1d`다.
+- 명시한 `interval`이 파생값과 다르면 `400 INVALID_PRICE_INTERVAL`을 반환한다.
+
 #### `GET /api/v1/assets/{asset_id}/research-summary`
 
 - Auth: Required
@@ -520,6 +527,12 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 ```json
 { "data": null, "message": "관심 목록 접근 권한이 없습니다.", "error": { "code": "WATCHLIST_FORBIDDEN" }, "meta": null }
 ```
+
+#### `GET /api/v1/watchlists/{watchlist_id}/sparklines`
+
+- Auth: Required
+- Query: `range: 1D | 1M | 3M | 6M | 1Y = 1M`
+- 관심 목록의 각 종목에 대해 종가 스파크라인을 반환한다. `range=1D`는 `5m` 간격이며 정규장 기준 최대 78개 바를 사용하고, 나머지 범위는 `1d`다.
 
 #### `DELETE /api/v1/watchlists/{watchlist_id}/items/{item_id}`
 

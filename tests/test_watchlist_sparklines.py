@@ -97,7 +97,7 @@ def test_get_watchlist_sparklines_accepts_1d_intraday_range(
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
     bars = data["items"][0]["bars"]
-    assert len(bars) == 26
+    assert len(bars) == 78
     assert "T" in bars[0]["date"]
 
 
@@ -240,7 +240,7 @@ def test_watchlist_sparkline_service_derives_intraday_interval(db: Session) -> N
             # range contract: app/api/v1/endpoints/watchlists.py Literal.
             assert range_value == "1D"
             # interval contract: app/domains/prices/service.py _RANGE_INTERVALS.
-            assert interval == "15m"
+            assert interval == "5m"
             return PriceSeriesResponse(
                 symbol=symbol,
                 market=market,
