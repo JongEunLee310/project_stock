@@ -200,7 +200,6 @@ RESEARCH_SUMMARY_CONTRACT: Contract = {
     "positive_factors": list,
     "caution_factors": list,
     "next_checks": list,
-    "counter_view": list,
     "counter_points": list,
     "confidence_basis": (str, type(None)),
     "key_risks": list,
@@ -697,7 +696,7 @@ def test_research_summary_response_contract(client: TestClient) -> None:
     assert_contract(data, RESEARCH_SUMMARY_CONTRACT)
     assert data["headline"]
     assert data["body"]
-    assert data["counter_view"]
+    assert "counter_view" not in data
     assert data["counter_points"]
     assert_contract(data["counter_points"][0], COUNTER_POINT_CONTRACT)
     assert data["key_risks"]
