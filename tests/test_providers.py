@@ -34,6 +34,7 @@ from app.adapters.market.yfinance import (
     YFinancePriceProvider,
     YFinanceSymbolLookupProvider,
     YFinanceValuationProvider,
+    price_target_result_from_info,
     quote_result_from_fast_info,
     to_yfinance_quote_ticker,
 )
@@ -57,6 +58,16 @@ def test_mock_market_data_provider_returns_deterministic_quotes() -> None:
     assert first_result == second_result
     assert [quote.symbol for quote in first_result] == ["AAPL", "MSFT"]
     assert first_result[0].name == "Apple Inc."
+
+
+def test_mock_market_data_provider_price_target_invariant() -> None:
+    result = MockMarketDataProvider().get_price_targets(["AAPL"])[0]
+
+    assert result.target_price_high is not None
+    assert result.target_price is not None
+    assert result.target_price_low is not None
+    assert result.target_price_high >= result.target_price >= result.target_price_low
+    assert result.target_analyst_count is not None
 
 
 def test_quote_result_from_fast_info_derives_required_values() -> None:
@@ -90,6 +101,34 @@ def test_quote_result_from_fast_info_derives_required_values() -> None:
     assert result.per is None
     assert result.target_price is None
     assert result.as_of == as_of
+
+
+def test_price_target_result_from_info_converts_consensus_values() -> None:
+    result = price_target_result_from_info(
+        "aapl",
+        {
+            "targetMeanPrice": 220.5,
+            "targetHighPrice": 250,
+            "targetLowPrice": 180,
+            "numberOfAnalystOpinions": 42,
+        },
+    )
+
+    assert result.symbol == "AAPL"
+    assert result.target_price == Decimal("220.5")
+    assert result.target_price_high == Decimal("250")
+    assert result.target_price_low == Decimal("180")
+    assert result.target_analyst_count == 42
+
+
+def test_price_target_result_from_info_allows_missing_consensus() -> None:
+    result = price_target_result_from_info("005930", {})
+
+    assert result.symbol == "005930"
+    assert result.target_price is None
+    assert result.target_price_high is None
+    assert result.target_price_low is None
+    assert result.target_analyst_count is None
 
 
 @pytest.mark.parametrize(
@@ -144,9 +183,11 @@ class StubFastInfo(dict[str, Any]):
 
 class StubTicker:
     fast_info_by_symbol: dict[str, Any] = {}
+    info_by_symbol: dict[str, Any] = {}
 
     def __init__(self, symbol: str) -> None:
-        self.fast_info = self.fast_info_by_symbol[symbol]
+        self.fast_info = self.fast_info_by_symbol.get(symbol)
+        self.info = self.info_by_symbol.get(symbol, {})
 
 
 def test_yfinance_market_provider_skips_individual_symbol_failure(
@@ -165,6 +206,29 @@ def test_yfinance_market_provider_skips_individual_symbol_failure(
     results = YFinanceMarketDataProvider().get_quote(["AAPL", "MISSING"])
 
     assert [result.symbol for result in results] == ["AAPL"]
+
+
+def test_yfinance_market_provider_collects_price_target_info(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    StubTicker.fast_info_by_symbol = {}
+    StubTicker.info_by_symbol = {
+        "AAPL": {
+            "targetMeanPrice": 220,
+            "targetHighPrice": 250,
+            "targetLowPrice": 180,
+            "numberOfAnalystOpinions": 42,
+        },
+        "005930.KS": {},
+    }
+    monkeypatch.setattr("app.adapters.market.yfinance.yf.Ticker", StubTicker)
+
+    results = YFinanceMarketDataProvider().get_price_targets(["AAPL", "005930"])
+
+    assert results[0].target_price == Decimal("220")
+    assert results[0].target_analyst_count == 42
+    assert results[1].symbol == "005930"
+    assert results[1].target_price is None
 
 
 def test_yfinance_index_provider_maps_symbols_and_preserves_contract(
