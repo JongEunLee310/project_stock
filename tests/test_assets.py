@@ -3,6 +3,11 @@ from typing import Any, cast
 from fastapi.testclient import TestClient
 
 from app.domains.assets.model import Asset
+from app.domains.research_summary.schema import (
+    CounterBasisType,
+    CounterPoint,
+    CounterPointStrength,
+)
 from app.domains.research_summary.service import _SUMMARY_TEMPLATES
 from tests.conftest import (
     TestingSessionLocal,
@@ -326,6 +331,23 @@ def test_get_research_summary_returns_structured_fields_for_all_templates(
         (point["basis_type"], point["strength"])
         for point in counter_points_by_stance["WATCH"]
     ] == [("FUNDAMENTALS", "MODERATE"), ("SENTIMENT", "WEAK")]
+
+
+def test_counter_point_serializes_null_source_label() -> None:
+    point = CounterPoint(
+        id="no-source",
+        claim="출처가 없는 반대 주장입니다.",
+        basis="LLM 실생성 시 출처가 비어 있을 수 있습니다.",
+        basis_type=CounterBasisType.MACRO,
+        strength=CounterPointStrength.STRONG,
+        source_label=None,
+    )
+
+    serialized = point.model_dump(mode="json")
+
+    assert serialized["source_label"] is None
+    assert serialized["basis_type"] == "MACRO"
+    assert serialized["strength"] == "STRONG"
 
 
 def test_get_research_summary_returns_404_when_missing(client: TestClient) -> None:
