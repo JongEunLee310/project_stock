@@ -37,8 +37,9 @@
   `get_quote(symbols)`: 심볼별 `Ticker.fast_info`에서
   last_price · previous_close · currency 추출, change/
   change_percent 파생(quantize 0.01), name은 fast_info에 없으므로
-  심볼 그대로(소비처는 자체 asset name을 우선 사용). as_of는 조회
-  시각(UTC). 값 변환·파생은 순수 함수로 분리해 그 부분만 테스트.
+  심볼 그대로(소비처는 자체 asset name을 우선 사용). as_of는 loader가
+  조회해 캐시에 저장한 시각(UTC)이므로 cache hit에서는 TTL 60초 이내의
+  과거 시각일 수 있다. 값 변환·파생은 순수 함수로 분리해 그 부분만 테스트.
 - `YFinanceIndexQuoteProvider(IndexQuoteProvider)` —
   내부 심볼 ↔ yfinance 심볼 매핑 상수:
   `SPX→^GSPC, IXIC→^IXIC, KOSPI→^KS11, VIX→^VIX`.

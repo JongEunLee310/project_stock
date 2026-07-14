@@ -14,10 +14,14 @@ from app.domains.prices.repository import PriceBarRepository
 from tests.conftest import TestingSessionLocal, api_data, api_error, set_current_user
 
 
-def create_asset(*, sector: str | None = "Technology") -> int:
+def create_asset(
+    *,
+    symbol: str = "BMK",
+    sector: str | None = "Technology",
+) -> int:
     with TestingSessionLocal() as db:
         asset = Asset(
-            symbol="BMK",
+            symbol=symbol,
             name="Benchmark",
             market="NASDAQ",
             sector=sector,
@@ -194,6 +198,42 @@ def test_get_benchmark_comparison_excludes_bars_before_bounded_query_start(
         [Decimal(point["return_percent"]) for point in series["points"]]
         for series in data["series"]
     ] == [[Decimal("0.00"), Decimal("20.00")]] * 3
+
+
+def test_get_benchmark_comparison_reuses_duplicate_symbol_market_closes(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_current_user(1)
+    asset_id = create_asset(symbol="QQQ")
+    with TestingSessionLocal() as db:
+        for symbol, market in [("QQQ", "NASDAQ"), ("XLK", "NYSE")]:
+            add_daily_closes(
+                db,
+                symbol,
+                market,
+                {date(2026, 7, 10): Decimal("100")},
+            )
+
+    queries: list[tuple[str, str]] = []
+    original_get_daily_closes = PriceBarRepository.get_daily_closes
+
+    def record_query(
+        repository: PriceBarRepository,
+        symbol: str,
+        market: str,
+        start: date | None,
+    ) -> list[tuple[date, Decimal]]:
+        queries.append((symbol, market))
+        return original_get_daily_closes(repository, symbol, market, start)
+
+    monkeypatch.setattr(PriceBarRepository, "get_daily_closes", record_query)
+
+    response = client.get(f"/api/v1/assets/{asset_id}/benchmark-comparison")
+
+    assert response.status_code == 200
+    assert queries.count(("QQQ", "NASDAQ")) == 1
+    assert queries.count(("XLK", "NYSE")) == 1
 
 
 @pytest.mark.parametrize(
