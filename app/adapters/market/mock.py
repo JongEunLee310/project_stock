@@ -13,6 +13,7 @@ from app.adapters.market.base import (
     MarketDataProvider,
     PriceBarResult,
     PriceSeriesProvider,
+    PriceTargetResult,
     QuoteResult,
     SymbolLookupProvider,
     SymbolLookupResult,
@@ -99,6 +100,9 @@ class MockMarketDataProvider(MarketDataProvider):
             _SAMPLE_QUOTES.get(symbol.upper(), _fallback_quote(symbol))
             for symbol in symbols
         ]
+
+    def get_price_targets(self, symbols: list[str]) -> list[PriceTargetResult]:
+        return [_mock_price_target(symbol) for symbol in symbols]
 
 
 class MockPriceSeriesProvider(PriceSeriesProvider):
@@ -220,6 +224,7 @@ class MockValuationProvider(ValuationProvider):
             pbr=_ratio(seed, 1, 60, 10),
             ev_ebitda=None if seed % 7 == 0 else _ratio(seed, 5, 150, 10),
             peg=None if seed % 3 == 0 else _ratio(seed, 1, 40, 10),
+            # Negative yield intentionally covers companies that consume cash.
             fcf_yield=_ratio(seed, -50, 150, 10),
             as_of=_VALUATION_AS_OF,
             source="mock",
@@ -348,6 +353,19 @@ def _fallback_quote(symbol: str) -> QuoteResult:
         change_percent=Decimal("1.00"),
         currency="USD",
         as_of=_AS_OF,
+    )
+
+
+def _mock_price_target(symbol: str) -> PriceTargetResult:
+    normalized_symbol = symbol.upper()
+    if normalized_symbol != "AAPL":
+        return PriceTargetResult(symbol=normalized_symbol)
+    return PriceTargetResult(
+        symbol=normalized_symbol,
+        target_price=Decimal("220.00"),
+        target_price_high=Decimal("250.00"),
+        target_price_low=Decimal("180.00"),
+        target_analyst_count=42,
     )
 
 

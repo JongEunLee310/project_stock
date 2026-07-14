@@ -198,6 +198,32 @@ def test_news_analysis_service_falls_back_to_none_for_invalid_category(
     assert updated.category is None
 
 
+def test_news_analysis_service_preserves_existing_category_when_llm_omits_it(
+    db: Session,
+) -> None:
+    item = create_news_item(db)
+    item.category = "EARNINGS"
+    db.commit()
+    client = MockLLMClient(
+        {
+            "NewsSummaryResult": {
+                "summary": "Category was not provided by the model.",
+                "positive_factors": [],
+                "negative_factors": [],
+                "impact_level": "LOW",
+                "sentiment": "NEUTRAL",
+                "category": None,
+            }
+        }
+    )
+
+    NewsAnalysisService(db, make_gateway(client)).summarize(item.id)
+
+    updated = db.get(NewsItem, item.id)
+    assert updated is not None
+    assert updated.category == "EARNINGS"
+
+
 def test_news_analysis_service_raises_for_missing_news_item(db: Session) -> None:
     client = MockLLMClient()
 

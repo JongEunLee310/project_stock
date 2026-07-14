@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters.disclosure.base import DisclosureProvider
 from app.adapters.factory import get_disclosure_provider
+from app.domains.news.categorizer import categorize
 from app.domains.news.repository import NewsItemRepository
 from app.domains.news.schema import (
     DisclosureItemProjection,
@@ -48,7 +49,7 @@ class NewsDisclosureService:
                     url=item.url,
                     source=item.source,
                     published_at=item.published_at,
-                    category="OTHER",
+                    category=categorize(item.title, None),
                     impact_level=None,
                     summary=None,
                 )

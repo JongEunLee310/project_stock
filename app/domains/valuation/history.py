@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
 from statistics import median
-from typing import Protocol
+from typing import Protocol, cast
 
 _TTM_QUARTERS = 4
 _MIN_OBSERVATIONS = 20
@@ -28,7 +28,7 @@ def build_ttm_eps_series(
         if any(eps is None for eps in eps_values):
             continue
         # yfinance stores consecutive quarters, so calendar-gap correction is omitted.
-        ttm_eps = sum((eps for eps in eps_values if eps is not None), Decimal("0"))
+        ttm_eps = sum(cast(list[Decimal], eps_values), Decimal("0"))
         series.append((ordered_reports[index].period_end, ttm_eps))
     return series
 

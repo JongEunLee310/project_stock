@@ -354,11 +354,11 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": { "id": 1, "symbol": "AAPL", "name": "Apple Inc.", "market": "NASDAQ", "price": "195.64", "previous_close": "193.20", "change": "2.44", "change_percent": "1.26", "currency": "USD", "sector": "Technology", "industry": "Consumer Electronics", "description": "Makes devices and services.", "updated_at": "2026-06-19T00:00:00Z", "market_cap": "3000000000000", "next_earnings_date": "2026-07-30", "per": "31.20", "peg": "2.45", "fifty_two_week_low": "164.08", "fifty_two_week_high": "237.49", "target_price": "220.00", "target_upside_percent": "12.45" }, "message": null, "error": null, "meta": null }
+{ "data": { "id": 1, "symbol": "AAPL", "name": "Apple Inc.", "market": "NASDAQ", "price": "195.64", "previous_close": "193.20", "change": "2.44", "change_percent": "1.26", "currency": "USD", "sector": "Technology", "industry": "Consumer Electronics", "description": "Makes devices and services.", "updated_at": "2026-06-19T00:00:00Z", "market_cap": "3000000000000", "next_earnings_date": "2026-07-30", "per": "31.20", "peg": "2.45", "fifty_two_week_low": "164.08", "fifty_two_week_high": "237.49", "target_price": "220.00", "target_price_high": "250.00", "target_price_low": "180.00", "target_analyst_count": 42, "target_upside_percent": "12.45" }, "message": null, "error": null, "meta": null }
 ```
 
 - `updated_at`은 provider quote timestamp를 응답 계약명에 맞춰 노출한 값이다.
-- `market_cap`과 펀더멘털 6필드(`per`, `peg`, `fifty_two_week_low`, `fifty_two_week_high`, `target_price`, `target_upside_percent`)는 모두 **nullable 문자열 Decimal**이다(C5). `next_earnings_date`는 nullable ISO date 문자열이다. provider가 값을 제공하지 않으면 `null`. 현재 mock provider는 AAPL/TSLA에 일부 값을 채우고 그 외 심볼은 nullable 확장 필드가 `null`이다. FE 어댑터는 `null` 표시 fallback(예: "—")을 둔다.
+- `market_cap`과 가격·펀더멘털 필드(`per`, `peg`, `fifty_two_week_low`, `fifty_two_week_high`, `target_price`, `target_price_high`, `target_price_low`, `target_upside_percent`)는 모두 **nullable 문자열 Decimal**이다(C5). `target_price`는 평균 목표가이며 `target_upside_percent`는 현재가 대비 평균 목표가의 상승 여력이다. `target_analyst_count`는 nullable 정수이고 `next_earnings_date`는 nullable ISO date 문자열이다. provider가 컨센서스를 제공하지 않으면 목표가 평균·최고·최저와 애널리스트 수는 `null`이다. 현재 mock provider는 AAPL에 목표가 컨센서스를 채우며 그 외 심볼은 nullable 컨센서스 필드가 `null`이다. FE 어댑터는 `null` 표시 fallback(예: "—")을 둔다.
 - Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
 
 #### `GET /api/v1/assets/{asset_id}/research-summary`
