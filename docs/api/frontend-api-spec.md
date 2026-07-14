@@ -368,9 +368,12 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": { "asset_id": 1, "stance": "WATCH", "stance_confidence": "0.64", "headline": "비용 효율화는 긍정적이나 단기 과열 여부를 확인해야 합니다.", "body": "신규 고객 증가와 마진 방어력이 관찰되지만 재고 부담과 규제 리스크가 남아 있습니다.", "key_risks": [{ "id": "news_overheated", "title": "단기 뉴스 과열", "level": "MEDIUM", "description": "최근 뉴스 흐름이 가격에 과도하게 반영되었는지 확인하세요." }], "created_at": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
+{ "data": { "asset_id": 1, "stance": "WATCH", "stance_confidence": "0.64", "stance_comment": "비용 효율화 효과를 확인하면서 단기 과열과 규제 일정을 관찰할 단계입니다.", "headline": "비용 효율화는 긍정적이나 단기 과열 여부를 확인해야 합니다.", "body": "신규 고객 증가와 마진 방어력이 관찰되지만 재고 부담과 규제 리스크가 남아 있습니다.", "positive_factors": ["비용 효율화가 마진 방어에 기여하는 흐름이 관찰됩니다."], "caution_factors": ["최근 뉴스 집중도가 단기 가격 과열로 이어졌는지 점검해야 합니다."], "next_checks": ["다음 분기의 재고 회전율과 할인 판매 비중을 확인하세요."], "counter_view": ["비용 효율화와 신규 고객 증가가 예상보다 강해 관찰보다 적극적인 판단이 필요한지 확인하세요."], "counter_points": [{ "id": "fundamentals_upside", "claim": "비용 효율화와 신규 고객 증가가 예상보다 강할 수 있습니다.", "basis": "마진 방어와 고객 기반 확대가 이어지면 관찰보다 적극적인 판단이 필요할 수 있습니다.", "basis_type": "FUNDAMENTALS", "strength": "MODERATE", "source_label": "AI 분석" }], "confidence_basis": "비용과 고객 지표는 개선됐지만 재고와 규제 영향의 확인 자료가 충분하지 않습니다.", "key_risks": [{ "id": "news_overheated", "title": "단기 뉴스 과열", "level": "MEDIUM", "description": "최근 뉴스 흐름이 가격에 과도하게 반영되었는지 확인하세요.", "evidence": ["뉴스 빈도 증가와 거래량 급증이 같은 시기에 나타났는지 비교하세요."] }], "created_at": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
 ```
 
+- 예시의 배열 필드는 대표 항목 1건으로 줄여 표기했다. 실제 mock 응답은 항목이 2건 이상일 수 있다.
+- `counter_view`는 `counter_points`로 대체 예정인 구계약 필드다. FE 전환 완료 후 제거한다(#300).
+- `counter_points[].basis_type`: `VALUATION | FUNDAMENTALS | COMPETITION | MACRO | SENTIMENT`. `counter_points[].strength`: `WEAK | MODERATE | STRONG`. `counter_points[].source_label`은 nullable 문자열이다.
 - Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
 
 #### `GET /api/v1/assets/{asset_id}/buy-checklist`

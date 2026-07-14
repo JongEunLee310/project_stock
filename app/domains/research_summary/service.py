@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.assets.repository import AssetRepository
-from app.domains.research_summary.schema import ResearchRisk, ResearchSummaryResponse
+from app.domains.research_summary.schema import (
+    CounterPoint,
+    ResearchRisk,
+    ResearchSummaryResponse,
+)
 
 _CREATED_AT = datetime(2026, 6, 19, 0, 0, tzinfo=timezone.utc)
 
@@ -19,6 +23,15 @@ class _RiskTemplate(TypedDict):
     evidence: list[str]
 
 
+class _CounterPointTemplate(TypedDict):
+    id: str
+    claim: str
+    basis: str
+    basis_type: str
+    strength: str
+    source_label: str
+
+
 class _SummaryTemplate(TypedDict):
     stance: str
     stance_confidence: str
@@ -29,6 +42,7 @@ class _SummaryTemplate(TypedDict):
     caution_factors: list[str]
     next_checks: list[str]
     counter_view: list[str]
+    counter_points: list[_CounterPointTemplate]
     confidence_basis: str
     key_risks: list[_RiskTemplate]
 
@@ -55,6 +69,24 @@ _SUMMARY_TEMPLATES: tuple[_SummaryTemplate, ...] = (
         "counter_view": [
             "현재 가격에 성장 기대가 과도하게 반영되어 추가 상승 여력이 제한적인지 점검하세요.",
             "경쟁 심화로 점유율이나 수익성이 예상보다 빠르게 약화될 가능성을 확인하세요.",
+        ],
+        "counter_points": [
+            {
+                "id": "valuation_priced_in",
+                "claim": "현재 가격에는 성장 기대가 과도하게 선반영됐을 수 있습니다.",
+                "basis": "실적 개선 기대가 이미 밸류에이션에 반영됐다면 추가 상승 여력이 제한될 수 있습니다.",
+                "basis_type": "VALUATION",
+                "strength": "MODERATE",
+                "source_label": "AI 분석",
+            },
+            {
+                "id": "competition_pressure",
+                "claim": "경쟁 심화로 점유율과 수익성이 예상보다 빠르게 약화될 수 있습니다.",
+                "basis": "경쟁사의 가격 인하와 판촉 확대는 주요 제품군의 점유율과 마진을 압박할 수 있습니다.",
+                "basis_type": "COMPETITION",
+                "strength": "WEAK",
+                "source_label": "AI 분석",
+            },
         ],
         "confidence_basis": "매출 성장과 현금흐름 지표는 긍정적이지만 밸류에이션과 환율 변수의 불확실성이 남아 있습니다.",
         "key_risks": [
@@ -101,6 +133,24 @@ _SUMMARY_TEMPLATES: tuple[_SummaryTemplate, ...] = (
         "counter_view": [
             "비용 효율화와 신규 고객 증가가 예상보다 강해 관찰보다 적극적인 판단이 필요한지 확인하세요.",
             "재고와 규제 우려가 이미 가격에 충분히 반영되어 상승 여력이 커졌는지 점검하세요.",
+        ],
+        "counter_points": [
+            {
+                "id": "fundamentals_upside",
+                "claim": "비용 효율화와 신규 고객 증가가 예상보다 강할 수 있습니다.",
+                "basis": "마진 방어와 고객 기반 확대가 이어지면 관찰보다 적극적인 판단이 필요할 수 있습니다.",
+                "basis_type": "FUNDAMENTALS",
+                "strength": "MODERATE",
+                "source_label": "AI 분석",
+            },
+            {
+                "id": "concerns_priced_in",
+                "claim": "재고와 규제 우려가 현재 가격에 충분히 반영됐을 수 있습니다.",
+                "basis": "부정적 심리가 선반영됐다면 우려 완화 시 추가 상승 여력이 커질 수 있습니다.",
+                "basis_type": "SENTIMENT",
+                "strength": "WEAK",
+                "source_label": "AI 분석",
+            },
         ],
         "confidence_basis": "비용과 고객 지표는 개선됐지만 재고와 규제 영향의 확인 자료가 충분하지 않습니다.",
         "key_risks": [
@@ -154,6 +204,10 @@ class ResearchSummaryService:
             caution_factors=template["caution_factors"],
             next_checks=template["next_checks"],
             counter_view=template["counter_view"],
+            counter_points=[
+                CounterPoint.model_validate(point)
+                for point in template["counter_points"]
+            ],
             confidence_basis=template["confidence_basis"],
             key_risks=[
                 ResearchRisk.model_validate(risk)

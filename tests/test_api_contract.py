@@ -201,6 +201,7 @@ RESEARCH_SUMMARY_CONTRACT: Contract = {
     "caution_factors": list,
     "next_checks": list,
     "counter_view": list,
+    "counter_points": list,
     "confidence_basis": (str, type(None)),
     "key_risks": list,
     "created_at": str,
@@ -212,6 +213,15 @@ RESEARCH_RISK_CONTRACT: Contract = {
     "level": str,
     "description": str,
     "evidence": list,
+}
+
+COUNTER_POINT_CONTRACT: Contract = {
+    "id": str,
+    "claim": str,
+    "basis": str,
+    "basis_type": str,
+    "strength": str,
+    "source_label": (str, type(None)),
 }
 
 RESEARCH_COVERAGE_CONTRACT: Contract = {
@@ -688,6 +698,8 @@ def test_research_summary_response_contract(client: TestClient) -> None:
     assert data["headline"]
     assert data["body"]
     assert data["counter_view"]
+    assert data["counter_points"]
+    assert_contract(data["counter_points"][0], COUNTER_POINT_CONTRACT)
     assert data["key_risks"]
     assert_contract(data["key_risks"][0], RESEARCH_RISK_CONTRACT)
 
