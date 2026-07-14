@@ -162,6 +162,7 @@ class ResearchStatus(str, Enum):
     COLLECTING       = "COLLECTING"
     INSUFFICIENT     = "INSUFFICIENT"
     STALE            = "STALE"
+    PENDING_ANALYSIS = "PENDING_ANALYSIS"
 ```
 
 한국어 라벨(`분석 완료` 등)은 FE 소관으로 BE는 반환하지 않습니다.
@@ -173,6 +174,7 @@ class ResearchStatus(str, Enum):
 | 활성 시그널에 `RISK_ALERT` 또는 `THESIS_BROKEN`이 있음 | `NEEDS_ATTENTION` |
 | `completeness_pct < 30` | `INSUFFICIENT` |
 | `completeness_pct < 70` | `COLLECTING` |
+| `last_updated_at is None` | `PENDING_ANALYSIS` |
 | `last_updated_at`가 30일 이전 | `STALE` |
 | 나머지 (`completeness_pct >= 70`, 최신 데이터 있음) | `ANALYZED` |
 
@@ -222,7 +224,7 @@ class ResearchStatus(str, Enum):
 
 | filter 값 | 매핑 조건 |
 | --- | --- |
-| `needs_research` | `research_status IN (NEEDS_ATTENTION, INSUFFICIENT, COLLECTING)` |
+| `needs_research` | `research_status IN (NEEDS_ATTENTION, INSUFFICIENT, COLLECTING, PENDING_ANALYSIS)` |
 | `risk_increasing` | 활성 시그널에 `RISK_ALERT` 또는 `THESIS_BROKEN` 포함 |
 | `earnings_upcoming` | `earnings_events`에 해당 `symbol + market`의 `event_date`가 오늘(UTC)부터 30일 이내인 레코드 존재 |
 | `recently_updated` | `last_updated_at >= 오늘 UTC 00:00:00` |

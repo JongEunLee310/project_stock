@@ -13,6 +13,7 @@ class ResearchStatus(str, Enum):
     COLLECTING = "COLLECTING"
     INSUFFICIENT = "INSUFFICIENT"
     STALE = "STALE"
+    PENDING_ANALYSIS = "PENDING_ANALYSIS"
 
 
 class ResearchQueueFilter(str, Enum):
