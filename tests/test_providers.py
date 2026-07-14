@@ -289,7 +289,20 @@ def test_mock_price_series_provider_supports_five_year_range() -> None:
         "AAPL", "NASDAQ", "5Y", adjusted=True
     )
 
-    assert len(bars) == 1260
+    assert len(bars) == 260
+    assert all(bar.interval == "1wk" for bar in bars)
+    assert all(bar.timestamp.weekday() == 0 for bar in bars)
+
+
+def test_mock_price_series_provider_supports_thirty_minute_range() -> None:
+    provider = MockPriceSeriesProvider()
+
+    first_result = provider.get_intraday_bars("AAPL", "NASDAQ", interval="30m")
+    second_result = provider.get_intraday_bars("AAPL", "NASDAQ", interval="30m")
+
+    assert first_result == second_result
+    assert len(first_result) == 65
+    assert all(bar.interval == "30m" for bar in first_result)
 
 
 def test_mock_earnings_provider_returns_deterministic_event_history() -> None:

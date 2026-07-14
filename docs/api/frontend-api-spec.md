@@ -364,8 +364,9 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 #### `GET /api/v1/stocks/{symbol}/prices`
 
 - Auth: Not required
-- Query: `market: KOSPI | KOSDAQ | NASDAQ | NYSE`, `range: 1D | 1M | 3M | 6M | 1Y = 3M`, `interval?: string`, `adjusted: bool = true`
-- `interval`은 `range`에서 파생된다. `range=1D`는 `5m`이며 정규장 기준 최대 78개 바를 반환하고, 나머지 범위는 `1d`다.
+- Query: `market: KOSPI | KOSDAQ | NASDAQ | NYSE`, `range: 1D | 1W | 1M | 3M | 6M | 1Y | 5Y = 3M`, `interval?: string`, `adjusted: bool = true`
+- `interval`은 `range`에서 파생된다. `1D`는 `5m`·최대 78개, `1W`는 `30m`·최대 65개, `1M`·`3M`·`6M`·`1Y`는 `1d`·각각 최대 22·66·132·252개, `5Y`는 `1wk`·최대 260개 바를 반환한다.
+- `bars[].date`는 `5m`·`30m`에서 타임존을 포함한 ISO datetime이고, `1d`에서는 거래일, `1wk`에서는 주 시작일을 나타내는 `YYYY-MM-DD` 캘린더 날짜다.
 - 명시한 `interval`이 파생값과 다르면 `400 INVALID_PRICE_INTERVAL`을 반환한다.
 
 #### `GET /api/v1/assets/{asset_id}/research-summary`

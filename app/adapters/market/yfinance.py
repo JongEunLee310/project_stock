@@ -61,6 +61,10 @@ _INDEX_NAMES = {
 }
 _EXCHANGE_RATE_TICKERS = {"USD/KRW": "KRW=X"}
 _PERCENT_QUANTUM = Decimal("0.01")
+_INTRADAY_PERIODS = {
+    "5m": "1d",
+    "30m": "5d",
+}
 _FAST_INFO_DICT_KEYS = {
     "last_price": "lastPrice",
     "previous_close": "previousClose",
@@ -314,9 +318,10 @@ class YFinancePriceProvider(PriceSeriesProvider):
             return []
 
         ticker = yf.Ticker(ticker_symbol)
+        interval = "1wk" if range_value == "5Y" else "1d"
         frame = ticker.history(
             period=_range_to_period(range_value),
-            interval="1d",
+            interval=interval,
             auto_adjust=adjusted,
         )
         currency = _currency_from_ticker(ticker, normalized_market)
@@ -332,13 +337,14 @@ class YFinancePriceProvider(PriceSeriesProvider):
             symbol=normalized_symbol,
             market=normalized_market,
             currency=currency,
-            interval="1d",
+            interval=interval,
         )
 
     def get_intraday_bars(
         self,
         symbol: str,
         market: str,
+        interval: str = "5m",
     ) -> list[PriceBarResult]:
         normalized_symbol = symbol.upper()
         normalized_market = market.upper()
@@ -357,7 +363,11 @@ class YFinancePriceProvider(PriceSeriesProvider):
             return []
 
         ticker = yf.Ticker(ticker_symbol)
-        frame = ticker.history(period="1d", interval="5m", auto_adjust=True)
+        frame = ticker.history(
+            period=_INTRADAY_PERIODS[interval],
+            interval=interval,
+            auto_adjust=True,
+        )
         currency = _currency_from_ticker(ticker, normalized_market)
         self.last_payload = _payload_from_frame(
             frame=frame,
@@ -371,7 +381,7 @@ class YFinancePriceProvider(PriceSeriesProvider):
             symbol=normalized_symbol,
             market=normalized_market,
             currency=currency,
-            interval="5m",
+            interval=interval,
         )
 
 
