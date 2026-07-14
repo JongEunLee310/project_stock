@@ -62,5 +62,6 @@ def test_news_normalizer_maps_raw_event_to_news_item_create(db: Session) -> None
     assert data.source == "Example News"
     assert data.published_at == datetime(2026, 6, 18, 12, 30, tzinfo=UTC)
     assert data.summary is None
+    assert data.category == "PRODUCT"
     assert data.sentiment is None
     assert data.impact_level is None
