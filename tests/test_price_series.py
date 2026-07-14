@@ -24,7 +24,7 @@ DATETIME_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 def test_get_price_series_returns_contract_shape(client: TestClient) -> None:
     response = client.get(
         "/api/v1/stocks/005930/prices",
-        params={"market": "KRX", "range": "1M"},
+        params={"market": "KOSPI", "range": "1M"},
     )
 
     assert response.status_code == 200
@@ -32,7 +32,7 @@ def test_get_price_series_returns_contract_shape(client: TestClient) -> None:
     assert body["meta"] is None
     data = cast(dict[str, Any], api_data(response))
     assert data["symbol"] == "005930"
-    assert data["market"] == "KRX"
+    assert data["market"] == "KOSPI"
     assert data["currency"] == "KRW"
     assert data["interval"] == "1d"
     assert data["range"] == "1M"
@@ -73,6 +73,41 @@ def test_price_series_adjusted_false_uses_close_as_adjusted_close(
     data = cast(dict[str, Any], api_data(response))
     for bar in data["bars"]:
         assert bar["adjusted_close"] == bar["close"]
+
+
+def test_price_series_derives_intraday_interval_for_1d(
+    client: TestClient,
+) -> None:
+    response = client.get(
+        "/api/v1/stocks/NVDA/prices",
+        params={"market": "NASDAQ", "range": "1D"},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["interval"] == "15m"
+
+
+def test_price_series_accepts_kosdaq_market(client: TestClient) -> None:
+    response = client.get(
+        "/api/v1/stocks/035720/prices",
+        params={"market": "KOSDAQ", "range": "1M"},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["market"] == "KOSDAQ"
+    assert data["currency"] == "KRW"
+
+
+def test_price_series_rejects_krx_market(client: TestClient) -> None:
+    response = client.get(
+        "/api/v1/stocks/005930/prices",
+        params={"market": "KRX", "range": "1M"},
+    )
+
+    assert response.status_code == 422
+    assert api_error(response)["code"] == "VALIDATION_ERROR"
 
 
 def test_price_series_rejects_invalid_range(client: TestClient) -> None:

@@ -390,6 +390,6 @@ def _money(value: Decimal) -> Decimal:
 
 
 def _currency_for_market(market: str) -> str:
-    if market == "KRX":
+    if market in {"KOSPI", "KOSDAQ"}:
         return "KRW"
     return "USD"

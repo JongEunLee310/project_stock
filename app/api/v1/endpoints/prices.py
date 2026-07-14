@@ -19,9 +19,9 @@ router = APIRouter()
 )
 def get_stock_price_series(
     symbol: str,
-    market: Literal["KRX", "NASDAQ", "NYSE"],
+    market: Literal["KOSPI", "KOSDAQ", "NASDAQ", "NYSE"],
     price_range: Annotated[str, Query(alias="range")] = "3M",
-    interval: str = "1d",
+    interval: str | None = None,
     adjusted: bool = True,
     db: Session = Depends(get_db),
 ) -> ApiResponse[PriceSeriesResponse]:
