@@ -85,7 +85,8 @@ def test_price_series_derives_intraday_interval_for_1d(
 
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
-    assert data["interval"] == "15m"
+    assert data["interval"] == "5m"
+    assert len(data["bars"]) == 78
 
 
 def test_price_series_accepts_kosdaq_market(client: TestClient) -> None:
@@ -284,8 +285,8 @@ def test_price_series_service_uses_intraday_provider_for_1d(
 
     assert calls == [("AAPL", "NASDAQ")]
     # interval contract: app/domains/prices/service.py _RANGE_INTERVALS.
-    assert result.interval == "15m"
-    assert len(result.bars) <= 26
+    assert result.interval == "5m"
+    assert len(result.bars) == 78
     assert all(DATETIME_PATTERN.match(bar.date) for bar in result.bars)
 
 
@@ -303,7 +304,7 @@ def test_price_series_service_validates_range_and_derived_interval(
 
     # interval contract: app/domains/prices/service.py _RANGE_INTERVALS.
     with pytest.raises(AppException) as interval_error:
-        service._validate_interval("1d", "15m")
+        service._validate_interval("1d", "5m")
     assert interval_error.value.status_code == 400
     assert interval_error.value.error_code == ErrorCode.INVALID_PRICE_INTERVAL
 
@@ -313,7 +314,7 @@ def test_price_series_service_formats_bar_date_by_interval(db: Session) -> None:
     bar = StockPriceBar(
         symbol="AAPL",
         market="NASDAQ",
-        interval="15m",
+        interval="5m",
         timestamp=timestamp,
         open_price=Decimal("100"),
         high_price=Decimal("101"),
@@ -327,5 +328,5 @@ def test_price_series_service_formats_bar_date_by_interval(db: Session) -> None:
     service = PriceSeriesService(db)
 
     # interval contract: app/domains/prices/service.py _RANGE_INTERVALS.
-    assert service._to_bar(bar, "15m").date == timestamp.isoformat()
+    assert service._to_bar(bar, "5m").date == timestamp.isoformat()
     assert service._to_bar(bar, "1d").date == "2026-06-25"

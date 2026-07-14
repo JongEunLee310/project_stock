@@ -8,6 +8,7 @@ Implemented
 
 | 버전 | 날짜 | 변경 내용 |
 |---|---|---|
+| R1 | 2026-07-14 | intraday 표준 간격을 5분(정규장 기준 78바)으로 변경. |
 | R0 | 2026-07-08 | 초안 작성. |
 
 ## Source Issue
@@ -19,7 +20,7 @@ https://github.com/JongEunLee310/project_stock/issues/239
 watchlist 페이지 변화(1D) 컬럼은 당일 가격 움직임을 스파크라인으로 표현한다. 현재
 `GET /api/v1/watchlists/{id}/sparklines?range=1D`는 `"1D"`를 허용하지 않아 422를 반환한다.
 지원 범위가 `"1M"·"3M"·"6M"·"1Y"` 네 가지뿐이고 모두 interval="1d" 일봉으로 고정되어
-있기 때문이다. 하루 동안의 변화를 표현하기에 일봉은 부적합하므로, 15분 간격 당일
+있기 때문이다. 하루 동안의 변화를 표현하기에 일봉은 부적합하므로, 5분 간격 당일
 인트라데이 바를 반환하는 `range=1D` 경로를 신설한다.
 
 ## Verified Facts (dev, 2026-07-08 확인)
@@ -61,23 +62,23 @@ watchlist 페이지 변화(1D) 컬럼은 당일 가격 움직임을 스파크라
 유지하고, 인트라데이 조회를 위한 별도 추상 메서드 `get_intraday_bars(symbol, market)`를
 추가한다. `YFinancePriceProvider`와 `MockPriceSeriesProvider` 모두 이를 구현한다.
 
-yfinance 호출: `ticker.history(period="1d", interval="15m", auto_adjust=True)`.
-`PriceBarResult.interval`은 `"15m"`으로 설정해 기존 일봉(`interval="1d"`)과 구별한다.
+yfinance 호출: `ticker.history(period="1d", interval="5m", auto_adjust=True)`.
+`PriceBarResult.interval`은 `"5m"`으로 설정해 기존 일봉(`interval="1d"`)과 구별한다.
 
 ### 2. `PriceSeriesService` — range-interval 연결 테이블 도입
 
-`_RANGE_COUNTS`에 `"1D": 26`을 추가한다. 26의 근거는 미국·한국 정규장 기준 6.5시간
-(390분) ÷ 15분 = 26 바다(시장 관행, 가정). `_RANGE_INTERVALS` 매핑
-`{"1M": "1d", "3M": "1d", "6M": "1d", "1Y": "1d", "1D": "15m"}`을 추가한다.
+`_RANGE_COUNTS`의 `"1D"` 값은 78이다. 78의 근거는 미국·한국 정규장 기준 6.5시간
+(390분) ÷ 5분 = 78 바다(시장 관행, 가정). `_RANGE_INTERVALS` 매핑은
+`{"1M": "1d", "3M": "1d", "6M": "1d", "1Y": "1d", "1D": "5m"}`이다.
 
 `get_series()`는 `range_value`로부터 interval을 파생한다. `range_value="1D"`이면
 `get_intraday_bars()`를 호출하고, 나머지는 기존 `get_daily_bars()`를 그대로 호출한다.
 외부에서 interval이 명시적으로 넘어올 경우 파생값과 일치하지 않으면 `INVALID_PRICE_INTERVAL`(400)
 을 반환한다.
 
-### 3. `_to_bar()` — 15m 바의 `date` 필드 표현
+### 3. `_to_bar()` — 5m 바의 `date` 필드 표현
 
-기존 `bar.timestamp.date().isoformat()`은 일봉에만 적합하다. 15m 바는 분 단위 시각이
+기존 `bar.timestamp.date().isoformat()`은 일봉에만 적합하다. 5m 바는 분 단위 시각이
 필요하므로 `bar.timestamp.isoformat()` 전체 ISO-8601 datetime 문자열을 사용한다.
 FE가 `date` 필드를 무시하므로 형식 변경은 소비자에게 영향이 없다.
 
@@ -90,7 +91,7 @@ FE가 `date` 필드를 무시하므로 형식 변경은 소비자에게 영향�
 ### 4. `WatchlistSparklineService` — interval 파생
 
 `interval="1d"` 하드코딩 대신 `range_value`에 따라 interval을 결정하는 매핑을 참조한다.
-`range_value="1D"`이면 `interval="15m"`, 나머지는 `"1d"`. `price_series_service.get_series()`에
+`range_value="1D"`이면 `interval="5m"`, 나머지는 `"1d"`. `price_series_service.get_series()`에
 파생된 interval을 전달한다.
 
 ### 5. ADR 불필요
@@ -113,32 +114,32 @@ class PriceSeriesProvider(ABC):
     def get_intraday_bars(
         self, symbol: str, market: str
     ) -> list[PriceBarResult]
-        # 당일 15분 간격 바 반환. interval="15m" 고정.
+        # 당일 5분 간격 바 반환. interval="5m" 고정.
 ```
 
 ### `app/adapters/market/yfinance.py` — YFinancePriceProvider 확장
 
 ```
 def get_intraday_bars(self, symbol: str, market: str) -> list[PriceBarResult]
-    # ticker.history(period="1d", interval="15m", auto_adjust=True)
-    # PriceBarResult.interval = "15m"
+    # ticker.history(period="1d", interval="5m", auto_adjust=True)
+    # PriceBarResult.interval = "5m"
 ```
 
 ### `app/adapters/market/mock.py` — MockPriceSeriesProvider 확장
 
 ```
 def get_intraday_bars(self, symbol: str, market: str) -> list[PriceBarResult]
-    # interval="15m" 고정, 당일 샘플 바 최대 26개 반환
+    # interval="5m" 고정, 당일 샘플 바 최대 78개 반환
 ```
 
 ### `app/domains/prices/service.py` — PriceSeriesService 변경
 
 ```
 _RANGE_COUNTS: dict[str, int]
-    # 기존 4종 + "1D": 26
+    # 기존 4종 + "1D": 78
 
 _RANGE_INTERVALS: dict[str, str]
-    # "1M"/"3M"/"6M"/"1Y" → "1d", "1D" → "15m"
+    # "1M"/"3M"/"6M"/"1Y" → "1d", "1D" → "5m"
 
 def get_series(
     self,
@@ -153,7 +154,7 @@ def get_series(
 
 def _to_bar(self, bar: StockPriceBar, interval: str) -> PriceBar
     # interval="1d" → bar.timestamp.date().isoformat() (기존 동작 유지)
-    # interval="15m" → bar.timestamp.isoformat()
+    # interval="5m" → bar.timestamp.isoformat()
 ```
 
 ### `app/domains/watchlists/sparkline_service.py` — WatchlistSparklineService 변경
@@ -165,7 +166,7 @@ def get_sparklines(
     user_id: int,
     range_value: str = "1M",
 ) -> WatchlistSparklineResponse
-    # range_value="1D"이면 interval="15m", 나머지는 "1d" 파생 후 get_series() 전달
+    # range_value="1D"이면 interval="5m", 나머지는 "1d" 파생 후 get_series() 전달
 ```
 
 ### `app/api/v1/endpoints/watchlists.py` — sparkline 라우터 변경
@@ -205,11 +206,11 @@ GET /{watchlist_id}/sparklines
 ### 신규·변경 테스트
 
 - `PriceSeriesService.get_series(range_value="1D")` — `get_intraday_bars()` 호출 확인,
-  반환 바 수가 limit(26) 이하
+  반환 바 수가 limit(78) 이하
 - `_validate_range("1D")` — 통과, `_validate_range("2D")` — `INVALID_PRICE_RANGE` 400
-- `_to_bar(bar, interval="15m")` — `date` 필드가 ISO datetime 문자열 형식
+- `_to_bar(bar, interval="5m")` — `date` 필드가 ISO datetime 문자열 형식
 - `_to_bar(bar, interval="1d")` — `date` 필드가 `"YYYY-MM-DD"` 형식 유지 (기존 동작)
-- `WatchlistSparklineService.get_sparklines(range_value="1D")` — `interval="15m"`으로
+- `WatchlistSparklineService.get_sparklines(range_value="1D")` — `interval="5m"`으로
   `get_series()` 호출 확인
 - `GET /api/v1/watchlists/{id}/sparklines?range=1D` 통합 테스트 — 200, bars의 `date`가
   datetime 형식
@@ -219,7 +220,7 @@ GET /{watchlist_id}/sparklines
 ### 픽스처 출처 주석 규율
 
 픽스처의 `range` 값(`"1D"`, `"1M"` 등)은 `app/api/v1/endpoints/watchlists.py`의 `Literal`
-정의에서 인용하고 출처 주석을 추가한다. `interval` 값(`"15m"`, `"1d"`)은
+정의에서 인용하고 출처 주석을 추가한다. `interval` 값(`"5m"`, `"1d"`)은
 `app/domains/prices/service.py`의 `_RANGE_INTERVALS`에서 인용한다.
 
 ## Open Questions

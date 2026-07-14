@@ -110,7 +110,7 @@ def test_yfinance_provider_parses_history_without_network(
     ]
 
 
-def test_yfinance_provider_requests_15_minute_intraday_history(
+def test_yfinance_provider_requests_5_minute_intraday_history(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeFrame:
@@ -143,7 +143,7 @@ def test_yfinance_provider_requests_15_minute_intraday_history(
             auto_adjust: bool,
         ) -> FakeFrame:
             assert period == "1d"
-            assert interval == "15m"
+            assert interval == "5m"
             assert auto_adjust is True
             return FakeFrame()
 
@@ -152,7 +152,7 @@ def test_yfinance_provider_requests_15_minute_intraday_history(
     bars = YFinancePriceProvider().get_intraday_bars("aapl", "nasdaq")
 
     assert len(bars) == 1
-    assert bars[0].interval == "15m"
+    assert bars[0].interval == "5m"
     assert bars[0].timestamp == datetime(2026, 6, 25, 13, 30, tzinfo=UTC)
 
 
@@ -320,7 +320,7 @@ def test_get_daily_closes_filters_start_interval_and_orders(db: Session) -> None
     ]
     intraday_bar = replace(
         price_bar(date=last_date, close=Decimal("999")),
-        interval="15m",
+        interval="5m",
         timestamp=datetime.combine(last_date, time(12), tzinfo=UTC),
     )
     repository = PriceBarRepository(db)

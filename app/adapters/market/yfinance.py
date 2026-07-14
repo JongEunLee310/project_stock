@@ -357,7 +357,7 @@ class YFinancePriceProvider(PriceSeriesProvider):
             return []
 
         ticker = yf.Ticker(ticker_symbol)
-        frame = ticker.history(period="1d", interval="15m", auto_adjust=True)
+        frame = ticker.history(period="1d", interval="5m", auto_adjust=True)
         currency = _currency_from_ticker(ticker, normalized_market)
         self.last_payload = _payload_from_frame(
             frame=frame,
@@ -371,7 +371,7 @@ class YFinancePriceProvider(PriceSeriesProvider):
             symbol=normalized_symbol,
             market=normalized_market,
             currency=currency,
-            interval="15m",
+            interval="5m",
         )
 
 
