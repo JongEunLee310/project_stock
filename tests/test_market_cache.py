@@ -11,6 +11,7 @@ from app.adapters.market.base import (
     IndexQuoteProvider,
     IndexQuoteResult,
     MarketDataProvider,
+    PriceTargetResult,
     QuoteResult,
 )
 from app.adapters.market.cache import (
@@ -104,6 +105,7 @@ class StubMarketProvider(MarketDataProvider):
     def __init__(self, as_of: datetime) -> None:
         self.as_of = as_of
         self.calls = 0
+        self.price_target_calls = 0
 
     def get_quote(self, symbols: list[str]) -> list[QuoteResult]:
         self.calls += 1
@@ -118,6 +120,19 @@ class StubMarketProvider(MarketDataProvider):
                 currency="USD",
                 as_of=self.as_of,
                 market_cap=Decimal("3000000000000"),
+            )
+            for symbol in symbols
+        ]
+
+    def get_price_targets(self, symbols: list[str]) -> list[PriceTargetResult]:
+        self.price_target_calls += 1
+        return [
+            PriceTargetResult(
+                symbol=symbol,
+                target_price=Decimal("220.00"),
+                target_price_high=Decimal("250.00"),
+                target_price_low=Decimal("180.00"),
+                target_analyst_count=42,
             )
             for symbol in symbols
         ]
@@ -141,6 +156,24 @@ def test_cached_market_provider_round_trips_decimal_and_datetime(
     assert inner.calls == 1
     assert redis.setex_calls[0][0] == "market:quote:AAPL,MSFT"
     assert redis.setex_calls[0][1] == cache_module.QUOTE_CACHE_TTL_SECONDS
+
+
+def test_cached_market_provider_uses_one_hour_price_target_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = StubRedis()
+    install_redis(monkeypatch, redis)
+    inner = StubMarketProvider(datetime(2026, 7, 13, tzinfo=UTC))
+    provider = CachedMarketDataProvider(inner)
+
+    live = provider.get_price_targets(["MSFT", "AAPL"])
+    cached = provider.get_price_targets(["MSFT", "AAPL"])
+
+    assert cached == live
+    assert isinstance(cached[0].target_price, Decimal)
+    assert inner.price_target_calls == 1
+    assert redis.setex_calls[0][0] == "market:price-target:AAPL,MSFT"
+    assert redis.setex_calls[0][1] == cache_module.PRICE_TARGET_CACHE_TTL_SECONDS
 
 
 class StubIndexProvider(IndexQuoteProvider):

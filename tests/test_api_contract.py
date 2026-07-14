@@ -188,6 +188,15 @@ ASSET_DETAIL_CONTRACT: Contract = {
     "updated_at": str,
     "market_cap": (str, type(None)),
     "next_earnings_date": (str, type(None)),
+    "per": (str, type(None)),
+    "peg": (str, type(None)),
+    "fifty_two_week_low": (str, type(None)),
+    "fifty_two_week_high": (str, type(None)),
+    "target_price": (str, type(None)),
+    "target_price_high": (str, type(None)),
+    "target_price_low": (str, type(None)),
+    "target_analyst_count": (int, type(None)),
+    "target_upside_percent": (str, type(None)),
 }
 
 RESEARCH_SUMMARY_CONTRACT: Contract = {

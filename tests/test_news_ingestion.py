@@ -65,7 +65,7 @@ def test_news_ingestion_normalizes_saved_raw_event(db: Session) -> None:
         {
             "Apple Inc.": [
                 news_result(
-                    "Apple supplier expands",
+                    "Apple launches new product",
                     "https://EXAMPLE.com/apple-1/#section",
                 )
             ]
@@ -84,10 +84,11 @@ def test_news_ingestion_normalizes_saved_raw_event(db: Session) -> None:
     assert raw_event.processing_status == ProcessingStatus.NORMALIZED.value
     assert news_item.raw_news_event_id == raw_event.id
     assert news_item.asset_id == asset.id
-    assert news_item.title == "Apple supplier expands"
+    assert news_item.title == "Apple launches new product"
     assert news_item.url == "https://example.com/apple-1"
     assert news_item.source == "fixture"
     assert news_item.summary is None
+    assert news_item.category == "PRODUCT"
     assert news_item.sentiment is None
     assert news_item.impact_level is None
 

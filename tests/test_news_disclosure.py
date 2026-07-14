@@ -23,7 +23,7 @@ class StubDisclosureProvider(DisclosureProvider):
             ),
             DisclosureResult(
                 symbol="AAPL",
-                title="Latest disclosure",
+                title="Latest dividend disclosure",
                 url="https://example.com/disclosures/latest",
                 source="test-disclosure",
                 published_at=datetime(2026, 6, 20, tzinfo=timezone.utc),
@@ -97,11 +97,11 @@ def test_get_news_disclosure_separates_news_and_disclosures(
         "sentiment": "POSITIVE",
     }
     assert data["disclosures"][0] == {
-        "title": "Latest disclosure",
+        "title": "Latest dividend disclosure",
         "url": "https://example.com/disclosures/latest",
         "source": "test-disclosure",
         "published_at": "2026-06-20T00:00:00Z",
-        "category": "OTHER",
+        "category": "CAPITAL",
         "impact_level": None,
         "summary": None,
     }
@@ -127,7 +127,7 @@ def test_get_news_disclosure_applies_limit_to_both_arrays(
     data = cast(dict[str, Any], api_data(response))
     assert [item["title"] for item in data["news"]] == ["Latest news"]
     assert [item["title"] for item in data["disclosures"]] == [
-        "Latest disclosure"
+        "Latest dividend disclosure"
     ]
 
 

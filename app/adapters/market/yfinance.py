@@ -17,6 +17,7 @@ from app.adapters.market.base import (
     MarketDataProvider,
     PriceBarResult,
     PriceSeriesProvider,
+    PriceTargetResult,
     QuoteResult,
     SymbolLookupProvider,
     SymbolLookupResult,
@@ -92,6 +93,24 @@ class YFinanceMarketDataProvider(MarketDataProvider):
                     extra={"symbol": normalized_symbol},
                 )
                 continue
+            results.append(result)
+        return results
+
+    def get_price_targets(self, symbols: list[str]) -> list[PriceTargetResult]:
+        results: list[PriceTargetResult] = []
+        for symbol in symbols:
+            normalized_symbol = symbol.upper()
+            try:
+                info = yf.Ticker(
+                    to_yfinance_quote_ticker(normalized_symbol)
+                ).info
+                result = price_target_result_from_info(normalized_symbol, info)
+            except Exception:
+                logger.exception(
+                    "Failed to collect price target consensus",
+                    extra={"symbol": normalized_symbol},
+                )
+                result = PriceTargetResult(symbol=normalized_symbol)
             results.append(result)
         return results
 
@@ -190,6 +209,17 @@ def quote_result_from_fast_info(
         fifty_two_week_high=_optional_decimal(
             _fast_info_value(fast_info, "year_high")
         ),
+    )
+
+
+def price_target_result_from_info(symbol: str, info: Any) -> PriceTargetResult:
+    payload = info if isinstance(info, dict) else {}
+    return PriceTargetResult(
+        symbol=symbol.upper(),
+        target_price=_optional_decimal(payload.get("targetMeanPrice")),
+        target_price_high=_optional_decimal(payload.get("targetHighPrice")),
+        target_price_low=_optional_decimal(payload.get("targetLowPrice")),
+        target_analyst_count=_optional_int(payload.get("numberOfAnalystOpinions")),
     )
 
 
@@ -693,6 +723,16 @@ def _optional_decimal(value: Any) -> Decimal | None:
     except (ValueError, TypeError):
         return None
     return result if result.is_finite() else None
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool) or _is_nan(value):
+        return None
+    try:
+        result = int(value)
+    except (ValueError, TypeError, OverflowError):
+        return None
+    return result if result >= 0 else None
 
 
 def _to_json_value(value: Any) -> str | int | float | None:
