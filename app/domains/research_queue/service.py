@@ -19,6 +19,7 @@ _NEEDS_RESEARCH_STATUSES = {
     ResearchStatus.NEEDS_ATTENTION,
     ResearchStatus.INSUFFICIENT,
     ResearchStatus.COLLECTING,
+    ResearchStatus.PENDING_ANALYSIS,
 }
 
 
@@ -37,6 +38,8 @@ class ResearchQueueService:
         ResearchQueueSummaryProjection,
         int,
     ]:
+        now = utc_now()
+        today_start = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC)
         assets = self.repository.list_active_assets()
         asset_ids = [asset.id for asset in assets]
         presence_by_id = self.repository.get_data_presence_by_assets(assets)
@@ -75,6 +78,7 @@ class ResearchQueueService:
                         completeness,
                         signal_types,
                         last_updated_at,
+                        now,
                     ),
                     completeness_pct=completeness,
                     stance=summary.stance,
@@ -88,8 +92,13 @@ class ResearchQueueService:
                 )
             )
 
-        summary_projection = self._build_summary(items)
-        filtered_items = self._apply_filter(items, filter, upcoming_asset_ids)
+        summary_projection = self._build_summary(items, today_start)
+        filtered_items = self._apply_filter(
+            items,
+            filter,
+            upcoming_asset_ids,
+            today_start,
+        )
         total = len(filtered_items)
         return filtered_items[offset : offset + limit], summary_projection, total
 
@@ -98,6 +107,7 @@ class ResearchQueueService:
         completeness_pct: int,
         active_signal_types: set[str],
         last_updated_at: datetime | None,
+        now: datetime,
     ) -> ResearchStatus:
         if active_signal_types & _RISK_SIGNAL_TYPES:
             return ResearchStatus.NEEDS_ATTENTION
@@ -105,9 +115,10 @@ class ResearchQueueService:
             return ResearchStatus.INSUFFICIENT
         if completeness_pct < 70:
             return ResearchStatus.COLLECTING
+        if last_updated_at is None:
+            return ResearchStatus.PENDING_ANALYSIS
         if (
-            last_updated_at is not None
-            and as_utc(last_updated_at) < utc_now() - timedelta(days=30)
+            as_utc(last_updated_at) < as_utc(now) - timedelta(days=30)
         ):
             return ResearchStatus.STALE
         return ResearchStatus.ANALYZED
@@ -150,8 +161,8 @@ class ResearchQueueService:
     def _build_summary(
         self,
         items: list[ResearchQueueItemProjection],
+        today_start: datetime,
     ) -> ResearchQueueSummaryProjection:
-        today_start = datetime.combine(utc_now().date(), datetime.min.time(), tzinfo=UTC)
         return ResearchQueueSummaryProjection(
             total_research_count=len(items),
             needs_attention_count=sum(
@@ -172,6 +183,7 @@ class ResearchQueueService:
         items: list[ResearchQueueItemProjection],
         filter: str | None,
         upcoming_asset_ids: set[int],
+        today_start: datetime,
     ) -> list[ResearchQueueItemProjection]:
         if filter is None:
             return items
@@ -182,7 +194,6 @@ class ResearchQueueService:
         if filter == ResearchQueueFilter.EARNINGS_UPCOMING.value:
             return [item for item in items if item.asset_id in upcoming_asset_ids]
         if filter == ResearchQueueFilter.RECENTLY_UPDATED.value:
-            today_start = datetime.combine(utc_now().date(), datetime.min.time(), tzinfo=UTC)
             return [
                 item
                 for item in items
@@ -196,7 +207,7 @@ class ResearchQueueService:
         for signal_type in WATCHLIST_STATUS_PRIORITY:
             if signal_type.value in signal_types:
                 return signal_type.value
-        return min(signal_types) if signal_types else None
+        return None
 
     @staticmethod
     def _first_sentence(value: str) -> str:

@@ -443,7 +443,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 
 - `summary`는 `filter` 적용 전 전체 활성 자산 기준이고, `meta.total`은 필터 적용 후 페이지 절단 전 건수다.
 - `completeness_pct`는 NEWS·PRICE·EARNINGS·VALUATION 4축의 데이터 확보 여부를 축당 25점으로 계산한다. AI 확신도가 아니다.
-- `research_status`는 `NEEDS_ATTENTION`, `INSUFFICIENT`, `COLLECTING`, `STALE`, `ANALYZED` 중 하나다. `stance`와 별개의 데이터 준비도 필드다.
+- `research_status`는 `NEEDS_ATTENTION`, `INSUFFICIENT`, `COLLECTING`, `PENDING_ANALYSIS`, `STALE`, `ANALYZED` 중 하나다. `stance`와 별개의 데이터 준비도 필드다.
 - `last_updated_at`은 저장된 뉴스·리포트·시그널의 최신 생성 시각이며, 세 소스가 모두 없으면 `null`이다.
 - 알 수 없는 `filter`, 범위를 벗어난 `page`/`size`는 `422 VALIDATION_ERROR`로 거부한다.
 - Representative error `401 AUTH_INVALID_TOKEN`: see Auth section.

@@ -179,6 +179,57 @@ def test_status_rules_and_completeness_use_batched_data_fixtures(db: Session) ->
     assert by_symbol["ATTENTION"].signal_type == "RISK_ALERT"
 
 
+def test_pending_analysis_preserves_completeness_priority_and_needs_filter(
+    db: Session,
+) -> None:
+    pending = _asset(db, "PENDING")
+    collecting = _asset(db, "PENDING_LOW")
+    for asset in (pending, collecting):
+        _price(db, asset)
+        _earnings(db, asset)
+    _valuation(db, pending)
+    db.commit()
+
+    items, _, total = ResearchQueueService(db).list_queue("needs_research", 0, 20)
+    by_symbol = {item.symbol: item for item in items}
+
+    assert total == 2
+    assert by_symbol["PENDING"].research_status == ResearchStatus.PENDING_ANALYSIS
+    assert by_symbol["PENDING_LOW"].research_status == ResearchStatus.COLLECTING
+
+
+def test_unknown_signal_type_is_not_exposed(db: Session) -> None:
+    asset = _asset(db, "UNKNOWN_SIGNAL")
+    _add_axes(db, asset, 4)
+    _signal(db, asset, "FUTURE_SIGNAL")
+    db.commit()
+
+    items, _, _ = ResearchQueueService(db).list_queue(None, 0, 20)
+
+    assert items[0].signal_type is None
+
+
+def test_list_queue_calculates_reference_time_once(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asset = _asset(db, "SINGLE_NOW")
+    _add_axes(db, asset, 4)
+    db.commit()
+    call_count = 0
+
+    def counting_now() -> datetime:
+        nonlocal call_count
+        call_count += 1
+        return FIXED_NOW
+
+    monkeypatch.setattr("app.domains.research_queue.service.utc_now", counting_now)
+
+    ResearchQueueService(db).list_queue("recently_updated", 0, 20)
+
+    assert call_count == 1
+
+
 def test_key_issue_falls_back_to_latest_report_first_factor(db: Session) -> None:
     asset = _asset(db, "REPORT")
     _report(db, asset, created_at=FIXED_NOW)
