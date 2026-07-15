@@ -11,6 +11,7 @@ from app.domains.dashboard.schema import DashboardSummaryResponse
 from app.domains.llm_context.schema import (
     DataQualityStatus,
     LLMContextBundle,
+    SymbolCard,
 )
 from app.domains.portfolios.model import Portfolio, Position
 from app.domains.portfolios.schema import PortfolioSummaryResponse
@@ -191,6 +192,17 @@ class ContextBundleSignalProjection(ContextBundleProjectionModel):
     reason: str
 
 
+class ResearchSummarySnapshot(CloudSafePayload):
+    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
+
+    symbol: str
+    market: str
+    display_name: str
+    price_snapshot: ContextBundlePriceSnapshotProjection
+    recent_news: list[ContextBundleRecentNewsProjection]
+    signals: list[ContextBundleSignalProjection]
+
+
 class ContextBundleSymbolCardProjection(ContextBundleProjectionModel):
     symbol: str
     market: str
@@ -336,6 +348,25 @@ def to_stock_recommendation_snapshot(
         current_symbols=list(current_symbols),
         candidate_count=len(candidates),
         candidates=list(candidates),
+    )
+
+
+def to_research_summary_snapshot(card: SymbolCard) -> ResearchSummarySnapshot:
+    return ResearchSummarySnapshot(
+        symbol=card.symbol,
+        market=card.market,
+        display_name=card.display_name,
+        price_snapshot=ContextBundlePriceSnapshotProjection.model_validate(
+            card.price_snapshot
+        ),
+        recent_news=[
+            ContextBundleRecentNewsProjection.model_validate(news_item)
+            for news_item in card.recent_news
+        ],
+        signals=[
+            ContextBundleSignalProjection.model_validate(signal)
+            for signal in card.signals
+        ],
     )
 
 

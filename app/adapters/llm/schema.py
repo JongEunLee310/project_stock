@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.domains.research_summary.schema import CounterPoint, ResearchRisk
+
 
 class BriefingResult(BaseModel):
     headline: str
@@ -26,6 +28,20 @@ class RecommendationItem(BaseModel):
 
 class StockRecommendationResult(BaseModel):
     recommendations: list[RecommendationItem]
+
+
+class ResearchSummaryResult(BaseModel):
+    stance: str
+    stance_confidence: str
+    stance_comment: str | None = None
+    headline: str
+    body: str
+    positive_factors: list[str]
+    caution_factors: list[str]
+    next_checks: list[str]
+    counter_points: list[CounterPoint]
+    confidence_basis: str | None = None
+    key_risks: list[ResearchRisk]
 
 
 class ItemEvaluationResult(BaseModel):

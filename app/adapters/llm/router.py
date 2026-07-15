@@ -24,6 +24,10 @@ LLM_TASK_ROUTES: dict[LLMTaskType, TaskRoute] = {
         launch="cloud",
         future_primary="local",
     ),
+    LLMTaskType.RESEARCH_SUMMARY: TaskRoute(
+        launch="cloud",
+        future_primary="local",
+    ),
     LLMTaskType.TAG_SENTIMENT: TaskRoute(launch="cloud", future_primary="local"),
     LLMTaskType.AGENT: TaskRoute(launch="cloud", future_primary="cloud"),
 }

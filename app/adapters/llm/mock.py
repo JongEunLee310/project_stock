@@ -50,6 +50,36 @@ DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
             }
         ],
     },
+    "ResearchSummaryResult": {
+        "stance": "WATCH",
+        "stance_confidence": "0.70",
+        "stance_comment": "현재 데이터 흐름을 확인하며 후속 지표를 점검할 단계입니다.",
+        "headline": "핵심 지표와 최근 뉴스 흐름을 함께 점검해야 합니다.",
+        "body": "가격 흐름과 최근 공개 정보를 바탕으로 기회와 위험 요인을 균형 있게 확인해야 합니다.",
+        "positive_factors": ["최근 데이터에서 긍정적인 흐름이 관찰됩니다."],
+        "caution_factors": ["추가 데이터로 흐름의 지속성을 확인해야 합니다."],
+        "next_checks": ["다음 실적과 주요 지표 변화를 확인하세요."],
+        "counter_points": [
+            {
+                "id": "limited_evidence",
+                "claim": "현재 근거만으로 방향성을 확정하기 어렵습니다.",
+                "basis": "공개 데이터의 범위와 최신성에 제한이 있을 수 있습니다.",
+                "basis_type": "FUNDAMENTALS",
+                "strength": "MODERATE",
+                "source_label": "AI 분석",
+            }
+        ],
+        "confidence_basis": "가격·뉴스·시그널 데이터의 범위와 최신성을 함께 반영했습니다.",
+        "key_risks": [
+            {
+                "id": "data_limit",
+                "title": "데이터 제한",
+                "level": "MEDIUM",
+                "description": "새로운 정보가 판단을 바꿀 가능성을 점검하세요.",
+                "evidence": ["최근 공시와 실적 자료의 갱신 여부를 확인하세요."],
+            }
+        ],
+    },
     "LLMAnalysisResult": {
         "summary": "Mock LLM analysis summary.",
         "risk_level": "LOW",
