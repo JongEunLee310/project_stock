@@ -201,6 +201,37 @@ def test_yfinance_bars_return_empty_when_all_rows_have_missing_prices() -> None:
     assert bars == []
 
 
+def test_yfinance_bars_keep_row_with_missing_volume_as_zero() -> None:
+    class FakeFrame:
+        empty = False
+
+        def iterrows(self) -> list[tuple[datetime, dict[str, object]]]:
+            return [
+                (
+                    datetime(2026, 6, 25, tzinfo=UTC),
+                    {
+                        "Open": 101,
+                        "High": 111,
+                        "Low": 91,
+                        "Close": 106,
+                        "Adj Close": 105,
+                        "Volume": float("nan"),
+                    },
+                )
+            ]
+
+    bars = _bars_from_frame(
+        frame=FakeFrame(),
+        symbol="AAPL",
+        market="NASDAQ",
+        currency="USD",
+        interval="1d",
+    )
+
+    assert len(bars) == 1
+    assert bars[0].volume == 0
+
+
 def test_yfinance_provider_requests_5_minute_intraday_history(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

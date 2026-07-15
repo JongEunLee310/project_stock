@@ -745,6 +745,12 @@ def _bars_from_frame(
         return bars
 
     for index, row in frame.iterrows():
+        volume_value = row.get("Volume")
+        volume = (
+            0
+            if volume_value is None or _is_nan(volume_value)
+            else int(volume_value)
+        )
         try:
             bar = PriceBarResult(
                 symbol=symbol,
@@ -758,7 +764,7 @@ def _bars_from_frame(
                 adjusted_close_price=_to_decimal(
                     row.get("Adj Close", row.get("Close"))
                 ),
-                volume=int(row.get("Volume") or 0),
+                volume=volume,
                 currency=currency,
                 source=YFinancePriceProvider.source,
             )
