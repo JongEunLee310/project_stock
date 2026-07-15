@@ -36,3 +36,8 @@ from app.adapters.llm.prompts.watchlist_evaluation import (
 )
 def test_prompts_include_korean_natural_language_instruction(prompt: str) -> None:
     assert KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION in prompt
+
+
+def test_research_summary_prompt_constrains_stance_vocabulary() -> None:
+    assert "BUY_CANDIDATE" in RESEARCH_SUMMARY_SYSTEM_PROMPT
+    assert "WATCH" in RESEARCH_SUMMARY_SYSTEM_PROMPT
