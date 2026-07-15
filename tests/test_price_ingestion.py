@@ -11,6 +11,7 @@ from app.adapters.market.base import PriceBarResult, PriceSeriesProvider, Symbol
 from app.adapters.market.yfinance import (
     YFinancePriceProvider,
     YFinanceSymbolLookupProvider,
+    _bars_from_frame,
     _range_to_period,
     to_yfinance_ticker,
 )
@@ -108,6 +109,96 @@ def test_yfinance_provider_parses_history_without_network(
             source="yfinance",
         )
     ]
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    ["Open", "High", "Low", "Close", "Adj Close"],
+)
+def test_yfinance_bars_skip_rows_with_missing_required_prices(
+    missing_field: str,
+) -> None:
+    class FakeFrame:
+        empty = False
+
+        def iterrows(self) -> list[tuple[datetime, dict[str, object]]]:
+            missing_row: dict[str, object] = {
+                "Open": 100,
+                "High": 110,
+                "Low": 90,
+                "Close": 105,
+                "Adj Close": 104,
+                "Volume": 1000,
+            }
+            missing_row[missing_field] = float("nan")
+            return [
+                (datetime(2026, 6, 24, tzinfo=UTC), missing_row),
+                (
+                    datetime(2026, 6, 25, tzinfo=UTC),
+                    {
+                        "Open": 101,
+                        "High": 111,
+                        "Low": 91,
+                        "Close": 106,
+                        "Adj Close": 105,
+                        "Volume": None,
+                    },
+                ),
+            ]
+
+    bars = _bars_from_frame(
+        frame=FakeFrame(),
+        symbol="AAPL",
+        market="NASDAQ",
+        currency="USD",
+        interval="1d",
+    )
+
+    assert len(bars) == 1
+    assert bars[0].timestamp == datetime(2026, 6, 25, tzinfo=UTC)
+    assert bars[0].close_price == Decimal("106")
+    assert bars[0].volume == 0
+
+
+def test_yfinance_bars_return_empty_when_all_rows_have_missing_prices() -> None:
+    class FakeFrame:
+        empty = False
+
+        def iterrows(self) -> list[tuple[datetime, dict[str, object]]]:
+            return [
+                (
+                    datetime(2026, 6, 24, tzinfo=UTC),
+                    {
+                        "Open": None,
+                        "High": 110,
+                        "Low": 90,
+                        "Close": 105,
+                        "Adj Close": 104,
+                        "Volume": 1000,
+                    },
+                ),
+                (
+                    datetime(2026, 6, 25, tzinfo=UTC),
+                    {
+                        "Open": 101,
+                        "High": 111,
+                        "Low": 91,
+                        "Close": float("nan"),
+                        "Adj Close": 105,
+                        "Volume": 1100,
+                    },
+                ),
+            ]
+
+    bars = _bars_from_frame(
+        frame=FakeFrame(),
+        symbol="AAPL",
+        market="NASDAQ",
+        currency="USD",
+        interval="1d",
+    )
+
+    assert bars == []
 
 
 def test_yfinance_provider_requests_5_minute_intraday_history(

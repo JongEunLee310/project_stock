@@ -745,8 +745,8 @@ def _bars_from_frame(
         return bars
 
     for index, row in frame.iterrows():
-        bars.append(
-            PriceBarResult(
+        try:
+            bar = PriceBarResult(
                 symbol=symbol,
                 market=market,
                 interval=interval,
@@ -755,12 +755,16 @@ def _bars_from_frame(
                 high_price=_to_decimal(row.get("High")),
                 low_price=_to_decimal(row.get("Low")),
                 close_price=_to_decimal(row.get("Close")),
-                adjusted_close_price=_to_decimal(row.get("Adj Close", row.get("Close"))),
+                adjusted_close_price=_to_decimal(
+                    row.get("Adj Close", row.get("Close"))
+                ),
                 volume=int(row.get("Volume") or 0),
                 currency=currency,
                 source=YFinancePriceProvider.source,
             )
-        )
+        except ValueError:
+            continue
+        bars.append(bar)
     return bars
 
 
