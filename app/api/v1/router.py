@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     alert_candidates,
+    alert_rules,
     alerts,
     assets,
     auth,
@@ -30,6 +31,11 @@ api_router.include_router(
     tags=["alert-candidates"],
 )
 api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
+api_router.include_router(
+    alert_rules.router,
+    prefix="/alert-rules",
+    tags=["alert-rules"],
+)
 api_router.include_router(assets.router, prefix="/assets", tags=["assets"])
 api_router.include_router(market.router, prefix="/market", tags=["market"])
 api_router.include_router(prices.router, prefix="/stocks", tags=["prices"])
