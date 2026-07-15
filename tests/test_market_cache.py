@@ -6,6 +6,7 @@ import pytest
 
 from app.adapters.market import cache as cache_module
 from app.adapters.market.base import (
+    AnalystOpinionResult,
     ExchangeRateProvider,
     ExchangeRateResult,
     IndexQuoteProvider,
@@ -106,6 +107,7 @@ class StubMarketProvider(MarketDataProvider):
         self.as_of = as_of
         self.calls = 0
         self.price_target_calls = 0
+        self.analyst_opinion_calls = 0
 
     def get_quote(self, symbols: list[str]) -> list[QuoteResult]:
         self.calls += 1
@@ -136,6 +138,23 @@ class StubMarketProvider(MarketDataProvider):
             )
             for symbol in symbols
         ]
+
+    def get_analyst_opinions(
+        self, symbol: str, limit: int
+    ) -> list[AnalystOpinionResult]:
+        self.analyst_opinion_calls += 1
+        return [
+            AnalystOpinionResult(
+                firm="JPMorgan",
+                action="main",
+                to_grade="Overweight",
+                from_grade=None,
+                price_target=Decimal("250.00"),
+                prior_price_target=Decimal("240.00"),
+                price_target_action="Raises",
+                published_at=self.as_of,
+            )
+        ][:limit]
 
 
 def test_cached_market_provider_round_trips_decimal_and_datetime(
@@ -174,6 +193,25 @@ def test_cached_market_provider_uses_one_hour_price_target_cache(
     assert inner.price_target_calls == 1
     assert redis.setex_calls[0][0] == "market:price-target:AAPL,MSFT"
     assert redis.setex_calls[0][1] == cache_module.PRICE_TARGET_CACHE_TTL_SECONDS
+
+
+def test_cached_market_provider_uses_one_hour_analyst_opinion_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = StubRedis()
+    install_redis(monkeypatch, redis)
+    inner = StubMarketProvider(datetime(2026, 7, 15, tzinfo=UTC))
+    provider = CachedMarketDataProvider(inner)
+
+    live = provider.get_analyst_opinions("aapl", 20)
+    cached = provider.get_analyst_opinions("AAPL", 20)
+
+    assert cached == live
+    assert isinstance(cached[0].price_target, Decimal)
+    assert isinstance(cached[0].published_at, datetime)
+    assert inner.analyst_opinion_calls == 1
+    assert redis.setex_calls[0][0] == "market:analyst-opinions:AAPL:20"
+    assert redis.setex_calls[0][1] == cache_module.ANALYST_OPINION_CACHE_TTL_SECONDS
 
 
 class StubIndexProvider(IndexQuoteProvider):

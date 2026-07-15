@@ -13,6 +13,7 @@ from app.domains.asset_events.schema import AssetEventHistoryResponse, AssetEven
 from app.domains.asset_events.service import AssetEventService
 from app.domains.assets.repository import AssetRepository
 from app.domains.assets.schema import (
+    AnalystOpinionsResponse,
     AssetCreate,
     AssetDetailResponse,
     AssetLookupResponse,
@@ -113,6 +114,21 @@ def get_asset_detail(
     db: Session = Depends(get_db),
 ) -> ApiResponse[AssetDetailResponse]:
     return success(AssetService(db).get_detail(asset_id))
+
+
+@router.get(
+    "/{asset_id}/analyst-opinions",
+    response_model=ApiResponse[AnalystOpinionsResponse],
+    summary="Get asset analyst opinions",
+    description="Return recent institution-level analyst opinions and price targets.",
+)
+def get_asset_analyst_opinions(
+    asset_id: int,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[AnalystOpinionsResponse]:
+    return success(AssetService(db).get_analyst_opinions(asset_id, limit))
 
 
 @router.get(

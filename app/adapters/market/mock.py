@@ -3,6 +3,7 @@ from decimal import Decimal
 from hashlib import sha256
 
 from app.adapters.market.base import (
+    AnalystOpinionResult,
     EarningsEventResult,
     EarningsProvider,
     EarningsReportResult,
@@ -86,6 +87,50 @@ _SAMPLE_QUOTES: dict[str, QuoteResult] = {
         next_earnings_date="2026-07-23",
     ),
 }
+_SAMPLE_ANALYST_OPINIONS = [
+    AnalystOpinionResult(
+        firm="JPMorgan",
+        action="main",
+        to_grade="Overweight",
+        from_grade="Neutral",
+        price_target=Decimal("250.00"),
+        prior_price_target=Decimal("240.00"),
+        price_target_action="Raises",
+        published_at=datetime(2026, 7, 15, tzinfo=timezone.utc),
+    ),
+    AnalystOpinionResult(
+        firm="Morgan Stanley",
+        action="up",
+        to_grade="Overweight",
+        from_grade="Equal-Weight",
+        price_target=Decimal("245.00"),
+        prior_price_target=Decimal("220.00"),
+        price_target_action="Raises",
+        published_at=datetime(2026, 7, 14, tzinfo=timezone.utc),
+    ),
+    AnalystOpinionResult(
+        firm="Goldman Sachs",
+        action="init",
+        to_grade="Buy",
+        from_grade=None,
+        price_target=Decimal("230.00"),
+        prior_price_target=None,
+        price_target_action=None,
+        published_at=datetime(2026, 7, 13, tzinfo=timezone.utc),
+    ),
+    # 컨센서스 mock의 최저가(180.00)와 값 정합을 유지하는 하단 의견 —
+    # FE의 최저가 기관 귀속 표기가 mock 환경에서 확인 가능해야 한다
+    AnalystOpinionResult(
+        firm="KGI Securities",
+        action="down",
+        to_grade="Hold",
+        from_grade="Outperform",
+        price_target=Decimal("180.00"),
+        prior_price_target=Decimal("210.00"),
+        price_target_action="Lowers",
+        published_at=datetime(2026, 7, 12, tzinfo=timezone.utc),
+    ),
+]
 _SYMBOL_LOOKUP_CATALOG = [
     SymbolLookupResult("AAPL", "Apple Inc.", "NASDAQ", "Technology"),
     SymbolLookupResult("MSFT", "Microsoft Corporation", "NASDAQ", "Technology"),
@@ -110,6 +155,13 @@ class MockMarketDataProvider(MarketDataProvider):
 
     def get_price_targets(self, symbols: list[str]) -> list[PriceTargetResult]:
         return [_mock_price_target(symbol) for symbol in symbols]
+
+    def get_analyst_opinions(
+        self, symbol: str, limit: int
+    ) -> list[AnalystOpinionResult]:
+        if symbol.upper() != "AAPL":
+            return []
+        return _SAMPLE_ANALYST_OPINIONS[:limit]
 
 
 class MockPriceSeriesProvider(PriceSeriesProvider):

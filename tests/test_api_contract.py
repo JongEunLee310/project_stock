@@ -199,6 +199,22 @@ ASSET_DETAIL_CONTRACT: Contract = {
     "target_upside_percent": (str, type(None)),
 }
 
+ANALYST_OPINIONS_CONTRACT: Contract = {
+    "asset_id": int,
+    "opinions": list,
+}
+
+ANALYST_OPINION_CONTRACT: Contract = {
+    "firm": str,
+    "action": str,
+    "to_grade": (str, type(None)),
+    "from_grade": (str, type(None)),
+    "price_target": (str, type(None)),
+    "prior_price_target": (str, type(None)),
+    "price_target_action": (str, type(None)),
+    "published_at": str,
+}
+
 RESEARCH_SUMMARY_CONTRACT: Contract = {
     "asset_id": int,
     "stance": str,
@@ -693,6 +709,21 @@ def test_stock_detail_response_contract(client: TestClient) -> None:
     assert_contract(api_data(response), ASSET_DETAIL_CONTRACT)
 
 
+def test_analyst_opinions_response_contract(client: TestClient) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+
+    response = client.get(
+        f"/api/v1/assets/{asset['id']}/analyst-opinions"
+    )
+
+    assert response.status_code == 200
+    assert_envelope(response.json(), has_meta=False)
+    data = cast(dict[str, Any], api_data(response))
+    assert_contract(data, ANALYST_OPINIONS_CONTRACT)
+    assert_contract(data["opinions"][0], ANALYST_OPINION_CONTRACT)
+
+
 def test_research_summary_response_contract(client: TestClient) -> None:
     set_current_user(1)
     asset = create_asset(client)
@@ -1123,6 +1154,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/signals",
         "/api/v1/signals/{signal_id}",
         "/api/v1/assets/{asset_id}/detail",
+        "/api/v1/assets/{asset_id}/analyst-opinions",
         "/api/v1/assets/{asset_id}/research-summary",
         "/api/v1/assets/{asset_id}/research-coverage",
         "/api/v1/research-queue",
@@ -1152,6 +1184,8 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "WatchlistObservationItemResponse",
         "SignalResponse",
         "AssetDetailResponse",
+        "AnalystOpinionsResponse",
+        "AnalystOpinionItem",
         "ResearchSummaryResponse",
         "ResearchRisk",
         "PortfolioSummaryResponse",

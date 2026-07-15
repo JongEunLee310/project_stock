@@ -9,6 +9,8 @@ from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.domains.assets.repository import AssetRepository
 from app.domains.assets.schema import (
+    AnalystOpinionItem,
+    AnalystOpinionsResponse,
     AssetCreate,
     AssetDetailResponse,
     AssetLookupItem,
@@ -150,6 +152,42 @@ class AssetService:
                 if target_upside_percent is not None
                 else None
             ),
+        )
+
+    def get_analyst_opinions(
+        self, asset_id: int, limit: int
+    ) -> AnalystOpinionsResponse:
+        asset = self.repo.get_by_id(asset_id)
+        if asset is None:
+            raise AppException(
+                status_code=404,
+                detail="종목을 찾을 수 없습니다.",
+                error_code=ErrorCode.ASSET_NOT_FOUND,
+            )
+        results = get_market_provider().get_analyst_opinions(asset.symbol, limit)
+        return AnalystOpinionsResponse(
+            asset_id=asset.id,
+            opinions=[
+                AnalystOpinionItem(
+                    firm=result.firm,
+                    action=result.action,
+                    to_grade=result.to_grade,
+                    from_grade=result.from_grade,
+                    price_target=(
+                        str(result.price_target)
+                        if result.price_target is not None
+                        else None
+                    ),
+                    prior_price_target=(
+                        str(result.prior_price_target)
+                        if result.prior_price_target is not None
+                        else None
+                    ),
+                    price_target_action=result.price_target_action,
+                    published_at=result.published_at,
+                )
+                for result in results
+            ],
         )
 
     def get(self, asset_id: int) -> AssetResponse:

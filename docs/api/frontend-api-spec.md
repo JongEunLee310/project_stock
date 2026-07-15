@@ -361,6 +361,21 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - `market_cap`과 가격·펀더멘털 필드(`per`, `peg`, `fifty_two_week_low`, `fifty_two_week_high`, `target_price`, `target_price_high`, `target_price_low`, `target_upside_percent`)는 모두 **nullable 문자열 Decimal**이다(C5). `target_price`는 평균 목표가이며 `target_upside_percent`는 현재가 대비 평균 목표가의 상승 여력이다. `target_analyst_count`는 nullable 정수이고 `next_earnings_date`는 nullable ISO date 문자열이다. provider가 컨센서스를 제공하지 않으면 목표가 평균·최고·최저와 애널리스트 수는 `null`이다. 현재 mock provider는 AAPL에 목표가 컨센서스를 채우며 그 외 심볼은 nullable 컨센서스 필드가 `null`이다. FE 어댑터는 `null` 표시 fallback(예: "—")을 둔다.
 - Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
 
+#### `GET /api/v1/assets/{asset_id}/analyst-opinions`
+
+- Auth: Required
+- Query: `limit: int = 20` (1–50, 최근 발표순)
+- Success `200`:
+
+```json
+{ "data": { "asset_id": 1, "opinions": [{ "firm": "JPMorgan", "action": "main", "to_grade": "Overweight", "from_grade": "Neutral", "price_target": "250.00", "prior_price_target": "240.00", "price_target_action": "Raises", "published_at": "2026-07-15T00:00:00Z" }] }, "message": null, "error": null, "meta": null }
+```
+
+- `action`은 제공자 원문 코드를 소문자로 노출하며, grade와 `price_target_action`은 원문 문자열을 유지한다.
+- `price_target`·`prior_price_target`은 nullable Decimal 문자열이다. 제공자 값이 `0`이거나 NaN이면 `null`로 정규화하며, 빈 grade도 `null`로 반환한다.
+- 기관별 데이터를 제공하지 않는 종목은 오류 대신 `opinions: []`를 반환한다.
+- Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
+
 #### `GET /api/v1/stocks/{symbol}/prices`
 
 - Auth: Not required
