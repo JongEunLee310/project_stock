@@ -118,6 +118,18 @@ _SAMPLE_ANALYST_OPINIONS = [
         price_target_action=None,
         published_at=datetime(2026, 7, 13, tzinfo=timezone.utc),
     ),
+    # 컨센서스 mock의 최저가(180.00)와 값 정합을 유지하는 하단 의견 —
+    # FE의 최저가 기관 귀속 표기가 mock 환경에서 확인 가능해야 한다
+    AnalystOpinionResult(
+        firm="KGI Securities",
+        action="down",
+        to_grade="Hold",
+        from_grade="Outperform",
+        price_target=Decimal("180.00"),
+        prior_price_target=Decimal("210.00"),
+        price_target_action="Lowers",
+        published_at=datetime(2026, 7, 12, tzinfo=timezone.utc),
+    ),
 ]
 _SYMBOL_LOOKUP_CATALOG = [
     SymbolLookupResult("AAPL", "Apple Inc.", "NASDAQ", "Technology"),
