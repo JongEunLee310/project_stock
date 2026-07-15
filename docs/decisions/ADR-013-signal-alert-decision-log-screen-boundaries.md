@@ -85,10 +85,14 @@ Proposed
 
 ## Follow-up
 
-- 후속 구현 이슈로 단계화한다(본 ADR 승인 후 착수).
-  1. **BE #255**: `AlertRule` + `AlertEvent` 도메인 신설(조건·채널·활성·이벤트 이력), 기존
-     `Alert` 전환 계획. 별도 설계 문서.
-  2. **FE #133**: Alerts 화면을 규칙/채널/이벤트 관리로 재설계(BE #255 계약 선행).
+- 상세 설계는 `docs/designs/alert-rule-event-unified.md`에서 확정한다(필드·enum·API 계약·엔진·
+  마이그레이션·기존 인프라 흡수). 본 ADR이 위임한 후속 설계 문서다.
+- 후속 구현 이슈로 단계화한다.
+  1. **BE #255**(재개): `AlertRule` + `AlertEvent` + `AlertDelivery` + `NotificationChannel`
+     통합 모델·마이그레이션. #255는 미이행 상태로 닫혔으므로 통합 모델 도입 이슈로 재개하며,
+     규칙/이벤트/채널/엔진은 BE 에픽 하위 서브이슈로 분해한다.
+  2. **FE #133**: Alerts 화면을 규칙/채널/이벤트 관리로 재설계(BE 계약 선행). 알림 아이콘
+     교체(♧→FiBell)와 감시망 설정실 위젯을 서브이슈로 분해한다.
   3. **FE #134**: Signals 카드의 "알림 설정"을 보조 버튼 "이 시그널 변화 알림 받기"로 교체하고
      Alerts Rule Builder로 조건 prefill deep-link.
 - 관련 지표(`relatedMetrics`) 노출은 시그널 재설계 로드맵 3단계(근거 불릿·구조화)에 포함한다.
