@@ -34,6 +34,7 @@ from app.adapters.market.yfinance import (
     YFinancePriceProvider,
     YFinanceSymbolLookupProvider,
     YFinanceValuationProvider,
+    analyst_opinions_from_frame,
     price_target_result_from_info,
     quote_result_from_fast_info,
     to_yfinance_quote_ticker,
@@ -68,6 +69,92 @@ def test_mock_market_data_provider_price_target_invariant() -> None:
     assert result.target_price_low is not None
     assert result.target_price_high >= result.target_price >= result.target_price_low
     assert result.target_analyst_count is not None
+
+
+def test_mock_market_data_provider_returns_deterministic_analyst_opinions() -> None:
+    provider = MockMarketDataProvider()
+
+    first_result = provider.get_analyst_opinions("AAPL", 2)
+    second_result = provider.get_analyst_opinions("aapl", 2)
+
+    assert first_result == second_result
+    assert len(first_result) == 2
+    assert first_result[0].firm == "JPMorgan"
+    assert first_result[0].price_target == Decimal("250.00")
+    assert provider.get_analyst_opinions("005930", 20) == []
+
+
+def test_analyst_opinions_from_frame_normalizes_and_sorts() -> None:
+    class Frame:
+        empty = False
+
+        def iterrows(self) -> list[tuple[datetime, dict[str, Any]]]:
+            return [
+                (
+                    datetime(2026, 7, 13, tzinfo=UTC),
+                    {
+                        "Firm": "Older Firm",
+                        "Action": "UP",
+                        "ToGrade": "Buy",
+                        "FromGrade": "",
+                        "currentPriceTarget": 0.0,
+                        "priorPriceTarget": float("nan"),
+                        "priceTargetAction": None,
+                    },
+                ),
+                (
+                    datetime(2026, 7, 15),
+                    {
+                        "Firm": "Newer Firm",
+                        "Action": "MAIN",
+                        "ToGrade": float("nan"),
+                        "FromGrade": "Hold",
+                        "currentPriceTarget": 245.5,
+                        "priorPriceTarget": 230,
+                        "priceTargetAction": "Raises",
+                    },
+                ),
+            ]
+
+    results = analyst_opinions_from_frame(Frame(), limit=1)
+
+    assert len(results) == 1
+    assert results[0].firm == "Newer Firm"
+    assert results[0].action == "main"
+    assert results[0].to_grade is None
+    assert results[0].from_grade == "Hold"
+    assert results[0].price_target == Decimal("245.5")
+    assert results[0].prior_price_target == Decimal("230")
+    assert results[0].price_target_action == "Raises"
+    assert results[0].published_at == datetime(2026, 7, 15, tzinfo=UTC)
+
+
+def test_analyst_opinions_from_frame_normalizes_zero_and_empty_grade() -> None:
+    class Frame:
+        empty = False
+
+        def iterrows(self) -> list[tuple[datetime, dict[str, Any]]]:
+            return [
+                (
+                    datetime(2026, 7, 13, tzinfo=UTC),
+                    {
+                        "Firm": "Firm",
+                        "Action": "INIT",
+                        "ToGrade": "Buy",
+                        "FromGrade": "  ",
+                        "currentPriceTarget": 0,
+                        "priorPriceTarget": 0.0,
+                        "priceTargetAction": "",
+                    },
+                )
+            ]
+
+    result = analyst_opinions_from_frame(Frame(), limit=20)[0]
+
+    assert result.from_grade is None
+    assert result.price_target is None
+    assert result.prior_price_target is None
+    assert result.price_target_action is None
 
 
 def test_quote_result_from_fast_info_derives_required_values() -> None:
@@ -184,10 +271,12 @@ class StubFastInfo(dict[str, Any]):
 class StubTicker:
     fast_info_by_symbol: dict[str, Any] = {}
     info_by_symbol: dict[str, Any] = {}
+    upgrades_downgrades_by_symbol: dict[str, Any] = {}
 
     def __init__(self, symbol: str) -> None:
         self.fast_info = self.fast_info_by_symbol.get(symbol)
         self.info = self.info_by_symbol.get(symbol, {})
+        self.upgrades_downgrades = self.upgrades_downgrades_by_symbol.get(symbol)
 
 
 def test_yfinance_market_provider_skips_individual_symbol_failure(
@@ -229,6 +318,38 @@ def test_yfinance_market_provider_collects_price_target_info(
     assert results[0].target_analyst_count == 42
     assert results[1].symbol == "005930"
     assert results[1].target_price is None
+
+
+def test_yfinance_market_provider_collects_analyst_opinions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Frame:
+        empty = False
+
+        def iterrows(self) -> list[tuple[datetime, dict[str, Any]]]:
+            return [
+                (
+                    datetime(2026, 7, 15, tzinfo=UTC),
+                    {
+                        "Firm": "JPMorgan",
+                        "Action": "MAIN",
+                        "ToGrade": "Overweight",
+                        "FromGrade": "Neutral",
+                        "currentPriceTarget": 250,
+                        "priorPriceTarget": 240,
+                        "priceTargetAction": "Raises",
+                    },
+                )
+            ]
+
+    StubTicker.upgrades_downgrades_by_symbol = {"AAPL": Frame()}
+    monkeypatch.setattr("app.adapters.market.yfinance.yf.Ticker", StubTicker)
+
+    results = YFinanceMarketDataProvider().get_analyst_opinions("aapl", 20)
+
+    assert len(results) == 1
+    assert results[0].firm == "JPMorgan"
+    assert results[0].price_target == Decimal("250")
 
 
 def test_yfinance_index_provider_maps_symbols_and_preserves_contract(

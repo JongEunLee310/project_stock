@@ -57,3 +57,19 @@ class AssetDetailResponse(BaseModel):
     target_price_low: str | None = None
     target_analyst_count: int | None = None
     target_upside_percent: str | None = None
+
+
+class AnalystOpinionItem(BaseModel):
+    firm: str
+    action: str
+    to_grade: str | None
+    from_grade: str | None
+    price_target: str | None
+    prior_price_target: str | None
+    price_target_action: str | None
+    published_at: UtcDatetime
+
+
+class AnalystOpinionsResponse(BaseModel):
+    asset_id: int
+    opinions: list[AnalystOpinionItem]

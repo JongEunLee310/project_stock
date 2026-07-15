@@ -33,6 +33,18 @@ class PriceTargetResult:
     target_analyst_count: int | None = None
 
 
+@dataclass(frozen=True)
+class AnalystOpinionResult:
+    firm: str
+    action: str
+    to_grade: str | None
+    from_grade: str | None
+    price_target: Decimal | None
+    prior_price_target: Decimal | None
+    price_target_action: str | None
+    published_at: datetime
+
+
 class MarketDataProvider(ABC):
     @abstractmethod
     def get_quote(self, symbols: list[str]) -> list[QuoteResult]:
@@ -41,6 +53,12 @@ class MarketDataProvider(ABC):
     def get_price_targets(self, symbols: list[str]) -> list[PriceTargetResult]:
         """Return price target consensus without requiring quote callers to fetch it."""
         return [PriceTargetResult(symbol=symbol.upper()) for symbol in symbols]
+
+    def get_analyst_opinions(
+        self, symbol: str, limit: int
+    ) -> list[AnalystOpinionResult]:
+        """Return recent institution-level analyst opinions when available."""
+        return []
 
 
 @dataclass(frozen=True)

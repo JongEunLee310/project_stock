@@ -7,6 +7,7 @@ import logging
 from typing import Any, cast
 
 from app.adapters.market.base import (
+    AnalystOpinionResult,
     ExchangeRateProvider,
     ExchangeRateResult,
     IndexQuoteProvider,
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 QUOTE_CACHE_TTL_SECONDS = 60
 PRICE_TARGET_CACHE_TTL_SECONDS = 60 * 60
+ANALYST_OPINION_CACHE_TTL_SECONDS = 60 * 60
 INDEX_CACHE_TTL_SECONDS = 60
 FX_CACHE_TTL_SECONDS = 300
 _TYPE_KEY = "__market_cache_type__"
@@ -80,6 +82,20 @@ class CachedMarketDataProvider(MarketDataProvider):
         )
         return _price_target_results_from_dicts(payload)
 
+    def get_analyst_opinions(
+        self, symbol: str, limit: int
+    ) -> list[AnalystOpinionResult]:
+        normalized_symbol = symbol.upper()
+        key = f"market:analyst-opinions:{normalized_symbol}:{limit}"
+        payload = fetch_json_cached(
+            key,
+            ANALYST_OPINION_CACHE_TTL_SECONDS,
+            lambda: _dataclasses_to_dicts(
+                self.provider.get_analyst_opinions(normalized_symbol, limit)
+            ),
+        )
+        return _analyst_opinion_results_from_dicts(payload)
+
 
 class CachedIndexQuoteProvider(IndexQuoteProvider):
     def __init__(self, provider: IndexQuoteProvider) -> None:
@@ -124,6 +140,14 @@ def _quote_results_from_dicts(payload: Any) -> list[QuoteResult]:
 
 def _price_target_results_from_dicts(payload: Any) -> list[PriceTargetResult]:
     return [PriceTargetResult(**cast(dict[str, Any], item)) for item in payload]
+
+
+def _analyst_opinion_results_from_dicts(
+    payload: Any,
+) -> list[AnalystOpinionResult]:
+    return [
+        AnalystOpinionResult(**cast(dict[str, Any], item)) for item in payload
+    ]
 
 
 def _index_results_from_dicts(payload: Any) -> list[IndexQuoteResult]:

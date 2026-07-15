@@ -7,6 +7,7 @@ from typing import Any, cast
 import yfinance as yf  # type: ignore[import-untyped]
 
 from app.adapters.market.base import (
+    AnalystOpinionResult,
     EarningsEventResult,
     EarningsProvider,
     EarningsReportResult,
@@ -118,6 +119,22 @@ class YFinanceMarketDataProvider(MarketDataProvider):
             results.append(result)
         return results
 
+    def get_analyst_opinions(
+        self, symbol: str, limit: int
+    ) -> list[AnalystOpinionResult]:
+        normalized_symbol = symbol.upper()
+        try:
+            frame = yf.Ticker(
+                to_yfinance_quote_ticker(normalized_symbol)
+            ).upgrades_downgrades
+            return analyst_opinions_from_frame(frame, limit=limit)
+        except Exception:
+            logger.exception(
+                "Failed to collect analyst opinions",
+                extra={"symbol": normalized_symbol},
+            )
+            return []
+
 
 class YFinanceIndexQuoteProvider(IndexQuoteProvider):
     def get_quotes(self, symbols: list[str]) -> list[IndexQuoteResult]:
@@ -225,6 +242,46 @@ def price_target_result_from_info(symbol: str, info: Any) -> PriceTargetResult:
         target_price_low=_optional_decimal(payload.get("targetLowPrice")),
         target_analyst_count=_optional_int(payload.get("numberOfAnalystOpinions")),
     )
+
+
+def analyst_opinions_from_frame(
+    frame: Any, *, limit: int
+) -> list[AnalystOpinionResult]:
+    if frame is None or getattr(frame, "empty", True):
+        return []
+    opinions: list[AnalystOpinionResult] = []
+    for index, row in frame.iterrows():
+        firm = _optional_text(row.get("Firm"))
+        action = _optional_text(row.get("Action"))
+        if firm is None or action is None:
+            continue
+        try:
+            published_at = _timestamp_from_index(index)
+        except (TypeError, ValueError):
+            continue
+        opinions.append(
+            AnalystOpinionResult(
+                firm=firm,
+                action=action.lower(),
+                to_grade=_optional_text(row.get("ToGrade")),
+                from_grade=_optional_text(row.get("FromGrade")),
+                price_target=_nonzero_optional_decimal(
+                    row.get("currentPriceTarget")
+                ),
+                prior_price_target=_nonzero_optional_decimal(
+                    row.get("priorPriceTarget")
+                ),
+                price_target_action=_optional_text(
+                    row.get("priceTargetAction")
+                ),
+                published_at=published_at,
+            )
+        )
+    return sorted(
+        opinions,
+        key=lambda opinion: opinion.published_at,
+        reverse=True,
+    )[:limit]
 
 
 def index_quote_result_from_fast_info(
@@ -733,6 +790,18 @@ def _optional_decimal(value: Any) -> Decimal | None:
     except (ValueError, TypeError):
         return None
     return result if result.is_finite() else None
+
+
+def _nonzero_optional_decimal(value: Any) -> Decimal | None:
+    result = _optional_decimal(value)
+    return result if result not in {None, Decimal("0")} else None
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None or _is_nan(value) or not isinstance(value, str):
+        return None
+    result = value.strip()
+    return result or None
 
 
 def _optional_int(value: Any) -> int | None:
