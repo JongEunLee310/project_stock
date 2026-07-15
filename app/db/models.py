@@ -1,5 +1,7 @@
 # Register all models in metadata regardless of each process import graph.
 import app.domains.alert_candidates.model  # noqa: F401 — registers alert candidate model
+import app.domains.alert_events.model  # noqa: F401 — registers alert event models
+import app.domains.alert_rules.model  # noqa: F401 — registers AlertRule model
 import app.domains.alerts.model  # noqa: F401 — registers Alert model for autogenerate
 import app.domains.assets.model  # noqa: F401 — registers Asset model for autogenerate
 import app.domains.decision_checklist.model  # noqa: F401 — registers checklist model
@@ -8,6 +10,7 @@ import app.domains.earnings.model  # noqa: F401 — registers earnings models
 import app.domains.jobs.model  # noqa: F401 — registers JobRun model for autogenerate
 import app.domains.llm_analysis.model  # noqa: F401 — registers LLM analysis run model
 import app.domains.news.model  # noqa: F401 — registers NewsItem model for autogenerate
+import app.domains.notification_channels.model  # noqa: F401 — registers channel model
 import app.domains.portfolios.model  # noqa: F401 — registers Portfolio models for autogenerate
 import app.domains.prices.model  # noqa: F401 — registers price bar model
 import app.domains.raw_news.model  # noqa: F401 — registers RawNewsEvent model for autogenerate
