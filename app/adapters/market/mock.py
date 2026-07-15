@@ -24,13 +24,20 @@ from app.adapters.market.base import (
 _AS_OF = datetime(2026, 6, 19, 0, 0, tzinfo=timezone.utc)
 _PRICE_SERIES_END_DATE = date(2026, 6, 25)
 _VALUATION_AS_OF = date(2026, 7, 12)
-_INTRADAY_BAR_COUNT = 78
+_INTRADAY_SESSION_COUNTS = {
+    "5m": (1, 78),
+    "30m": (5, 13),
+}
+_INTRADAY_INTERVAL_MINUTES = {
+    "5m": 5,
+    "30m": 30,
+}
 _RANGE_COUNTS = {
     "1M": 22,
     "3M": 66,
     "6M": 132,
     "1Y": 252,
-    "5Y": 1260,
+    "5Y": 260,
 }
 MARKET_INDEX_SYMBOLS = ["SPX", "IXIC", "KOSPI", "VIX"]
 _SAMPLE_EXCHANGE_RATES: dict[str, ExchangeRateResult] = {
@@ -118,7 +125,12 @@ class MockPriceSeriesProvider(PriceSeriesProvider):
         count = _RANGE_COUNTS.get(range_value, _RANGE_COUNTS["3M"])
         seed = _stable_seed(f"{normalized_symbol}:{normalized_market}")
         base_price = Decimal(seed % 50000 + 5000)
-        dates = _business_days_ending_on(_PRICE_SERIES_END_DATE, count)
+        interval = "1wk" if range_value == "5Y" else "1d"
+        dates = (
+            _week_starts_ending_on(_PRICE_SERIES_END_DATE, count)
+            if interval == "1wk"
+            else _business_days_ending_on(_PRICE_SERIES_END_DATE, count)
+        )
 
         bars: list[PriceBarResult] = []
         previous_close = base_price
@@ -148,7 +160,7 @@ class MockPriceSeriesProvider(PriceSeriesProvider):
                 PriceBarResult(
                     symbol=normalized_symbol,
                     market=normalized_market,
-                    interval="1d",
+                    interval=interval,
                     timestamp=timestamp,
                     open_price=open_price,
                     high_price=high_price,
@@ -167,19 +179,32 @@ class MockPriceSeriesProvider(PriceSeriesProvider):
         self,
         symbol: str,
         market: str,
+        interval: str = "5m",
     ) -> list[PriceBarResult]:
         normalized_symbol = symbol.upper()
         normalized_market = market.upper()
-        seed = _stable_seed(f"{normalized_symbol}:{normalized_market}:intraday")
+        seed_suffix = "intraday" if interval == "5m" else f"intraday:{interval}"
+        seed = _stable_seed(f"{normalized_symbol}:{normalized_market}:{seed_suffix}")
         previous_close = Decimal(seed % 50000 + 5000)
-        session_start = datetime.combine(
+        session_count, bars_per_session = _INTRADAY_SESSION_COUNTS[interval]
+        interval_minutes = _INTRADAY_INTERVAL_MINUTES[interval]
+        session_dates = _business_days_ending_on(
             _PRICE_SERIES_END_DATE,
-            time(13, 30),
-            tzinfo=timezone.utc,
+            session_count,
         )
+        timestamps = [
+            datetime.combine(
+                session_date,
+                time(13, 30),
+                tzinfo=timezone.utc,
+            )
+            + timedelta(minutes=interval_minutes * session_index)
+            for session_date in session_dates
+            for session_index in range(bars_per_session)
+        ]
 
         bars: list[PriceBarResult] = []
-        for index in range(_INTRADAY_BAR_COUNT):
+        for index, timestamp in enumerate(timestamps):
             drift = Decimal(((seed + index * 17) % 300) - 150) / Decimal("100")
             open_price = _money(previous_close + drift)
             close_move = Decimal(((seed // 7 + index * 13) % 240) - 120) / Decimal(
@@ -197,8 +222,8 @@ class MockPriceSeriesProvider(PriceSeriesProvider):
                 PriceBarResult(
                     symbol=normalized_symbol,
                     market=normalized_market,
-                    interval="5m",
-                    timestamp=session_start + timedelta(minutes=5 * index),
+                    interval=interval,
+                    timestamp=timestamp,
                     open_price=open_price,
                     high_price=high_price,
                     low_price=low_price,
@@ -393,6 +418,14 @@ def _business_days_ending_on(end_date: date, count: int) -> list[date]:
             days.append(current)
         current -= timedelta(days=1)
     return list(reversed(days))
+
+
+def _week_starts_ending_on(end_date: date, count: int) -> list[date]:
+    latest_week_start = end_date - timedelta(days=end_date.weekday())
+    return [
+        latest_week_start - timedelta(weeks=index)
+        for index in reversed(range(count))
+    ]
 
 
 def _stable_seed(value: str) -> int:

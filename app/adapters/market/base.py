@@ -75,8 +75,9 @@ class PriceSeriesProvider(ABC):
         self,
         symbol: str,
         market: str,
+        interval: str = "5m",
     ) -> list[PriceBarResult]:
-        """Return 15-minute OHLCV bars for the current trading day."""
+        """Return intraday OHLCV bars for the requested interval."""
 
 
 @dataclass(frozen=True)

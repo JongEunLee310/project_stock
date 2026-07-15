@@ -156,6 +156,52 @@ def test_yfinance_provider_requests_5_minute_intraday_history(
     assert bars[0].timestamp == datetime(2026, 6, 25, 13, 30, tzinfo=UTC)
 
 
+@pytest.mark.parametrize(
+    ("range_value", "expected_period", "expected_interval"),
+    [
+        ("1W", "5d", "30m"),
+        ("5Y", "5y", "1wk"),
+    ],
+)
+def test_yfinance_provider_requests_extended_range_history(
+    monkeypatch: pytest.MonkeyPatch,
+    range_value: str,
+    expected_period: str,
+    expected_interval: str,
+) -> None:
+    class FakeFrame:
+        empty = True
+
+    class FakeTicker:
+        fast_info = {"currency": "USD"}
+
+        def __init__(self, ticker: str) -> None:
+            assert ticker == "AAPL"
+
+        def history(
+            self,
+            period: str,
+            interval: str,
+            auto_adjust: bool,
+        ) -> FakeFrame:
+            assert period == expected_period
+            assert interval == expected_interval
+            assert auto_adjust is True
+            return FakeFrame()
+
+    monkeypatch.setattr("app.adapters.market.yfinance.yf.Ticker", FakeTicker)
+    provider = YFinancePriceProvider()
+
+    if range_value == "1W":
+        bars = provider.get_intraday_bars("aapl", "nasdaq", interval="30m")
+    else:
+        bars = provider.get_daily_bars(
+            "aapl", "nasdaq", range_value, adjusted=True
+        )
+
+    assert bars == []
+
+
 def test_yfinance_provider_skips_unknown_market() -> None:
     assert YFinancePriceProvider().get_daily_bars("VOD", "LSE", "1M", True) == []
 
@@ -528,6 +574,7 @@ class StaticPriceProvider(PriceSeriesProvider):
         self,
         symbol: str,
         market: str,
+        interval: str = "5m",
     ) -> list[PriceBarResult]:
         return []
 
@@ -555,6 +602,7 @@ class MixedProvider(PriceSeriesProvider):
         self,
         symbol: str,
         market: str,
+        interval: str = "5m",
     ) -> list[PriceBarResult]:
         return []
 

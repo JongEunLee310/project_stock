@@ -25,8 +25,8 @@ GET /api/v1/stocks/{symbol}/prices
 
 ```text
 - market: 시장 구분, 예: KOSPI, KOSDAQ, NASDAQ, NYSE
-- range: 조회 기간, 예: 1D, 1M, 3M, 6M, 1Y
-- interval: 봉 단위, range에서 파생 (1D는 5m, 나머지는 1d)
+- range: 조회 기간, 예: 1D, 1W, 1M, 3M, 6M, 1Y, 5Y
+- interval: 봉 단위, range에서 파생 (1D는 5m, 1W는 30m, 5Y는 1wk, 나머지는 1d)
 - adjusted: 수정주가 사용 여부
 ```
 
@@ -171,8 +171,8 @@ GET /api/v1/stocks/{symbol}/prices
 | 파라미터 | 필수 | 기본 | 허용값 | 위반 시 |
 |----------|------|------|--------|---------|
 | `market` | 필수 | — | `KOSPI` `KOSDAQ` `NASDAQ` `NYSE` | VALIDATION_ERROR (422) |
-| `range` | 선택 | `3M` | `1D` `1M` `3M` `6M` `1Y` | INVALID_PRICE_RANGE (400) |
-| `interval` | 선택 | range 파생 (1D→`5m`, 나머지→`1d`) | 파생값과 일치하는 값만 | INVALID_PRICE_INTERVAL (400) |
+| `range` | 선택 | `3M` | `1D` `1W` `1M` `3M` `6M` `1Y` `5Y` | INVALID_PRICE_RANGE (400) |
+| `interval` | 선택 | range 파생 (1D→`5m`, 1W→`30m`, 5Y→`1wk`, 나머지→`1d`) | 파생값과 일치하는 값만 | INVALID_PRICE_INTERVAL (400) |
 | `adjusted` | 선택 | `true` | bool | — |
 
 - `symbol`+`market` 복합키. `market` 필수(거래소 간 symbol 중복 방지).
@@ -211,10 +211,11 @@ GET /api/v1/stocks/{symbol}/prices
 
 - **필드 표기 snake_case**: `adjusted_close`, `last_updated_at`. FE 어댑터(#45)가 도메인 camelCase로 매핑.
 - **OHLC + adjusted_close = Decimal 문자열**(C5). `volume` = 정수.
-- **`bars`는 페이지네이션 없음** — `range` 전체를 한 번에 반환, `meta=null`. 일봉이라 양 제한적.
+- **`bars`는 페이지네이션 없음** — `range` 전체를 한 번에 반환하고 `meta=null`이다. 범위별 최대 봉 수는 1D 78개, 1W 65개, 1M 22개, 3M 66개, 6M 132개, 1Y 252개, 5Y 260개다.
 
 ### 시간 표기 결정 (타임존 주의 — 오프바이원 방지)
-- **`bars[].date`는 캘린더 날짜 문자열 `YYYY-MM-DD`, 타임존 없음.** 일봉은 "순간(instant)"이 아니라 거래일 집계이므로 UTC instant로 인코딩하지 않는다. UTC instant로 주면 FE가 KST 변환 시 하루 밀리는 버그(오프바이원)가 난다. FE는 `date`를 **타임존 변환 없이** 캘린더 날짜로 그대로 표시한다.
+- **일봉·주봉의 `bars[].date`는 캘린더 날짜 문자열 `YYYY-MM-DD`, 타임존 없음.** 일봉은 거래일, 주봉은 주 시작일을 나타내며 "순간(instant)"이 아니므로 UTC instant로 인코딩하지 않는다. UTC instant로 주면 FE가 KST 변환 시 하루 밀리는 버그(오프바이원)가 난다. FE는 `date`를 **타임존 변환 없이** 캘린더 날짜로 그대로 표시한다.
+- **분봉의 `bars[].date`는 타임존을 포함한 ISO datetime**이다. 1D의 5분봉과 1W의 30분봉은 실제 시각이므로 FE가 표시 타임존으로 변환한다.
 - **`last_updated_at`은 실제 instant이므로 `UtcDatetime`(`...Z`)**, FE에서 KST 표시.
 - 검증: 날짜 경계 테스트는 `TZ=UTC`로 수행, mock 생성 날짜와 응답 `date` 1:1 단언. [[verify-timezone-tz-utc]]
 
@@ -222,7 +223,7 @@ GET /api/v1/stocks/{symbol}/prices
 | 코드 | HTTP | 상황 |
 |------|------|------|
 | `INVALID_PRICE_RANGE` | 400 | 미지원 range |
-| `INVALID_PRICE_INTERVAL` | 400 | 미지원 interval(MVP는 1d 외 전부) |
+| `INVALID_PRICE_INTERVAL` | 400 | range에서 파생한 interval과 다른 값 |
 | `PRICE_SERIES_NOT_FOUND` | 404 | symbol+market 데이터 없음 |
 | `MARKET_DATA_PROVIDER_ERROR` | 502 | provider 오류 |
 
@@ -231,7 +232,7 @@ GET /api/v1/stocks/{symbol}/prices
 ### Provider 구조
 - `app/adapters/market/`에 `PriceSeriesProvider`(ABC) + `MockPriceSeriesProvider` 추가. 기존 `MarketDataProvider`(quote)와 병렬.
 - 선택은 기존 `MARKET_PROVIDER`(`app/core/config.py`, mock/real) 스위치 재사용. 별도 env 추가 안 함.
-- `MockPriceSeriesProvider`는 symbol 시드 기반 **결정론적** 합성 OHLCV 생성(테스트 재현성). range→봉 개수 매핑(1M≈22, 3M≈66, 6M≈132, 1Y≈252 영업일 근사).
+- `MockPriceSeriesProvider`는 symbol 시드 기반 **결정론적** 합성 OHLCV를 생성한다. 1D는 5분봉 78개, 1W는 5거래일의 30분봉 65개, 1M·3M·6M·1Y는 일봉 22·66·132·252개, 5Y는 주 시작일 기준 주봉 260개다.
 
 ### 저장 테이블 `stock_price_bars` (확정 — 이슈대로 생성)
 사용자 결정(2026-06-25): 이슈대로 테이블 생성. **DB 스키마 변경이므로 human-gate 선행**(ADR-005 #6).
@@ -243,7 +244,7 @@ GET /api/v1/stocks/{symbol}/prices
 | `id` | PK int | |
 | `symbol` | String(20) | |
 | `market` | String(20) | |
-| `interval` | String(10) | MVP `1d` |
+| `interval` | String(10) | `5m` `30m` `1d` `1wk` |
 | `timestamp` | DateTime(timezone=True) | 일봉은 거래일 **00:00:00+00**(UTC 자정)으로 저장. 와이어 `date`=이 값의 UTC 날짜부분 |
 | `open_price` | Numeric(20,4) | |
 | `high_price` | Numeric(20,4) | |
@@ -257,4 +258,4 @@ GET /api/v1/stocks/{symbol}/prices
 
 - `UniqueConstraint(symbol, market, interval, timestamp)` 이름 `uq_price_bars_symbol_market_interval_ts`.
 - Alembic 마이그레이션 신규(리비전 체인 `c3d4e5f60055...` 다음). down_revision 최신 head 확인 필수.
-- **와이어 `date` 도출**: `timestamp`를 UTC 자정에 저장하므로 `date` = `timestamp`의 UTC 날짜부분. KST 변환 없음 → 오프바이원 차단. [[verify-timezone-tz-utc]]
+- **와이어 `date` 도출**: 일봉·주봉은 `timestamp`의 UTC 날짜부분을 사용하고 KST 변환을 하지 않는다. 분봉은 `timestamp`의 ISO datetime을 사용한다. [[verify-timezone-tz-utc]]

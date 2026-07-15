@@ -89,6 +89,38 @@ def test_price_series_derives_intraday_interval_for_1d(
     assert len(data["bars"]) == 78
 
 
+@pytest.mark.parametrize(
+    ("range_value", "expected_interval", "expected_count", "date_pattern"),
+    [
+        ("1D", "5m", 78, DATETIME_PATTERN),
+        ("1W", "30m", 65, DATETIME_PATTERN),
+        ("1M", "1d", 22, DATE_PATTERN),
+        ("3M", "1d", 66, DATE_PATTERN),
+        ("6M", "1d", 132, DATE_PATTERN),
+        ("1Y", "1d", 252, DATE_PATTERN),
+        ("5Y", "1wk", 260, DATE_PATTERN),
+    ],
+)
+def test_price_series_range_contracts(
+    client: TestClient,
+    range_value: str,
+    expected_interval: str,
+    expected_count: int,
+    date_pattern: re.Pattern[str],
+) -> None:
+    response = client.get(
+        "/api/v1/stocks/AAPL/prices",
+        params={"market": "NASDAQ", "range": range_value},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["range"] == range_value
+    assert data["interval"] == expected_interval
+    assert len(data["bars"]) == expected_count
+    assert all(date_pattern.match(bar["date"]) for bar in data["bars"])
+
+
 def test_price_series_accepts_kosdaq_market(client: TestClient) -> None:
     response = client.get(
         "/api/v1/stocks/035720/prices",
@@ -114,7 +146,7 @@ def test_price_series_rejects_krx_market(client: TestClient) -> None:
 def test_price_series_rejects_invalid_range(client: TestClient) -> None:
     response = client.get(
         "/api/v1/stocks/AAPL/prices",
-        params={"market": "NASDAQ", "range": "5Y"},
+        params={"market": "NASDAQ", "range": "2Y"},
     )
 
     assert response.status_code == 400
@@ -267,12 +299,16 @@ def test_price_series_service_uses_intraday_provider_for_1d(
     monkeypatch: Any,
 ) -> None:
     provider = MockPriceSeriesProvider()
-    calls: list[tuple[str, str]] = []
+    calls: list[tuple[str, str, str]] = []
     original = provider.get_intraday_bars
 
-    def get_intraday_bars(symbol: str, market: str) -> list[PriceBarResult]:
-        calls.append((symbol, market))
-        return original(symbol, market)
+    def get_intraday_bars(
+        symbol: str,
+        market: str,
+        interval: str = "5m",
+    ) -> list[PriceBarResult]:
+        calls.append((symbol, market, interval))
+        return original(symbol, market, interval)
 
     monkeypatch.setattr(provider, "get_intraday_bars", get_intraday_bars)
     monkeypatch.setattr(
@@ -283,7 +319,7 @@ def test_price_series_service_uses_intraday_provider_for_1d(
     # range contract: app/api/v1/endpoints/watchlists.py Literal.
     result = PriceSeriesService(db).get_series("aapl", "nasdaq", range_value="1D")
 
-    assert calls == [("AAPL", "NASDAQ")]
+    assert calls == [("AAPL", "NASDAQ", "5m")]
     # interval contract: app/domains/prices/service.py _RANGE_INTERVALS.
     assert result.interval == "5m"
     assert len(result.bars) == 78
@@ -330,3 +366,4 @@ def test_price_series_service_formats_bar_date_by_interval(db: Session) -> None:
     # interval contract: app/domains/prices/service.py _RANGE_INTERVALS.
     assert service._to_bar(bar, "5m").date == timestamp.isoformat()
     assert service._to_bar(bar, "1d").date == "2026-06-25"
+    assert service._to_bar(bar, "1wk").date == "2026-06-25"
