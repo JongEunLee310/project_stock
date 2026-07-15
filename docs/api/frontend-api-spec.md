@@ -136,6 +136,7 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 | 종목 기본 정보 카드 | `GET` | `/api/v1/assets/{asset_id}/detail` | Not required |
 | 최신 투자 가설 | `GET` | `/api/v1/theses/latest?asset_id={asset_id}` | Required |
 | 리서치 요약 | `GET` | `/api/v1/assets/{asset_id}/research-summary` | Required |
+| 리서치 요약 재생성 | `POST` | `/api/v1/assets/{asset_id}/research-summary/refresh` | Required |
 | 매수 전 점검 | `GET/PUT` | `/api/v1/assets/{asset_id}/buy-checklist` | Required |
 | 리서치 리포트 목록 | `GET` | `/api/v1/reports?asset_id={asset_id}&page=1&size=20` | Required |
 | 시그널 목록 | `GET` | `/api/v1/signals?asset_id={asset_id}&include_expired=false&page=1&size=20` | Required |
@@ -146,7 +147,8 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 | --- | --- | --- | --- | --- |
 | 리서치 큐 목록·상단 요약 | `GET` | `/api/v1/research-queue?filter={filter}&page=1&size=20` | Required | 상태·완성도·stance를 단일 요청으로 조회. |
 | 리포트 목록 | `GET` | `/api/v1/reports?asset_id={asset_id}&page=1&size=20` | Required | thesis conflict 필드는 report payload에 포함. |
-| 종목 요약 카드 | `GET` | `/api/v1/assets/{asset_id}/research-summary` | Required | Mock 요약. |
+| 종목 요약 카드 | `GET` | `/api/v1/assets/{asset_id}/research-summary` | Required | 저장된 최신 요약. |
+| 종목 요약 재생성 | `POST` | `/api/v1/assets/{asset_id}/research-summary/refresh` | Required | 생성 후 최신 1행으로 저장. |
 | 리포트 상세 | `GET` | `/api/v1/reports/{report_id}` | Required | 요약/근거/위험 수준 표시. |
 | 리포트 생성 | `POST` | `/api/v1/reports` | Required | 운영/관리성 생성 API. |
 | 가설 생성/수정/비활성화 | `POST/PUT/PATCH` | `/api/v1/theses...` | Required | 화면 편집 기능이 필요할 때 사용. |
@@ -391,11 +393,19 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": { "asset_id": 1, "stance": "WATCH", "stance_confidence": "0.64", "stance_comment": "비용 효율화 효과를 확인하면서 단기 과열과 규제 일정을 관찰할 단계입니다.", "headline": "비용 효율화는 긍정적이나 단기 과열 여부를 확인해야 합니다.", "body": "신규 고객 증가와 마진 방어력이 관찰되지만 재고 부담과 규제 리스크가 남아 있습니다.", "positive_factors": ["비용 효율화가 마진 방어에 기여하는 흐름이 관찰됩니다."], "caution_factors": ["최근 뉴스 집중도가 단기 가격 과열로 이어졌는지 점검해야 합니다."], "next_checks": ["다음 분기의 재고 회전율과 할인 판매 비중을 확인하세요."], "counter_points": [{ "id": "fundamentals_upside", "claim": "비용 효율화와 신규 고객 증가가 예상보다 강할 수 있습니다.", "basis": "마진 방어와 고객 기반 확대가 이어지면 관찰보다 적극적인 판단이 필요할 수 있습니다.", "basis_type": "FUNDAMENTALS", "strength": "MODERATE", "source_label": "AI 분석" }], "confidence_basis": "비용과 고객 지표는 개선됐지만 재고와 규제 영향의 확인 자료가 충분하지 않습니다.", "key_risks": [{ "id": "news_overheated", "title": "단기 뉴스 과열", "level": "MEDIUM", "description": "최근 뉴스 흐름이 가격에 과도하게 반영되었는지 확인하세요.", "evidence": ["뉴스 빈도 증가와 거래량 급증이 같은 시기에 나타났는지 비교하세요."] }], "created_at": "2026-06-19T00:00:00Z" }, "message": null, "error": null, "meta": null }
+{ "data": { "asset_id": 1, "stance": "WATCH", "stance_confidence": "0.64", "stance_comment": "비용 효율화 효과를 확인하면서 단기 과열과 규제 일정을 관찰할 단계입니다.", "headline": "비용 효율화는 긍정적이나 단기 과열 여부를 확인해야 합니다.", "body": "신규 고객 증가와 마진 방어력이 관찰되지만 재고 부담과 규제 리스크가 남아 있습니다.", "positive_factors": ["비용 효율화가 마진 방어에 기여하는 흐름이 관찰됩니다."], "caution_factors": ["최근 뉴스 집중도가 단기 가격 과열로 이어졌는지 점검해야 합니다."], "next_checks": ["다음 분기의 재고 회전율과 할인 판매 비중을 확인하세요."], "counter_points": [{ "id": "fundamentals_upside", "claim": "비용 효율화와 신규 고객 증가가 예상보다 강할 수 있습니다.", "basis": "마진 방어와 고객 기반 확대가 이어지면 관찰보다 적극적인 판단이 필요할 수 있습니다.", "basis_type": "FUNDAMENTALS", "strength": "MODERATE", "source_label": "AI 분석" }], "confidence_basis": "비용과 고객 지표는 개선됐지만 재고와 규제 영향의 확인 자료가 충분하지 않습니다.", "key_risks": [{ "id": "news_overheated", "title": "단기 뉴스 과열", "level": "MEDIUM", "description": "최근 뉴스 흐름이 가격에 과도하게 반영되었는지 확인하세요.", "evidence": ["뉴스 빈도 증가와 거래량 급증이 같은 시기에 나타났는지 비교하세요."] }], "created_at": "2026-07-15T12:34:56Z" }, "message": null, "error": null, "meta": null }
 ```
 
-- 예시의 배열 필드는 대표 항목 1건으로 줄여 표기했다. 실제 mock 응답은 항목이 2건 이상일 수 있다.
+- 예시의 배열 필드는 대표 항목 1건으로 줄여 표기했다.
 - `counter_points[].basis_type`: `VALUATION | FUNDAMENTALS | COMPETITION | MACRO | SENTIMENT`. `counter_points[].strength`: `WEAK | MODERATE | STRONG`. `counter_points[].source_label`은 nullable 문자열이다.
+- `created_at`은 저장 행의 `updated_at`, 즉 마지막 생성 시각을 노출한다.
+- Representative errors: `404 ASSET_NOT_FOUND`, `404 RESEARCH_SUMMARY_NOT_FOUND`(저장본 없음).
+
+#### `POST /api/v1/assets/{asset_id}/research-summary/refresh`
+
+- Auth: Required
+- Request: path `asset_id`, body 없음
+- Success `200`: 위 `ResearchSummaryResponse`와 동일한 envelope. `LLMGateway`로 새 요약을 생성하고 자산별 최신 1행으로 저장한다.
 - Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
 
 #### `GET /api/v1/assets/{asset_id}/buy-checklist`

@@ -14,6 +14,7 @@ _PROVIDER_SETTINGS = (
     "NEWS_PROVIDER",
     "DISCLOSURE_PROVIDER",
     "PORTFOLIO_PROVIDER",
+    "LLM_PROVIDER",
 )
 for _provider_setting in _PROVIDER_SETTINGS:
     os.environ[_provider_setting] = "mock"
