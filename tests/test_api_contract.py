@@ -728,8 +728,13 @@ def test_research_summary_response_contract(client: TestClient) -> None:
     set_current_user(1)
     asset = create_asset(client)
 
+    refresh_response = client.post(
+        f"/api/v1/assets/{asset['id']}/research-summary/refresh"
+    )
     response = client.get(f"/api/v1/assets/{asset['id']}/research-summary")
 
+    assert refresh_response.status_code == 200
+    assert_envelope(refresh_response.json(), has_meta=False)
     assert response.status_code == 200
     assert_envelope(response.json(), has_meta=False)
     data = cast(dict[str, Any], api_data(response))
@@ -741,6 +746,19 @@ def test_research_summary_response_contract(client: TestClient) -> None:
     assert_contract(data["counter_points"][0], COUNTER_POINT_CONTRACT)
     assert data["key_risks"]
     assert_contract(data["key_risks"][0], RESEARCH_RISK_CONTRACT)
+    assert api_data(refresh_response) == data
+
+
+def test_research_summary_returns_not_found_without_stored_summary(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    asset = create_asset(client)
+
+    response = client.get(f"/api/v1/assets/{asset['id']}/research-summary")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "RESEARCH_SUMMARY_NOT_FOUND"
 
 
 def test_research_coverage_response_contract(client: TestClient) -> None:
@@ -1156,6 +1174,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/assets/{asset_id}/detail",
         "/api/v1/assets/{asset_id}/analyst-opinions",
         "/api/v1/assets/{asset_id}/research-summary",
+        "/api/v1/assets/{asset_id}/research-summary/refresh",
         "/api/v1/assets/{asset_id}/research-coverage",
         "/api/v1/research-queue",
         "/api/v1/assets/{asset_id}/valuation-metrics",

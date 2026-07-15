@@ -177,6 +177,8 @@ def test_status_rules_and_completeness_use_batched_data_fixtures(db: Session) ->
     ]
     assert by_symbol["ATTENTION"].key_issue == "Risk increased."
     assert by_symbol["ATTENTION"].signal_type == "RISK_ALERT"
+    assert by_symbol["ANALYZED"].stance is None
+    assert by_symbol["ANALYZED"].headline is None
 
 
 def test_pending_analysis_preserves_completeness_priority_and_needs_filter(
@@ -356,4 +358,4 @@ def test_query_count_does_not_grow_with_asset_count(db: Session) -> None:
     finally:
         event.remove(engine, "before_cursor_execute", count_selects)
 
-    assert statement_count == 10
+    assert statement_count == 11

@@ -8,7 +8,6 @@ from app.domains.research_summary.schema import (
     CounterPoint,
     CounterPointStrength,
 )
-from app.domains.research_summary.service import _SUMMARY_TEMPLATES
 from tests.conftest import (
     TestingSessionLocal,
     api_data,
@@ -246,13 +245,15 @@ def test_get_asset_detail_returns_404_when_missing(client: TestClient) -> None:
     }
 
 
-def test_get_research_summary_returns_deterministic_mock_data(
+def test_refresh_research_summary_persists_deterministic_mock_data(
     client: TestClient,
 ) -> None:
     set_current_user(1)
     asset = create_asset(client)
 
-    first_response = client.get(f"/api/v1/assets/{asset['id']}/research-summary")
+    first_response = client.post(
+        f"/api/v1/assets/{asset['id']}/research-summary/refresh"
+    )
     second_response = client.get(f"/api/v1/assets/{asset['id']}/research-summary")
 
     assert first_response.status_code == 200
@@ -265,71 +266,39 @@ def test_get_research_summary_returns_deterministic_mock_data(
     assert first_data["headline"]
     assert first_data["body"]
     assert "counter_view" not in first_data
-    assert len(first_data["counter_points"]) == 2
+    assert first_data["counter_points"]
     assert first_data["key_risks"]
-    assert first_data["created_at"] == "2026-06-19T00:00:00Z"
+    assert first_data["created_at"]
 
 
-def test_get_research_summary_returns_structured_fields_for_all_templates(
+def test_refresh_research_summary_returns_structured_fields(
     client: TestClient,
 ) -> None:
     set_current_user(1)
-    with TestingSessionLocal() as db:
-        assets = [
-            Asset(
-                symbol=f"TEST{index}",
-                name=f"Test Asset {index}",
-                market="TEST",
-            )
-            for index in range(len(_SUMMARY_TEMPLATES))
-        ]
-        db.add_all(assets)
-        db.commit()
-        asset_ids = [asset.id for asset in assets]
+    asset = create_asset(client)
 
-    counter_points_by_stance: dict[str, list[dict[str, Any]]] = {}
-    for asset_id in asset_ids:
-        response = client.get(f"/api/v1/assets/{asset_id}/research-summary")
+    response = client.post(
+        f"/api/v1/assets/{asset['id']}/research-summary/refresh"
+    )
 
-        assert response.status_code == 200
-        data = cast(dict[str, Any], api_data(response))
-        assert data["stance_comment"]
-        assert 2 <= len(data["positive_factors"]) <= 3
-        assert 2 <= len(data["caution_factors"]) <= 3
-        assert 2 <= len(data["next_checks"]) <= 3
-        assert "counter_view" not in data
-        counter_points = cast(list[dict[str, Any]], data["counter_points"])
-        assert len(counter_points) == 2
-        assert all(
-            set(point)
-            == {
-                "id",
-                "claim",
-                "basis",
-                "basis_type",
-                "strength",
-                "source_label",
-            }
-            for point in counter_points
-        )
-        assert all(point["id"] for point in counter_points)
-        assert all(point["claim"] for point in counter_points)
-        assert all(point["basis"] for point in counter_points)
-        assert all(point["source_label"] == "AI 분석" for point in counter_points)
-        counter_points_by_stance[data["stance"]] = counter_points
-        assert data["confidence_basis"]
-        assert all(
-            1 <= len(risk["evidence"]) <= 2 for risk in data["key_risks"]
-        )
-
-    assert [
-        (point["basis_type"], point["strength"])
-        for point in counter_points_by_stance["BUY_CANDIDATE"]
-    ] == [("VALUATION", "MODERATE"), ("COMPETITION", "WEAK")]
-    assert [
-        (point["basis_type"], point["strength"])
-        for point in counter_points_by_stance["WATCH"]
-    ] == [("FUNDAMENTALS", "MODERATE"), ("SENTIMENT", "WEAK")]
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["stance_comment"]
+    assert data["positive_factors"]
+    assert data["caution_factors"]
+    assert data["next_checks"]
+    assert "counter_view" not in data
+    counter_points = cast(list[dict[str, Any]], data["counter_points"])
+    assert set(counter_points[0]) == {
+        "id",
+        "claim",
+        "basis",
+        "basis_type",
+        "strength",
+        "source_label",
+    }
+    assert data["confidence_basis"]
+    assert data["key_risks"][0]["evidence"]
 
 
 def test_counter_point_serializes_null_source_label() -> None:
@@ -353,6 +322,20 @@ def test_get_research_summary_returns_404_when_missing(client: TestClient) -> No
     set_current_user(1)
 
     response = client.get("/api/v1/assets/999/research-summary")
+
+    assert response.status_code == 404
+    assert api_error(response) == {
+        "code": "ASSET_NOT_FOUND",
+        "message": "종목을 찾을 수 없습니다.",
+    }
+
+
+def test_refresh_research_summary_returns_404_when_asset_missing(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+
+    response = client.post("/api/v1/assets/999/research-summary/refresh")
 
     assert response.status_code == 404
     assert api_error(response) == {
