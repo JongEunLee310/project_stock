@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.adapters.factory import get_llm_gateway
 from app.domains.research_queue.repository import ResearchQueueRepository
 from app.domains.research_queue.schema import (
     ResearchQueueFilter,
@@ -26,7 +27,7 @@ _NEEDS_RESEARCH_STATUSES = {
 class ResearchQueueService:
     def __init__(self, db: Session) -> None:
         self.repository = ResearchQueueRepository(db)
-        self.summary_service = ResearchSummaryService(db)
+        self.summary_service = ResearchSummaryService(db, get_llm_gateway())
 
     def list_queue(
         self,
@@ -42,6 +43,7 @@ class ResearchQueueService:
         today_start = datetime.combine(now.date(), datetime.min.time(), tzinfo=UTC)
         assets = self.repository.list_active_assets()
         asset_ids = [asset.id for asset in assets]
+        self.summary_service.prefetch(asset_ids)
         presence_by_id = self.repository.get_data_presence_by_assets(assets)
         signal_types_by_id = self.repository.get_active_signal_types_by_assets(asset_ids)
         signal_reasons_by_id = self.repository.get_top_signal_reason_by_assets(asset_ids)
@@ -67,7 +69,7 @@ class ResearchQueueService:
                 presence.latest_report_at,
                 presence.latest_signal_at,
             )
-            summary = self.summary_service.get_summary(asset.id)
+            summary = self.summary_service.get_summary_or_none(asset.id)
             items.append(
                 ResearchQueueItemProjection(
                     asset_id=asset.id,
@@ -81,8 +83,8 @@ class ResearchQueueService:
                         now,
                     ),
                     completeness_pct=completeness,
-                    stance=summary.stance,
-                    headline=summary.headline,
+                    stance=summary.stance if summary is not None else None,
+                    headline=summary.headline if summary is not None else None,
                     key_issue=self._derive_key_issue(
                         signal_reasons_by_id.get(asset.id),
                         report_factors_by_id.get(asset.id),

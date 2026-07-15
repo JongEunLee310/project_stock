@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.adapters.factory import get_llm_gateway
 from app.api.v1.deps import get_current_user
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
@@ -135,14 +136,33 @@ def get_asset_analyst_opinions(
     "/{asset_id}/research-summary",
     response_model=ApiResponse[ResearchSummaryResponse],
     summary="Get asset research summary",
-    description="Return a deterministic mock research summary for an asset.",
+    description="Return the latest stored research summary for an asset.",
 )
 def get_asset_research_summary(
     asset_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[ResearchSummaryResponse]:
-    return success(ResearchSummaryService(db).get_summary(asset_id))
+    return success(ResearchSummaryService(db, get_llm_gateway()).get_summary(asset_id))
+
+
+@router.post(
+    "/{asset_id}/research-summary/refresh",
+    response_model=ApiResponse[ResearchSummaryResponse],
+    summary="Refresh asset research summary",
+    description="Generate and store the latest research summary for an asset.",
+)
+def refresh_asset_research_summary(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[ResearchSummaryResponse]:
+    return success(
+        ResearchSummaryService(db, get_llm_gateway()).generate(
+            asset_id,
+            current_user.id,
+        )
+    )
 
 
 @router.get(
