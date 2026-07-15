@@ -10,9 +10,24 @@ from app.db.session import get_db
 from app.domains.alerts.schema import AlertResponse
 from app.domains.alerts.service import AlertService
 from app.domains.alerts.types import AlertStatus
+from app.domains.alert_rules.schema import AlertOverviewProjection
+from app.domains.alert_rules.service import AlertRuleService
 from app.domains.users.model import User
 
 router = APIRouter()
+
+
+@router.get(
+    "/overview",
+    response_model=ApiResponse[AlertOverviewProjection],
+    summary="Get alert overview",
+    description="Return alert rule and event counts for the authenticated user.",
+)
+def get_alert_overview(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[AlertOverviewProjection]:
+    return success(AlertRuleService(db).get_overview(current_user.id))
 
 
 @router.get(

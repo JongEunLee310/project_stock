@@ -421,6 +421,47 @@ ALERT_CONTRACT: Contract = {
     "message": (str, type(None)),
 }
 
+ALERT_RULE_CONTRACT: Contract = {
+    "id": int,
+    "user_id": int,
+    "name": str,
+    "source": str,
+    "template_type": (str, type(None)),
+    "target_type": str,
+    "target_id": (str, type(None)),
+    "condition": dict,
+    "severity": str,
+    "channels": list,
+    "enabled": bool,
+    "status": str,
+    "cooldown_seconds": int,
+    "delivery_policy": str,
+    "last_triggered_at": (str, type(None)),
+    "created_at": str,
+    "updated_at": str,
+}
+
+ALERT_RULE_TEMPLATE_CONTRACT: Contract = {
+    "template_type": str,
+    "label": str,
+    "target_type": str,
+    "condition": dict,
+    "severity": str,
+    "channels": list,
+    "cooldown_seconds": int,
+    "delivery_policy": str,
+    "is_active": bool,
+}
+
+ALERT_OVERVIEW_CONTRACT: Contract = {
+    "active_rule_count": int,
+    "triggered_today_count": int,
+    "high_severity_count": int,
+    "paused_rule_count": int,
+    "unread_count": int,
+    "as_of": str,
+}
+
 PORTFOLIO_SUMMARY_CONTRACT: Contract = {
     "portfolio_id": int,
     "concentration_threshold": str,
@@ -1005,6 +1046,35 @@ def test_alert_list_response_contract_includes_title(client: TestClient) -> None
     assert alerts[0]["title"] == "AAPL RISK_ALERT"
 
 
+def test_alert_rule_and_overview_response_contracts(client: TestClient) -> None:
+    set_current_user(1)
+    create_response = client.post(
+        "/api/v1/alert-rules",
+        json={"template_type": "NEWS_RISK_HIGH", "target_id": "AAPL"},
+    )
+    templates_response = client.get("/api/v1/alert-rules/templates")
+    list_response = client.get("/api/v1/alert-rules")
+    overview_response = client.get("/api/v1/alerts/overview")
+
+    assert create_response.status_code == 201
+    assert_envelope(create_response.json(), has_meta=False)
+    assert_contract(api_data(create_response), ALERT_RULE_CONTRACT)
+
+    assert templates_response.status_code == 200
+    assert_envelope(templates_response.json(), has_meta=False)
+    templates = cast(list[dict[str, Any]], api_data(templates_response))
+    assert_contract(templates[0], ALERT_RULE_TEMPLATE_CONTRACT)
+
+    assert list_response.status_code == 200
+    assert_envelope(list_response.json(), has_meta=True)
+    rules = cast(list[dict[str, Any]], api_data(list_response))
+    assert_contract(rules[0], ALERT_RULE_CONTRACT)
+
+    assert overview_response.status_code == 200
+    assert_envelope(overview_response.json(), has_meta=False)
+    assert_contract(api_data(overview_response), ALERT_OVERVIEW_CONTRACT)
+
+
 def test_portfolio_summary_response_contract(client: TestClient) -> None:
     set_current_user(1)
     portfolio = create_portfolio(client)
@@ -1188,6 +1258,12 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/market/indices",
         "/api/v1/market/fx",
         "/api/v1/alert-candidates",
+        "/api/v1/alert-rules",
+        "/api/v1/alert-rules/templates",
+        "/api/v1/alert-rules/{alert_rule_id}",
+        "/api/v1/alert-rules/{alert_rule_id}/pause",
+        "/api/v1/alert-rules/{alert_rule_id}/resume",
+        "/api/v1/alerts/overview",
         "/api/v1/decision-logs",
         "/api/v1/decision-logs/stats",
         "/api/v1/decision-logs/{decision_log_id}",
@@ -1218,6 +1294,9 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "PositionWeight",
         "SectorWeight",
         "AlertCandidateResponse",
+        "AlertRuleProjection",
+        "AlertRuleTemplateProjection",
+        "AlertOverviewProjection",
         "DecisionLogResponse",
         "DecisionLogStatsResponse",
         "ReviewedDecisionItem",
