@@ -17,6 +17,7 @@ from app.scheduler.registry import (
 )
 from app.scheduler.runner import ManualSchedulerRunner
 from app.worker.jobs.analysis import analyze_all_watchlists_job
+from app.worker.jobs.alerts import evaluate_alert_rules_job
 from app.worker.jobs.news import collect_news_job
 from app.worker.jobs.prices import collect_prices_job
 from app.worker.jobs.signal_snapshots import snapshot_signal_states_job
@@ -97,6 +98,7 @@ def test_default_scheduler_registry_contains_expected_jobs() -> None:
         "analysis_us_session",
         "analysis_kr_post",
         "signal_snapshot",
+        "alert_evaluation",
     }
     assert schedules_by_name["price_collection"].job.func is collect_prices_job
     assert schedules_by_name["price_collection"].cron == "10 22 * * 1-5"
@@ -104,6 +106,9 @@ def test_default_scheduler_registry_contains_expected_jobs() -> None:
     assert schedules_by_name["news_collection"].cron == "0 * * * *"
     assert schedules_by_name["signal_snapshot"].job.func is snapshot_signal_states_job
     assert schedules_by_name["signal_snapshot"].cron == "30 11 * * 1-5"
+    assert schedules_by_name["alert_evaluation"].job.func is evaluate_alert_rules_job
+    assert schedules_by_name["alert_evaluation"].cron == "*/5 * * * *"
+    assert schedules_by_name["alert_evaluation"].enabled is False
     # Source: docs/designs/243-analysis-triggers.md UTC conversion table.
     expected_analysis_crons = {
         "analysis_kr_open": "0 23 * * 0-4",
@@ -147,6 +152,27 @@ def test_analysis_schedule_enabled_flag_controls_all_analysis_entries(
     assert all(schedules[name].enabled for name in analysis_names)
 
     monkeypatch.setattr(runtime_settings, "ANALYSIS_SCHEDULE_ENABLED", False)
+    importlib.reload(reloaded)
+
+
+def test_alert_engine_enabled_flag_controls_alert_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.scheduler.registry as registry_module
+
+    monkeypatch.delenv("ALERT_ENGINE_ENABLED", raising=False)
+    assert Settings().ALERT_ENGINE_ENABLED is False
+    monkeypatch.setenv("ALERT_ENGINE_ENABLED", "true")
+    assert Settings().ALERT_ENGINE_ENABLED is True
+
+    monkeypatch.setattr(runtime_settings, "ALERT_ENGINE_ENABLED", True)
+    reloaded = importlib.reload(registry_module)
+    schedule = reloaded.default_scheduler_registry.get("alert_evaluation")
+
+    assert schedule is not None
+    assert schedule.enabled is True
+
+    monkeypatch.setattr(runtime_settings, "ALERT_ENGINE_ENABLED", False)
     importlib.reload(reloaded)
 
 

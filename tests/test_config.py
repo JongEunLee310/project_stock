@@ -35,6 +35,7 @@ def test_settings_use_defaults_without_env_file(monkeypatch: pytest.MonkeyPatch)
     assert settings.LLM_CACHE_TTL_SECONDS is None
     assert settings.LLM_ESCALATION_ENABLED is False
     assert settings.LLM_ESCALATION_CONFIDENCE_THRESHOLD is None
+    assert settings.ALERT_ENGINE_ENABLED is False
     assert settings.MARKET_PROVIDER == "mock"
     assert settings.NEWS_PROVIDER == "mock"
     assert "{query}" in settings.NEWS_QUERY_URL_TEMPLATE
@@ -59,6 +60,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("LLM_CACHE_TTL_SECONDS", "600")
     monkeypatch.setenv("LLM_ESCALATION_ENABLED", "true")
     monkeypatch.setenv("LLM_ESCALATION_CONFIDENCE_THRESHOLD", "0.75")
+    monkeypatch.setenv("ALERT_ENGINE_ENABLED", "true")
     monkeypatch.setenv("MARKET_PROVIDER", "real")
     monkeypatch.setenv("NEWS_PROVIDER", "real")
     monkeypatch.setenv("NEWS_QUERY_URL_TEMPLATE", "https://example.com/rss?q={query}")
@@ -82,6 +84,7 @@ def test_settings_load_values_from_environment(monkeypatch: pytest.MonkeyPatch) 
     assert settings.LLM_CACHE_TTL_SECONDS == 600
     assert settings.LLM_ESCALATION_ENABLED is True
     assert settings.LLM_ESCALATION_CONFIDENCE_THRESHOLD == 0.75
+    assert settings.ALERT_ENGINE_ENABLED is True
     assert settings.MARKET_PROVIDER == "real"
     assert settings.NEWS_PROVIDER == "real"
     assert settings.NEWS_QUERY_URL_TEMPLATE == "https://example.com/rss?q={query}"
