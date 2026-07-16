@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     job_runs,
     llm_analysis,
     market,
+    notification_channels,
     portfolios,
     prices,
     research_queue,
@@ -41,6 +42,11 @@ api_router.include_router(
     alert_rules.router,
     prefix="/alert-rules",
     tags=["alert-rules"],
+)
+api_router.include_router(
+    notification_channels.router,
+    prefix="/notification-channels",
+    tags=["notification-channels"],
 )
 api_router.include_router(assets.router, prefix="/assets", tags=["assets"])
 api_router.include_router(market.router, prefix="/market", tags=["market"])

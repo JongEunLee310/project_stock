@@ -485,6 +485,15 @@ ALERT_EVENT_DETAIL_CONTRACT: Contract = {
     "evidence": list,
 }
 
+NOTIFICATION_CHANNEL_CONTRACT: Contract = {
+    "id": int,
+    "user_id": int,
+    "channel_type": str,
+    "configuration": dict,
+    "enabled": bool,
+    "verified_at": (str, type(None)),
+}
+
 PORTFOLIO_SUMMARY_CONTRACT: Contract = {
     "portfolio_id": int,
     "concentration_threshold": str,
@@ -1144,6 +1153,30 @@ def test_alert_event_response_contracts(client: TestClient, db: Session) -> None
     assert_contract(api_data(detail_response), ALERT_EVENT_DETAIL_CONTRACT)
 
 
+def test_notification_channel_response_contracts(client: TestClient) -> None:
+    set_current_user(1)
+    create_response = client.post(
+        "/api/v1/notification-channels",
+        json={
+            "channel_type": "EMAIL",
+            "configuration": {"email": "notify@example.com"},
+        },
+    )
+    list_response = client.get("/api/v1/notification-channels")
+
+    assert create_response.status_code == 201
+    assert_envelope(create_response.json(), has_meta=False)
+    assert_contract(api_data(create_response), NOTIFICATION_CHANNEL_CONTRACT)
+    assert list_response.status_code == 200
+    assert_envelope(list_response.json(), has_meta=False)
+    channels = cast(list[dict[str, Any]], api_data(list_response))
+    assert len(channels) == 2
+    assert all(
+        not (set(NOTIFICATION_CHANNEL_CONTRACT) - set(channel))
+        for channel in channels
+    )
+
+
 def test_portfolio_summary_response_contract(client: TestClient) -> None:
     set_current_user(1)
     portfolio = create_portfolio(client)
@@ -1337,6 +1370,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/alert-events/read",
         "/api/v1/alert-events/{alert_event_id}",
         "/api/v1/alert-events/{alert_event_id}/read",
+        "/api/v1/notification-channels",
         "/api/v1/decision-logs",
         "/api/v1/decision-logs/stats",
         "/api/v1/decision-logs/{decision_log_id}",
