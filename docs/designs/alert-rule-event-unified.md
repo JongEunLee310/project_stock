@@ -218,9 +218,12 @@ Evaluator/Delivery 워커 분리는 2차.
 
 - `alert_candidates` → `alert_events`로 개념 통합. `importance`→`severity`, `evidence`→
   `evidence`, `candidate_type`→규칙 기반 발생. 신규 발생 경로는 엔진으로 일원화하고, 구
-  `alert_candidates` 엔드포인트는 deprecate 표시 후 후속 이슈에서 제거.
+  `/api/v1/alert-candidates` 엔드포인트는 deprecated 상태로 읽기 호환을 유지한 뒤 후속 이슈에서
+  제거한다.
 - `alerts`(시그널 래퍼) → `SIGNAL_CHANGED` 시스템 규칙이 생성하는 `alert_events`로 대체.
-  분석 파이프라인의 `AlertService.create_alert` 직접 호출 경로를 엔진 규칙 평가로 전환.
+  신규 이벤트 조회·읽음 계약은 `/api/v1/alert-events`에 두고, 구 `/api/v1/alerts` 엔드포인트는
+  deprecated 상태로 병존시킨다. 분석 파이프라인의 `AlertService.create_alert` 직접 호출 경로는
+  엔진 규칙 평가로 전환한다. `/api/v1/alerts/overview`는 통합 관제 요약 경로로 유지한다.
 - `WatchlistAlertRuleService`의 템플릿 4종 → `alert_rules`(target_type=WATCHLIST) 레코드로
   이관. 기존 토글 UI는 규칙 목록으로 흡수.
 - 데이터 백필은 필수 아님(신규 이벤트부터 통합 테이블 사용). 구 테이블은 읽기 호환 유지 후
@@ -244,14 +247,18 @@ Evaluator/Delivery 워커 분리는 2차.
 | `POST /api/v1/alert-rules/{id}/pause` | 일시정지(enabled=false) |
 | `POST /api/v1/alert-rules/{id}/resume` | 재개(enabled=true) |
 | `DELETE /api/v1/alert-rules/{id}` | 삭제(SYSTEM 규칙은 불가) |
-| `GET /api/v1/alerts` | 최근 알림 목록(필터: severity·read·target_type, 공통 pagination) |
-| `GET /api/v1/alerts/{id}` | 알림 상세(발생 조건·현재값·임계값·이전값·근거) |
-| `POST /api/v1/alerts/{id}/read` | 단건 읽음 |
-| `POST /api/v1/alerts/read` | 다건 읽음(alert_ids) |
+| `GET /api/v1/alert-events` | 최근 알림 목록(필터: severity·read·target_type, 공통 pagination) |
+| `GET /api/v1/alert-events/{id}` | 알림 상세(발생 조건·현재값·임계값·이전값·근거) |
+| `POST /api/v1/alert-events/{id}/read` | 단건 읽음 |
+| `POST /api/v1/alert-events/read` | 다건 읽음(alert_ids) |
 | `GET /api/v1/notification-channels` | 채널 목록 |
 | `POST /api/v1/notification-channels` | 채널 추가 |
 
 `POST /notification-channels/{id}/test`(테스트 발송)는 외부 채널 도입(2차)과 함께 추가한다.
+
+구 `/api/v1/alerts`(시그널 래퍼)와 `/api/v1/alert-candidates` 계약은 deprecated 상태로 병존하며,
+소비처 이관이 끝난 뒤 후속 이슈에서 제거한다. `/api/v1/alerts/overview`는 이 deprecated 범위에
+포함하지 않는다.
 
 파생 뷰 타입은 'DTO'가 아닌 'projection'으로 명명한다(예: `AlertRuleProjection`·
 `AlertEventProjection`·`AlertOverviewProjection`).
