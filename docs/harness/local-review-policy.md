@@ -28,6 +28,11 @@ This file is committed, not a throwaway under `tmp/`. The PR conversation remain
 
 ## Review Format
 
+리뷰 기록은 `local-review-template.md`의 골격을 그대로 사용해 작성한다. 템플릿은 아래 고정
+7섹션을 실제 문서 형태로 구체화하고, 제목 줄 형식·발견 사항 표기·섹션별 서술 관례까지
+정의한다. 형식 판단이 애매하면 기준 예시 `docs/reviews/pr-210.md`를 참조한다. 임의로 섹션을
+간소화하거나 자체 형식을 만들지 않는다.
+
 Every review record uses the same section order and headers:
 
 1. `## Review Summary`
@@ -56,6 +61,9 @@ The fixed headers are a skeleton; each section should carry real substance rathe
 - **CI Result with concrete evidence** — State the actual command outputs and counts (tests passed, files typechecked, single migration head, and so on), not just "passed". Concrete numbers let a reader confirm the verification was real.
 - **Final Recommendation with reasoning** — Give the merge-readiness judgment and why: scope held, regression risk, what the added tests cover. Restate the outcome (for example, Blocking none; Suggestions and Questions are follow-up) so the merge decision is unambiguous.
 - **Honest severity** — Keep the Blocking / Suggestions / Questions split truthful. Blocking is a must-change-before-merge item; Suggestions are optional or follow-up; Questions need author or human input. Never inflate a follow-up into a blocker, and never bury a real blocker under Suggestions.
+
+각 항목의 구체적인 작성 관례(제목 줄 형식, `Part A`/`Part B` 분할, 발견 사항의 볼드 제목에
+처리 판단을 담는 표기, CI Result의 수치 기재 범위)는 `local-review-template.md`를 따른다.
 
 ### Cross-Model Review
 
