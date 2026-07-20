@@ -117,7 +117,7 @@ def _signal_snapshot_evidence(
 def _aggregate_derived_metric(
     metric: AlertMetric,
     pairs: Mapping[int, _SignalPair],
-) -> _MetricReading:
+) -> _MetricReading | None:
     states = [
         (
             asset_id,
@@ -129,7 +129,10 @@ def _aggregate_derived_metric(
             ),
         )
         for asset_id, (latest, previous) in sorted(pairs.items())
+        if latest is not None
     ]
+    if not states:
+        return None
 
     if metric == AlertMetric.AI_JUDGMENT_CHANGED:
         transitions = [

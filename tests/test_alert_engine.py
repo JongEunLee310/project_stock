@@ -485,6 +485,8 @@ def test_derived_metric_aggregation_uses_max_and_any_previous() -> None:
     news = _aggregate_derived_metric(AlertMetric.NEWS_RISK, pairs)
     heat = _aggregate_derived_metric(AlertMetric.THEME_HEAT, pairs)
 
+    assert news is not None
+    assert heat is not None
     assert news[:3] == ("MEDIUM", "HIGH", True)
     assert news[4] == 20
     assert heat[:3] == ("OVERHEATED", "NEUTRAL", True)
@@ -531,11 +533,13 @@ def test_ai_judgment_aggregation_prefers_risk_then_lowest_asset_id() -> None:
         ),
     }
 
-    current, previous, has_previous, evidence, asset_id = _aggregate_derived_metric(
+    reading = _aggregate_derived_metric(
         AlertMetric.AI_JUDGMENT_CHANGED,
         pairs,
     )
 
+    assert reading is not None
+    current, previous, has_previous, evidence, asset_id = reading
     assert (current, previous, has_previous, asset_id) == (
         "RISK_INCREASING",
         "WATCH",
@@ -584,17 +588,46 @@ def test_ai_judgment_aggregation_keeps_unchanged_history_unmatched() -> None:
         ),
     }
 
-    current, previous, has_previous, _, asset_id = _aggregate_derived_metric(
+    reading = _aggregate_derived_metric(
         AlertMetric.AI_JUDGMENT_CHANGED,
         pairs,
     )
 
+    assert reading is not None
+    current, previous, has_previous, _, asset_id = reading
     assert (current, previous, has_previous, asset_id) == (
         "RISK_INCREASING",
         "RISK_INCREASING",
         True,
         10,
     )
+
+
+def test_derived_metric_aggregation_omits_assets_without_snapshots() -> None:
+    present = _signal_snapshot(
+        asset_id=20,
+        snapshot_date=date(2026, 7, 20),
+        signal_type=None,
+    )
+
+    reading = _aggregate_derived_metric(
+        AlertMetric.AI_JUDGMENT_CHANGED,
+        {10: (None, None), 20: (present, None)},
+    )
+
+    assert reading is not None
+    current, previous, has_previous, evidence, asset_id = reading
+    assert (current, previous, has_previous, asset_id) == (
+        "STABLE",
+        "STABLE",
+        False,
+        20,
+    )
+    assert evidence[0]["asset_id"] == 20
+    assert _aggregate_derived_metric(
+        AlertMetric.NEWS_RISK,
+        {10: (None, None), 20: (None, None)},
+    ) is None
 
 
 def test_provider_sources_derived_metrics_for_all_supported_targets(
@@ -711,14 +744,43 @@ def test_provider_sources_derived_metrics_for_all_supported_targets(
     default_rule.target_type = "WATCHLIST"
     default_rule.target_id = "8"
     default = provider.get_snapshot(default_rule, as_of=as_of)
-    assert default.values[AlertMetric.NEWS_RISK] == "LOW"
-    assert default.values[AlertMetric.THEME_HEAT] == "NEUTRAL"
-    assert default.values[AlertMetric.AI_JUDGMENT_CHANGED] == "STABLE"
+    assert default.values == {}
     assert default.previous_values == {}
-    assert default.asset_id == 30
-    assert default.evidence[AlertMetric.NEWS_RISK][0]["kind"] == "SIGNAL_SNAPSHOT"
-    assert default.evidence[AlertMetric.NEWS_RISK][0]["derived_value"] == "LOW"
-    assert evaluator.evaluate_rule(default_rule, default).matched is False
+    assert default.asset_id is None
+    assert default.evidence == {}
+    result = evaluator.evaluate_rule(default_rule, default)
+    assert result.matched is False
+    assert result.unavailable_metrics == (
+        "AI_JUDGMENT_CHANGED",
+        "NEWS_RISK",
+        "THEME_HEAT",
+    )
+
+
+def test_provider_keeps_actual_stable_snapshot_available(db: Session) -> None:
+    as_of = datetime(2026, 7, 20, 3, 0, tzinfo=UTC)
+    db.add(User(id=1, email="stable@example.com", hashed_password="hash"))
+    db.add(Asset(id=10, symbol="AAPL", name="Apple", market="NASDAQ"))
+    db.flush()
+    db.add(
+        _signal_snapshot(
+            asset_id=10,
+            snapshot_date=date(2026, 7, 20),
+            signal_type=None,
+        )
+    )
+    db.commit()
+    rule = _rule(
+        condition={"metric": "NEWS_RISK", "operator": "GTE", "value": "HIGH"}
+    )
+
+    snapshot = MetricSnapshotProvider(db).get_snapshot(rule, as_of=as_of)
+    result = AlertEvaluator().evaluate_rule(rule, snapshot)
+
+    assert snapshot.values == {AlertMetric.NEWS_RISK: "LOW"}
+    assert snapshot.asset_id == 10
+    assert result.matched is False
+    assert result.unavailable_metrics == ()
 
 
 def test_run_cycle_skips_topic_impact_score_as_unsupported(db: Session) -> None:
