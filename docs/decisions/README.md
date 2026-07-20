@@ -21,6 +21,7 @@ This directory stores Architecture Decision Records.
 - `ADR-012-llm-output-validation.md` (Phase 2, deferred)
 - `ADR-013-signal-alert-decision-log-screen-boundaries.md` (Proposed, §2 amended by ADR-014)
 - `ADR-014-settings-consolidation-and-alerts-split.md` (Proposed)
+- `ADR-015-asset-level-alert-evaluation.md` (Proposed)
 
 ## Writing Rules
 
