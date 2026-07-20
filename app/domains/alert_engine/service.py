@@ -48,27 +48,48 @@ class AlertEngineService:
             ).all()
         )
         for rule in rules:
-            counters["evaluated_count"] += 1
-            snapshot = self.snapshot_provider.get_snapshot(rule, as_of=evaluated_at)
-            result = self.evaluator.evaluate_rule(rule, snapshot)
-            if result.unsupported_metrics:
+            snapshots = self.snapshot_provider.get_snapshots(rule, as_of=evaluated_at)
+            if snapshots and snapshots[0].unsupported_metrics:
+                counters["evaluated_count"] += 1
                 counters["unsupported_count"] += 1
                 continue
-            if result.unavailable_metrics:
-                counters["unavailable_count"] += 1
-                continue
-            if not result.matched:
-                continue
-            counters["matched_count"] += 1
-            if not self.dedup.should_emit(rule, result, now=evaluated_at):
-                counters["deduplicated_count"] += 1
-                continue
-            dedup_key = self.dedup.build_dedup_key(rule, result, now=evaluated_at)
-            if not self._create_event(rule, snapshot.asset_id, result, dedup_key, evaluated_at):
-                counters["deduplicated_count"] += 1
-                continue
-            rule.last_triggered_at = evaluated_at
-            counters["emitted_count"] += 1
+            emitted_for_rule = False
+            for snapshot in snapshots:
+                counters["evaluated_count"] += 1
+                result = self.evaluator.evaluate_rule(rule, snapshot)
+                if result.unavailable_metrics:
+                    counters["unavailable_count"] += 1
+                    continue
+                if not result.matched:
+                    continue
+                counters["matched_count"] += 1
+                if not self.dedup.should_emit(
+                    rule,
+                    result,
+                    asset_id=snapshot.asset_id,
+                    now=evaluated_at,
+                ):
+                    counters["deduplicated_count"] += 1
+                    continue
+                dedup_key = self.dedup.build_dedup_key(
+                    rule,
+                    result,
+                    asset_id=snapshot.asset_id,
+                    now=evaluated_at,
+                )
+                if not self._create_event(
+                    rule,
+                    snapshot.asset_id,
+                    result,
+                    dedup_key,
+                    evaluated_at,
+                ):
+                    counters["deduplicated_count"] += 1
+                    continue
+                counters["emitted_count"] += 1
+                emitted_for_rule = True
+            if emitted_for_rule:
+                rule.last_triggered_at = evaluated_at
         self.db.flush()
         return AlertCycleSummary(
             evaluated_count=counters["evaluated_count"],

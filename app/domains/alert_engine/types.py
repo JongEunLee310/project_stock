@@ -59,9 +59,9 @@ class AlertCycleSummary:
 
 
 class SnapshotProvider(Protocol):
-    def get_snapshot(
+    def get_snapshots(
         self,
         rule: AlertRule,
         *,
         as_of: datetime,
-    ) -> MetricSnapshot: ...
+    ) -> list[MetricSnapshot]: ...
