@@ -33,6 +33,7 @@ Before planning or reviewing, read the relevant files:
 - `docs/harness/agent-role-policy.md`
 - `docs/harness/handoff-policy.md`
 - `docs/harness/local-review-policy.md`
+- `docs/harness/local-review-template.md`
 - `docs/knowledge/workflow.md`
 - Relevant issue, PR, handoff task, and CI output
 

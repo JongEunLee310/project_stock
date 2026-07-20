@@ -14,6 +14,7 @@ This directory defines the AI-assisted engineering harness used by this template
 - `issue-authoring-policy.md`
 - `design-record-policy.md`
 - `local-review-policy.md`
+- `local-review-template.md`
 - `feedback-loop-policy.md`
 - `skill-usage-policy.md`
 - `hook-policy.md`
