@@ -5,7 +5,11 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.domains.alert_engine.types import MetricSnapshot, MetricValue
+from app.domains.alert_engine.types import (
+    MetricSnapshot,
+    MetricUnavailableReason,
+    MetricValue,
+)
 from app.domains.alert_rules.model import AlertRule
 from app.domains.alert_rules.types import AlertMetric, AlertTargetType
 from app.domains.assets.model import Asset
@@ -58,6 +62,7 @@ _MetricReading = tuple[
     list[dict[str, Any]],
     int | None,
 ]
+_MetricResult = _MetricReading | MetricUnavailableReason
 
 
 def _derive_signal_metrics(signal_type: str | None) -> dict[AlertMetric, str]:
@@ -214,12 +219,14 @@ class MetricSnapshotProvider:
         values: dict[AlertMetric, MetricValue] = {}
         previous_values: dict[AlertMetric, MetricValue] = {}
         evidence: dict[AlertMetric, list[dict[str, Any]]] = {}
+        unavailable_reasons: dict[AlertMetric, MetricUnavailableReason] = {}
         unsupported = metrics & UNSUPPORTED_METRICS
         asset_id: int | None = None
 
         for metric in metrics - unsupported:
             reading = self._read_metric(rule, metric, as_of)
-            if reading is None:
+            if isinstance(reading, MetricUnavailableReason):
+                unavailable_reasons[metric] = reading
                 continue
             current, previous, has_previous, metric_evidence, reading_asset_id = reading
             values[metric] = current
@@ -235,6 +242,7 @@ class MetricSnapshotProvider:
             evidence=evidence,
             unsupported_metrics=frozenset(unsupported),
             asset_id=asset_id,
+            unavailable_reasons=unavailable_reasons,
         )
 
     def _condition_metrics(self, condition: dict[str, Any]) -> set[AlertMetric]:
@@ -247,7 +255,7 @@ class MetricSnapshotProvider:
         rule: AlertRule,
         metric: AlertMetric,
         as_of: datetime,
-    ) -> _MetricReading | None:
+    ) -> _MetricResult:
         if metric in _DERIVED_METRICS:
             return self._derived_signal_metric(rule, metric)
         if metric == AlertMetric.PRICE_CHANGE_1D:
@@ -258,18 +266,21 @@ class MetricSnapshotProvider:
             return self._position_weight(rule)
         if metric == AlertMetric.EARNINGS_DATE:
             return self._earnings_date(rule, as_of.date())
-        return None
+        return MetricUnavailableReason.NO_DATA
 
     def _derived_signal_metric(
         self,
         rule: AlertRule,
         metric: AlertMetric,
-    ) -> _MetricReading | None:
+    ) -> _MetricResult:
         asset_ids = self._target_asset_ids(rule)
-        if not asset_ids:
-            return None
+        if asset_ids is None:
+            return MetricUnavailableReason.NO_TARGET
         pairs = self.signal_snapshot_repo.latest_pair_by_asset(asset_ids)
-        return _aggregate_derived_metric(metric, pairs)
+        reading = _aggregate_derived_metric(metric, pairs)
+        if reading is None:
+            return MetricUnavailableReason.NO_DATA
+        return reading
 
     def _target_asset_ids(self, rule: AlertRule) -> list[int] | None:
         if rule.target_type == AlertTargetType.SYMBOL.value:
@@ -312,13 +323,13 @@ class MetricSnapshotProvider:
     def _price_change(
         self,
         rule: AlertRule,
-    ) -> tuple[MetricValue, MetricValue, bool, list[dict[str, Any]], int | None] | None:
+    ) -> _MetricResult:
         asset = self._symbol_asset(rule)
         if asset is None:
-            return None
+            return MetricUnavailableReason.NO_TARGET
         bars = self.price_repo.list_recent(asset.symbol, asset.market, "1d", 3)
         if len(bars) < 2 or bars[-2].close_price == 0:
-            return None
+            return MetricUnavailableReason.NO_DATA
         current = self._percent_change(bars[-2].close_price, bars[-1].close_price)
         previous: float | None = None
         has_previous = len(bars) >= 3 and bars[-3].close_price != 0
@@ -339,15 +350,15 @@ class MetricSnapshotProvider:
     def _signal_change(
         self,
         rule: AlertRule,
-    ) -> tuple[MetricValue, MetricValue, bool, list[dict[str, Any]], int | None] | None:
+    ) -> _MetricResult:
         asset = self._symbol_asset(rule)
         if asset is None:
-            return None
+            return MetricUnavailableReason.NO_TARGET
         latest, previous = self.signal_snapshot_repo.latest_pair_by_asset([asset.id])[
             asset.id
         ]
         if latest is None:
-            return None
+            return MetricUnavailableReason.NO_DATA
         evidence = [
             {
                 "kind": "SIGNAL_SNAPSHOT",
@@ -368,19 +379,19 @@ class MetricSnapshotProvider:
     def _position_weight(
         self,
         rule: AlertRule,
-    ) -> tuple[MetricValue, MetricValue, bool, list[dict[str, Any]], int | None] | None:
+    ) -> _MetricResult:
         if rule.target_type != AlertTargetType.PORTFOLIO.value or rule.target_id is None:
-            return None
+            return MetricUnavailableReason.NO_TARGET
         try:
             portfolio_id = int(rule.target_id)
         except ValueError:
-            return None
+            return MetricUnavailableReason.NO_TARGET
         portfolio = self.portfolio_repo.get_by_id(portfolio_id)
         if portfolio is None or portfolio.user_id != rule.user_id:
-            return None
+            return MetricUnavailableReason.NO_TARGET
         summary = self.portfolio_service.get_summary(portfolio.id, rule.user_id)
         if not summary.positions:
-            return None
+            return MetricUnavailableReason.NO_DATA
         largest = max(summary.positions, key=lambda position: position.weight)
         evidence = [
             {
@@ -397,16 +408,16 @@ class MetricSnapshotProvider:
         self,
         rule: AlertRule,
         today: date,
-    ) -> tuple[MetricValue, MetricValue, bool, list[dict[str, Any]], int | None] | None:
+    ) -> _MetricResult:
         if rule.target_type != AlertTargetType.WATCHLIST.value or rule.target_id is None:
-            return None
+            return MetricUnavailableReason.NO_TARGET
         try:
             watchlist_id = int(rule.target_id)
         except ValueError:
-            return None
+            return MetricUnavailableReason.NO_TARGET
         watchlist = self.watchlist_repo.get_by_id(watchlist_id)
         if watchlist is None or watchlist.user_id != rule.user_id:
-            return None
+            return MetricUnavailableReason.NO_TARGET
         items = self.watchlist_item_repo.list_by_watchlist(watchlist.id)
         assets = self.asset_repo.list_by_ids([item.asset_id for item in items])
         upcoming: list[tuple[date, Asset]] = []
@@ -416,7 +427,7 @@ class MetricSnapshotProvider:
             if events:
                 upcoming.append((events[0].event_date, asset))
         if not upcoming:
-            return None
+            return MetricUnavailableReason.NO_DATA
         event_date, asset = min(upcoming, key=lambda item: (item[0], item[1].id))
         days_until = (event_date - today).days
         evidence = [

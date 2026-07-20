@@ -14,7 +14,11 @@ from app.domains.alert_engine.snapshot_provider import (
     _aggregate_derived_metric,
     _derive_signal_metrics,
 )
-from app.domains.alert_engine.types import AlertCycleSummary, MetricSnapshot
+from app.domains.alert_engine.types import (
+    AlertCycleSummary,
+    MetricSnapshot,
+    MetricUnavailableReason,
+)
 from app.domains.alert_events.model import AlertDelivery, AlertEvent
 from app.domains.alert_rules.model import AlertRule
 from app.domains.alert_rules.types import AlertMetric
@@ -91,6 +95,43 @@ def test_evaluator_handles_single_and_all_conditions() -> None:
         "threshold": 3.0,
     }
     assert missing_member.matched is False
+
+
+def test_evaluator_collects_unavailable_reasons_for_all_conditions() -> None:
+    rule = _rule(
+        condition={
+            "all": [
+                {"metric": "PRICE_CHANGE_1D", "operator": "GTE", "value": 3.0},
+                {"metric": "NEWS_RISK", "operator": "GTE", "value": "HIGH"},
+            ]
+        }
+    )
+    snapshot = MetricSnapshot(
+        unavailable_reasons={
+            AlertMetric.PRICE_CHANGE_1D: MetricUnavailableReason.NO_TARGET,
+            AlertMetric.NEWS_RISK: MetricUnavailableReason.NO_DATA,
+        }
+    )
+
+    result = AlertEvaluator().evaluate_rule(rule, snapshot)
+
+    assert result.matched is False
+    assert result.unavailable_metrics == ("NEWS_RISK", "PRICE_CHANGE_1D")
+    assert result.unavailable_reasons == (
+        ("NEWS_RISK", "NO_DATA"),
+        ("PRICE_CHANGE_1D", "NO_TARGET"),
+    )
+
+
+def test_evaluator_defaults_missing_unavailable_reason_to_no_data() -> None:
+    rule = _rule(
+        condition={"metric": "PRICE_CHANGE_1D", "operator": "GTE", "value": 3.0}
+    )
+
+    result = AlertEvaluator().evaluate_rule(rule, MetricSnapshot())
+
+    assert result.unavailable_metrics == ("PRICE_CHANGE_1D",)
+    assert result.unavailable_reasons == (("PRICE_CHANGE_1D", "NO_DATA"),)
 
 
 def test_evaluator_changed_requires_an_actual_previous_state_change() -> None:
@@ -410,6 +451,66 @@ def test_metric_snapshot_provider_reads_persisted_domain_sources(db: Session) ->
     assert earnings.asset_id == asset.id
     assert weight.values[AlertMetric.POSITION_WEIGHT] == 1.0
     assert weight.asset_id == asset.id
+
+
+@pytest.mark.parametrize(
+    ("target_id", "watchlist_user_id"),
+    [
+        ("404", None),
+        ("7", 2),
+        ("not-an-integer", None),
+    ],
+    ids=["missing-watchlist", "owner-mismatch", "invalid-target-id"],
+)
+def test_derived_metric_target_failures_are_no_target(
+    db: Session,
+    target_id: str,
+    watchlist_user_id: int | None,
+) -> None:
+    db.add(User(id=1, email="target-owner@example.com", hashed_password="hash"))
+    if watchlist_user_id is not None:
+        db.add(
+            User(id=watchlist_user_id, email="other-owner@example.com", hashed_password="hash")
+        )
+        db.add(Watchlist(id=7, user_id=watchlist_user_id, name="Other owner's list"))
+    db.commit()
+    rule = _rule(
+        condition={"metric": "NEWS_RISK", "operator": "GTE", "value": "HIGH"}
+    )
+    rule.target_type = "WATCHLIST"
+    rule.target_id = target_id
+
+    snapshot = MetricSnapshotProvider(db).get_snapshot(
+        rule,
+        as_of=datetime(2026, 7, 20, 3, 0, tzinfo=UTC),
+    )
+    result = AlertEvaluator().evaluate_rule(rule, snapshot)
+
+    assert snapshot.values == {}
+    assert snapshot.unavailable_reasons == {
+        AlertMetric.NEWS_RISK: MetricUnavailableReason.NO_TARGET
+    }
+    assert result.unavailable_metrics == ("NEWS_RISK",)
+    assert result.unavailable_reasons == (("NEWS_RISK", "NO_TARGET"),)
+
+
+def test_price_metric_with_insufficient_bars_is_no_data(db: Session) -> None:
+    db.add(User(id=1, email="price-no-data@example.com", hashed_password="hash"))
+    db.add(Asset(id=10, symbol="AAPL", name="Apple", market="NASDAQ"))
+    db.commit()
+    rule = _rule(
+        condition={"metric": "PRICE_CHANGE_1D", "operator": "GTE", "value": 3.0}
+    )
+
+    snapshot = MetricSnapshotProvider(db).get_snapshot(
+        rule,
+        as_of=datetime(2026, 7, 20, 3, 0, tzinfo=UTC),
+    )
+
+    assert snapshot.values == {}
+    assert snapshot.unavailable_reasons == {
+        AlertMetric.PRICE_CHANGE_1D: MetricUnavailableReason.NO_DATA
+    }
 
 
 def test_only_topic_impact_score_is_unsupported() -> None:
@@ -748,12 +849,22 @@ def test_provider_sources_derived_metrics_for_all_supported_targets(
     assert default.previous_values == {}
     assert default.asset_id is None
     assert default.evidence == {}
+    assert default.unavailable_reasons == {
+        AlertMetric.AI_JUDGMENT_CHANGED: MetricUnavailableReason.NO_DATA,
+        AlertMetric.NEWS_RISK: MetricUnavailableReason.NO_DATA,
+        AlertMetric.THEME_HEAT: MetricUnavailableReason.NO_DATA,
+    }
     result = evaluator.evaluate_rule(default_rule, default)
     assert result.matched is False
     assert result.unavailable_metrics == (
         "AI_JUDGMENT_CHANGED",
         "NEWS_RISK",
         "THEME_HEAT",
+    )
+    assert result.unavailable_reasons == (
+        ("AI_JUDGMENT_CHANGED", "NO_DATA"),
+        ("NEWS_RISK", "NO_DATA"),
+        ("THEME_HEAT", "NO_DATA"),
     )
 
 
