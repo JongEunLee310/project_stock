@@ -1,6 +1,7 @@
+from collections.abc import Mapping
 from datetime import date, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.orm import Session
 
 from app.adapters.market.base import EarningsEventResult, EarningsReportResult
@@ -105,6 +106,34 @@ class EarningsRepository:
             .order_by(EarningsEvent.event_date.asc(), EarningsEvent.id.asc())
         )
         return list(self.db.scalars(stmt))
+
+    def get_first_events_by_asset(
+        self,
+        asset_keys: Mapping[int, tuple[str, str]],
+        start: date,
+        end: date,
+    ) -> dict[int, EarningsEvent]:
+        if not asset_keys:
+            return {}
+        asset_ids_by_key: dict[tuple[str, str], list[int]] = {}
+        for asset_id, key in asset_keys.items():
+            asset_ids_by_key.setdefault(key, []).append(asset_id)
+        stmt = (
+            select(EarningsEvent)
+            .where(
+                tuple_(EarningsEvent.symbol, EarningsEvent.market).in_(
+                    asset_ids_by_key
+                ),
+                EarningsEvent.event_date >= start,
+                EarningsEvent.event_date <= end,
+            )
+            .order_by(EarningsEvent.event_date.asc(), EarningsEvent.id.asc())
+        )
+        first_events: dict[int, EarningsEvent] = {}
+        for event in self.db.scalars(stmt):
+            for asset_id in asset_ids_by_key[(event.symbol, event.market)]:
+                first_events.setdefault(asset_id, event)
+        return first_events
 
     def get_coverage(self, symbol: str, market: str) -> tuple[int, datetime | None]:
         stmt = select(
