@@ -181,6 +181,8 @@ Evaluator/Delivery 워커 분리는 2차.
 1. 스케줄러 주기 작업이 `enabled=true` 규칙을 대상 유형별로 조회한다.
 2. 대상별 현재 지표 스냅샷을 수집한다(기존 `signals`·`watchlists.trend_service`·`prices`·
    `portfolios`·`earnings` 재사용). 신규 수집 파이프라인은 만들지 않는다.
+   대상을 확정하지 못하면 `NO_TARGET`, 대상은 있으나 계산할 데이터가 없으면 `NO_DATA`로
+   구분한다. 다자산 지표는 일부 자산에만 스냅샷이 있으면 나머지를 집계 대상에서 제외한다.
 3. 조건 평가기가 `condition`을 스냅샷에 적용한다.
 4. 충족 시 중복·cooldown·state-transition 검사(§6)를 통과한 건만 `AlertEvent` 생성.
 5. 규칙 `channels`에 대해 `AlertDelivery` 생성. MVP는 `APP`을 즉시 `SUCCESS`로 기록.

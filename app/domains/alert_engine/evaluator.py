@@ -7,6 +7,7 @@ from typing import Any, TypeGuard
 from app.domains.alert_engine.types import (
     AlertEvaluationResult,
     MetricSnapshot,
+    MetricUnavailableReason,
     MetricValue,
 )
 from app.domains.alert_rules.model import AlertRule
@@ -26,6 +27,7 @@ class _ConditionEvaluation:
     is_transition: bool
     unsupported_metric: str | None = None
     unavailable_metric: str | None = None
+    unavailable_reason: str | None = None
 
 
 class AlertEvaluator:
@@ -67,6 +69,17 @@ class AlertEvaluator:
                 }
             )
         )
+        unavailable_reasons = tuple(
+            sorted(
+                {
+                    (item.unavailable_metric, item.unavailable_reason)
+                    for item in evaluations
+                    if item.unavailable_metric is not None
+                    and item.unavailable_reason is not None
+                },
+                key=lambda item: item[0],
+            )
+        )
         fingerprint_payload = {
             "condition": condition,
             "triggered_value": triggered_value,
@@ -87,6 +100,7 @@ class AlertEvaluator:
             is_transition=matched and any(item.is_transition for item in evaluations),
             unsupported_metrics=unsupported,
             unavailable_metrics=unavailable,
+            unavailable_reasons=unavailable_reasons,
         )
 
     def _evaluate_condition(
@@ -115,12 +129,17 @@ class AlertEvaluator:
                 unsupported_metric=metric.value,
             )
         if metric not in snapshot.values:
+            unavailable_reason = snapshot.unavailable_reasons.get(
+                metric,
+                MetricUnavailableReason.NO_DATA,
+            )
             return _ConditionEvaluation(
                 matched=False,
                 triggered_value=triggered_value,
                 evidence=[],
                 is_transition=False,
                 unavailable_metric=metric.value,
+                unavailable_reason=unavailable_reason.value,
             )
 
         matched = self._compare(

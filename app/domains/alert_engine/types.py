@@ -1,11 +1,17 @@
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Any, Protocol
 
 from app.domains.alert_rules.model import AlertRule
 from app.domains.alert_rules.types import AlertMetric
 
 MetricValue = str | int | float | bool | None
+
+
+class MetricUnavailableReason(str, Enum):
+    NO_TARGET = "NO_TARGET"
+    NO_DATA = "NO_DATA"
 
 
 @dataclass(frozen=True)
@@ -15,6 +21,9 @@ class MetricSnapshot:
     evidence: dict[AlertMetric, list[dict[str, Any]]] = field(default_factory=dict)
     unsupported_metrics: frozenset[AlertMetric] = frozenset()
     asset_id: int | None = None
+    unavailable_reasons: dict[AlertMetric, MetricUnavailableReason] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)
@@ -26,6 +35,7 @@ class AlertEvaluationResult:
     is_transition: bool
     unsupported_metrics: tuple[str, ...] = ()
     unavailable_metrics: tuple[str, ...] = ()
+    unavailable_reasons: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
