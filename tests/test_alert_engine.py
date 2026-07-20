@@ -8,7 +8,12 @@ from sqlalchemy.orm import Session
 from app.domains.alert_engine.dedup import AlertDedupService
 from app.domains.alert_engine.evaluator import AlertEvaluator
 from app.domains.alert_engine.service import AlertEngineService
-from app.domains.alert_engine.snapshot_provider import MetricSnapshotProvider
+from app.domains.alert_engine.snapshot_provider import (
+    UNSUPPORTED_METRICS,
+    MetricSnapshotProvider,
+    _aggregate_derived_metric,
+    _derive_signal_metrics,
+)
 from app.domains.alert_engine.types import AlertCycleSummary, MetricSnapshot
 from app.domains.alert_events.model import AlertDelivery, AlertEvent
 from app.domains.alert_rules.model import AlertRule
@@ -20,6 +25,7 @@ from app.domains.portfolios.model import Portfolio, Position
 from app.domains.prices.model import StockPriceBar
 from app.domains.signals.model import Signal
 from app.domains.signals.snapshot_model import AssetSignalSnapshot
+from app.domains.signals.types import SignalType
 from app.domains.users.model import User
 from app.domains.watchlists.model import Watchlist, WatchlistItem
 from app.worker.jobs import alerts as alert_jobs
@@ -406,30 +412,324 @@ def test_metric_snapshot_provider_reads_persisted_domain_sources(db: Session) ->
     assert weight.asset_id == asset.id
 
 
-def test_provider_marks_transient_watchlist_metrics_unsupported(db: Session) -> None:
-    provider = MetricSnapshotProvider(db)
+def test_only_topic_impact_score_is_unsupported() -> None:
+    assert UNSUPPORTED_METRICS == frozenset({AlertMetric.TOPIC_IMPACT_SCORE})
 
-    for metric in (
-        AlertMetric.NEWS_RISK,
-        AlertMetric.THEME_HEAT,
+
+@pytest.mark.parametrize(
+    ("signal_type", "news_risk", "theme_heat", "ai_judgment"),
+    [
+        (SignalType.RISK_ALERT.value, "HIGH", "NEUTRAL", "RISK_INCREASING"),
+        (SignalType.THESIS_BROKEN.value, "HIGH", "NEUTRAL", "RISK_INCREASING"),
+        (SignalType.WATCH.value, "MEDIUM", "NEUTRAL", "WATCH"),
+        (SignalType.SELL_REVIEW.value, "MEDIUM", "NEUTRAL", "WATCH"),
+        (SignalType.OVERHEATED.value, "MEDIUM", "OVERHEATED", "WATCH"),
+        (SignalType.BUY_CANDIDATE.value, "LOW", "NEUTRAL", "WATCH"),
+        ("UNKNOWN", "LOW", "NEUTRAL", "STABLE"),
+        (None, "LOW", "NEUTRAL", "STABLE"),
+    ],
+)
+def test_signal_type_maps_to_derived_metrics(
+    signal_type: str | None,
+    news_risk: str,
+    theme_heat: str,
+    ai_judgment: str,
+) -> None:
+    assert _derive_signal_metrics(signal_type) == {
+        AlertMetric.NEWS_RISK: news_risk,
+        AlertMetric.THEME_HEAT: theme_heat,
+        AlertMetric.AI_JUDGMENT_CHANGED: ai_judgment,
+    }
+
+
+def _signal_snapshot(
+    *,
+    asset_id: int,
+    snapshot_date: date,
+    signal_type: str | None,
+) -> AssetSignalSnapshot:
+    return AssetSignalSnapshot(
+        asset_id=asset_id,
+        snapshot_date=snapshot_date,
+        signal_id=None,
+        signal_type=signal_type,
+        score=None,
+        captured_at=datetime.combine(snapshot_date, datetime.min.time(), tzinfo=UTC),
+    )
+
+
+def test_derived_metric_aggregation_uses_max_and_any_previous() -> None:
+    pairs = {
+        20: (
+            _signal_snapshot(
+                asset_id=20,
+                snapshot_date=date(2026, 7, 20),
+                signal_type=SignalType.OVERHEATED.value,
+            ),
+            None,
+        ),
+        10: (
+            _signal_snapshot(
+                asset_id=10,
+                snapshot_date=date(2026, 7, 20),
+                signal_type=SignalType.BUY_CANDIDATE.value,
+            ),
+            _signal_snapshot(
+                asset_id=10,
+                snapshot_date=date(2026, 7, 19),
+                signal_type=SignalType.RISK_ALERT.value,
+            ),
+        ),
+    }
+
+    news = _aggregate_derived_metric(AlertMetric.NEWS_RISK, pairs)
+    heat = _aggregate_derived_metric(AlertMetric.THEME_HEAT, pairs)
+
+    assert news[:3] == ("MEDIUM", "HIGH", True)
+    assert news[4] == 20
+    assert heat[:3] == ("OVERHEATED", "NEUTRAL", True)
+    assert heat[4] == 20
+
+
+def test_ai_judgment_aggregation_prefers_risk_then_lowest_asset_id() -> None:
+    pairs = {
+        20: (
+            _signal_snapshot(
+                asset_id=20,
+                snapshot_date=date(2026, 7, 20),
+                signal_type=SignalType.RISK_ALERT.value,
+            ),
+            _signal_snapshot(
+                asset_id=20,
+                snapshot_date=date(2026, 7, 19),
+                signal_type=SignalType.WATCH.value,
+            ),
+        ),
+        10: (
+            _signal_snapshot(
+                asset_id=10,
+                snapshot_date=date(2026, 7, 20),
+                signal_type=SignalType.THESIS_BROKEN.value,
+            ),
+            _signal_snapshot(
+                asset_id=10,
+                snapshot_date=date(2026, 7, 19),
+                signal_type=SignalType.BUY_CANDIDATE.value,
+            ),
+        ),
+        5: (
+            _signal_snapshot(
+                asset_id=5,
+                snapshot_date=date(2026, 7, 20),
+                signal_type=SignalType.WATCH.value,
+            ),
+            _signal_snapshot(
+                asset_id=5,
+                snapshot_date=date(2026, 7, 19),
+                signal_type=None,
+            ),
+        ),
+    }
+
+    current, previous, has_previous, evidence, asset_id = _aggregate_derived_metric(
         AlertMetric.AI_JUDGMENT_CHANGED,
-    ):
-        operator = "CHANGED" if metric is AlertMetric.AI_JUDGMENT_CHANGED else "EQ"
-        value = None if operator == "CHANGED" else "HIGH"
-        rule = _rule(
-            condition={"metric": metric.value, "operator": operator, "value": value}
-        )
-        snapshot = provider.get_snapshot(rule, as_of=datetime.now(UTC))
+        pairs,
+    )
 
-        assert snapshot.values == {}
-        assert snapshot.unsupported_metrics == frozenset({metric})
+    assert (current, previous, has_previous, asset_id) == (
+        "RISK_INCREASING",
+        "WATCH",
+        True,
+        10,
+    )
+    assert evidence == [
+        {
+            "kind": "SIGNAL_SNAPSHOT",
+            "asset_id": 10,
+            "snapshot_date": "2026-07-20",
+            "signal_id": None,
+            "score": None,
+            "signal_type": "THESIS_BROKEN",
+            "derived_metric": "AI_JUDGMENT_CHANGED",
+            "derived_value": "RISK_INCREASING",
+        }
+    ]
 
 
-def test_run_cycle_skips_unsupported_metric_without_event(db: Session) -> None:
+def test_ai_judgment_aggregation_keeps_unchanged_history_unmatched() -> None:
+    pairs = {
+        10: (
+            _signal_snapshot(
+                asset_id=10,
+                snapshot_date=date(2026, 7, 20),
+                signal_type=SignalType.RISK_ALERT.value,
+            ),
+            _signal_snapshot(
+                asset_id=10,
+                snapshot_date=date(2026, 7, 19),
+                signal_type=SignalType.THESIS_BROKEN.value,
+            ),
+        ),
+        20: (
+            _signal_snapshot(
+                asset_id=20,
+                snapshot_date=date(2026, 7, 20),
+                signal_type=SignalType.WATCH.value,
+            ),
+            _signal_snapshot(
+                asset_id=20,
+                snapshot_date=date(2026, 7, 19),
+                signal_type=SignalType.SELL_REVIEW.value,
+            ),
+        ),
+    }
+
+    current, previous, has_previous, _, asset_id = _aggregate_derived_metric(
+        AlertMetric.AI_JUDGMENT_CHANGED,
+        pairs,
+    )
+
+    assert (current, previous, has_previous, asset_id) == (
+        "RISK_INCREASING",
+        "RISK_INCREASING",
+        True,
+        10,
+    )
+
+
+def test_provider_sources_derived_metrics_for_all_supported_targets(
+    db: Session,
+) -> None:
+    as_of = datetime(2026, 7, 20, 3, 0, tzinfo=UTC)
+    db.add(User(id=1, email="derived@example.com", hashed_password="hash"))
+    db.add_all(
+        [
+            Asset(id=10, symbol="AAPL", name="Apple", market="NASDAQ"),
+            Asset(id=20, symbol="MSFT", name="Microsoft", market="NASDAQ"),
+            Asset(id=30, symbol="NVDA", name="Nvidia", market="NASDAQ"),
+            Watchlist(id=7, user_id=1, name="Growth"),
+            Watchlist(id=8, user_id=1, name="No snapshots"),
+            Portfolio(
+                id=9,
+                user_id=1,
+                name="Main",
+                concentration_threshold=Decimal("0.4"),
+                cash_balance=Decimal("0"),
+            ),
+        ]
+    )
+    db.flush()
+    db.add_all(
+        [
+            WatchlistItem(watchlist_id=7, asset_id=10, priority=0, tags=[]),
+            WatchlistItem(watchlist_id=7, asset_id=20, priority=1, tags=[]),
+            WatchlistItem(watchlist_id=8, asset_id=30, priority=0, tags=[]),
+            Position(
+                portfolio_id=9,
+                asset_id=10,
+                quantity=Decimal("1"),
+                avg_buy_price=Decimal("100"),
+            ),
+            Position(
+                portfolio_id=9,
+                asset_id=30,
+                quantity=Decimal("1"),
+                avg_buy_price=Decimal("100"),
+            ),
+            _signal_snapshot(
+                asset_id=10,
+                snapshot_date=date(2026, 7, 19),
+                signal_type=SignalType.WATCH.value,
+            ),
+            _signal_snapshot(
+                asset_id=10,
+                snapshot_date=date(2026, 7, 20),
+                signal_type=SignalType.RISK_ALERT.value,
+            ),
+            _signal_snapshot(
+                asset_id=20,
+                snapshot_date=date(2026, 7, 20),
+                signal_type=SignalType.OVERHEATED.value,
+            ),
+        ]
+    )
+    db.commit()
+    provider = MetricSnapshotProvider(db)
+    evaluator = AlertEvaluator()
+
+    symbol_rule = _rule(
+        condition={"metric": "NEWS_RISK", "operator": "GTE", "value": "HIGH"}
+    )
+    symbol = provider.get_snapshot(symbol_rule, as_of=as_of)
+    assert symbol.values[AlertMetric.NEWS_RISK] == "HIGH"
+    assert symbol.previous_values[AlertMetric.NEWS_RISK] == "MEDIUM"
+    assert symbol.asset_id == 10
+    assert evaluator.evaluate_rule(symbol_rule, symbol).matched is True
+
+    watchlist_rule = _rule(
+        condition={
+            "metric": "AI_JUDGMENT_CHANGED",
+            "operator": "CHANGED",
+            "value": None,
+        }
+    )
+    watchlist_rule.target_type = "WATCHLIST"
+    watchlist_rule.target_id = "7"
+    watchlist = provider.get_snapshot(watchlist_rule, as_of=as_of)
+    assert watchlist.values[AlertMetric.AI_JUDGMENT_CHANGED] == "RISK_INCREASING"
+    assert watchlist.previous_values[AlertMetric.AI_JUDGMENT_CHANGED] == "WATCH"
+    assert watchlist.asset_id == 10
+    assert evaluator.evaluate_rule(watchlist_rule, watchlist).matched is True
+
+    portfolio_rule = _rule(
+        condition={"metric": "NEWS_RISK", "operator": "GTE", "value": "HIGH"}
+    )
+    portfolio_rule.target_type = "PORTFOLIO"
+    portfolio_rule.target_id = "9"
+    portfolio = provider.get_snapshot(portfolio_rule, as_of=as_of)
+    assert portfolio.values[AlertMetric.NEWS_RISK] == "HIGH"
+    assert portfolio.asset_id == 10
+    assert evaluator.evaluate_rule(portfolio_rule, portfolio).matched is True
+
+    default_rule = _rule(
+        condition={
+            "all": [
+                {"metric": "NEWS_RISK", "operator": "GTE", "value": "HIGH"},
+                {
+                    "metric": "THEME_HEAT",
+                    "operator": "GTE",
+                    "value": "OVERHEATED",
+                },
+                {
+                    "metric": "AI_JUDGMENT_CHANGED",
+                    "operator": "CHANGED",
+                    "value": None,
+                },
+            ]
+        }
+    )
+    default_rule.target_type = "WATCHLIST"
+    default_rule.target_id = "8"
+    default = provider.get_snapshot(default_rule, as_of=as_of)
+    assert default.values[AlertMetric.NEWS_RISK] == "LOW"
+    assert default.values[AlertMetric.THEME_HEAT] == "NEUTRAL"
+    assert default.values[AlertMetric.AI_JUDGMENT_CHANGED] == "STABLE"
+    assert default.previous_values == {}
+    assert default.asset_id == 30
+    assert default.evidence[AlertMetric.NEWS_RISK][0]["kind"] == "SIGNAL_SNAPSHOT"
+    assert default.evidence[AlertMetric.NEWS_RISK][0]["derived_value"] == "LOW"
+    assert evaluator.evaluate_rule(default_rule, default).matched is False
+
+
+def test_run_cycle_skips_topic_impact_score_as_unsupported(db: Session) -> None:
     db.add(User(id=1, email="unsupported@example.com", hashed_password="hash"))
     db.add(
         _rule(
-            condition={"metric": "NEWS_RISK", "operator": "GTE", "value": "HIGH"}
+            condition={
+                "metric": "TOPIC_IMPACT_SCORE",
+                "operator": "GTE",
+                "value": 80,
+            }
         )
     )
     db.commit()

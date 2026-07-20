@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -10,23 +11,182 @@ from app.domains.alert_rules.types import AlertMetric, AlertTargetType
 from app.domains.assets.model import Asset
 from app.domains.assets.repository import AssetRepository
 from app.domains.earnings.repository import EarningsRepository
-from app.domains.portfolios.repository import PortfolioRepository
+from app.domains.portfolios.repository import PortfolioRepository, PositionRepository
 from app.domains.portfolios.service import PortfolioService
 from app.domains.prices.repository import PriceBarRepository
 from app.domains.signals.repository import SignalSnapshotRepository
+from app.domains.signals.snapshot_model import AssetSignalSnapshot
+from app.domains.signals.types import SignalType
 from app.domains.watchlists.repository import (
     WatchlistItemRepository,
     WatchlistRepository,
 )
+from app.domains.watchlists.types import AiJudgment, NewsRisk, ThemeHeat
 
-UNSUPPORTED_METRICS = frozenset(
+UNSUPPORTED_METRICS = frozenset({AlertMetric.TOPIC_IMPACT_SCORE})
+
+_DERIVED_METRICS = frozenset(
     {
         AlertMetric.NEWS_RISK,
         AlertMetric.THEME_HEAT,
         AlertMetric.AI_JUDGMENT_CHANGED,
-        AlertMetric.TOPIC_IMPACT_SCORE,
     }
 )
+_DERIVED_VALUE_ORDER = {
+    AlertMetric.NEWS_RISK: {
+        NewsRisk.LOW.value: 0,
+        NewsRisk.MEDIUM.value: 1,
+        NewsRisk.HIGH.value: 2,
+    },
+    AlertMetric.THEME_HEAT: {
+        ThemeHeat.COLD.value: 0,
+        ThemeHeat.NEUTRAL.value: 1,
+        ThemeHeat.OVERHEATED.value: 2,
+    },
+    AlertMetric.AI_JUDGMENT_CHANGED: {
+        AiJudgment.STABLE.value: 0,
+        AiJudgment.WATCH.value: 1,
+        AiJudgment.RISK_INCREASING.value: 2,
+    },
+}
+
+_SignalPair = tuple[AssetSignalSnapshot | None, AssetSignalSnapshot | None]
+_MetricReading = tuple[
+    MetricValue,
+    MetricValue,
+    bool,
+    list[dict[str, Any]],
+    int | None,
+]
+
+
+def _derive_signal_metrics(signal_type: str | None) -> dict[AlertMetric, str]:
+    news_risk = NewsRisk.LOW.value
+    theme_heat = ThemeHeat.NEUTRAL.value
+    ai_judgment = AiJudgment.STABLE.value
+
+    if signal_type in {
+        SignalType.RISK_ALERT.value,
+        SignalType.THESIS_BROKEN.value,
+    }:
+        news_risk = NewsRisk.HIGH.value
+        ai_judgment = AiJudgment.RISK_INCREASING.value
+    elif signal_type in {
+        SignalType.WATCH.value,
+        SignalType.SELL_REVIEW.value,
+    }:
+        news_risk = NewsRisk.MEDIUM.value
+        ai_judgment = AiJudgment.WATCH.value
+    elif signal_type == SignalType.OVERHEATED.value:
+        news_risk = NewsRisk.MEDIUM.value
+        theme_heat = ThemeHeat.OVERHEATED.value
+        ai_judgment = AiJudgment.WATCH.value
+    elif signal_type == SignalType.BUY_CANDIDATE.value:
+        ai_judgment = AiJudgment.WATCH.value
+
+    return {
+        AlertMetric.NEWS_RISK: news_risk,
+        AlertMetric.THEME_HEAT: theme_heat,
+        AlertMetric.AI_JUDGMENT_CHANGED: ai_judgment,
+    }
+
+
+def _signal_snapshot_evidence(
+    *,
+    asset_id: int,
+    snapshot: AssetSignalSnapshot | None,
+    metric: AlertMetric,
+    value: str,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "kind": "SIGNAL_SNAPSHOT",
+            "asset_id": asset_id,
+            "snapshot_date": (
+                snapshot.snapshot_date.isoformat() if snapshot is not None else None
+            ),
+            "signal_id": snapshot.signal_id if snapshot is not None else None,
+            "score": snapshot.score if snapshot is not None else None,
+            "signal_type": snapshot.signal_type if snapshot is not None else None,
+            "derived_metric": metric.value,
+            "derived_value": value,
+        }
+    ]
+
+
+def _aggregate_derived_metric(
+    metric: AlertMetric,
+    pairs: Mapping[int, _SignalPair],
+) -> _MetricReading:
+    states = [
+        (
+            asset_id,
+            latest,
+            previous,
+            _derive_signal_metrics(latest.signal_type if latest is not None else None),
+            _derive_signal_metrics(
+                previous.signal_type if previous is not None else None
+            ),
+        )
+        for asset_id, (latest, previous) in sorted(pairs.items())
+    ]
+
+    if metric == AlertMetric.AI_JUDGMENT_CHANGED:
+        transitions = [
+            state
+            for state in states
+            if state[2] is not None and state[3][metric] != state[4][metric]
+        ]
+        if transitions:
+            selected = min(
+                transitions,
+                key=lambda state: (
+                    state[3][metric] != AiJudgment.RISK_INCREASING.value,
+                    state[0],
+                ),
+            )
+        else:
+            selected = max(
+                states,
+                key=lambda state: (_DERIVED_VALUE_ORDER[metric][state[3][metric]], -state[0]),
+            )
+        asset_id, latest, previous, current_values, previous_values = selected
+        current = current_values[metric]
+        return (
+            current,
+            previous_values[metric],
+            previous is not None,
+            _signal_snapshot_evidence(
+                asset_id=asset_id,
+                snapshot=latest,
+                metric=metric,
+                value=current,
+            ),
+            asset_id,
+        )
+
+    selected = max(
+        states,
+        key=lambda state: (_DERIVED_VALUE_ORDER[metric][state[3][metric]], -state[0]),
+    )
+    asset_id, latest, _, current_values, _ = selected
+    current = current_values[metric]
+    previous_value = max(
+        (state[4][metric] for state in states),
+        key=_DERIVED_VALUE_ORDER[metric].__getitem__,
+    )
+    return (
+        current,
+        previous_value,
+        any(state[2] is not None for state in states),
+        _signal_snapshot_evidence(
+            asset_id=asset_id,
+            snapshot=latest,
+            metric=metric,
+            value=current,
+        ),
+        asset_id,
+    )
 
 
 class MetricSnapshotProvider:
@@ -34,6 +194,7 @@ class MetricSnapshotProvider:
         self.asset_repo = AssetRepository(db)
         self.earnings_repo = EarningsRepository(db)
         self.portfolio_repo = PortfolioRepository(db)
+        self.position_repo = PositionRepository(db)
         self.portfolio_service = PortfolioService(db)
         self.price_repo = PriceBarRepository(db)
         self.signal_snapshot_repo = SignalSnapshotRepository(db)
@@ -83,13 +244,9 @@ class MetricSnapshotProvider:
         rule: AlertRule,
         metric: AlertMetric,
         as_of: datetime,
-    ) -> tuple[
-        MetricValue,
-        MetricValue,
-        bool,
-        list[dict[str, Any]],
-        int | None,
-    ] | None:
+    ) -> _MetricReading | None:
+        if metric in _DERIVED_METRICS:
+            return self._derived_signal_metric(rule, metric)
         if metric == AlertMetric.PRICE_CHANGE_1D:
             return self._price_change(rule)
         if metric == AlertMetric.SIGNAL_CHANGED:
@@ -99,6 +256,47 @@ class MetricSnapshotProvider:
         if metric == AlertMetric.EARNINGS_DATE:
             return self._earnings_date(rule, as_of.date())
         return None
+
+    def _derived_signal_metric(
+        self,
+        rule: AlertRule,
+        metric: AlertMetric,
+    ) -> _MetricReading | None:
+        asset_ids = self._target_asset_ids(rule)
+        if not asset_ids:
+            return None
+        pairs = self.signal_snapshot_repo.latest_pair_by_asset(asset_ids)
+        return _aggregate_derived_metric(metric, pairs)
+
+    def _target_asset_ids(self, rule: AlertRule) -> list[int] | None:
+        if rule.target_type == AlertTargetType.SYMBOL.value:
+            asset = self._symbol_asset(rule)
+            return [asset.id] if asset is not None else None
+        if rule.target_id is None:
+            return None
+        try:
+            target_id = int(rule.target_id)
+        except ValueError:
+            return None
+        if rule.target_type == AlertTargetType.WATCHLIST.value:
+            watchlist = self.watchlist_repo.get_by_id(target_id)
+            if watchlist is None or watchlist.user_id != rule.user_id:
+                return None
+            asset_ids = [
+                item.asset_id
+                for item in self.watchlist_item_repo.list_by_watchlist(watchlist.id)
+            ]
+        elif rule.target_type == AlertTargetType.PORTFOLIO.value:
+            portfolio = self.portfolio_repo.get_by_id(target_id)
+            if portfolio is None or portfolio.user_id != rule.user_id:
+                return None
+            asset_ids = [
+                position.asset_id
+                for position in self.position_repo.list_by_portfolio(portfolio.id)
+            ]
+        else:
+            return None
+        return sorted(set(asset_ids)) or None
 
     def _symbol_asset(self, rule: AlertRule) -> Asset | None:
         if rule.target_type != AlertTargetType.SYMBOL.value or rule.target_id is None:
