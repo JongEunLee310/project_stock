@@ -19,7 +19,8 @@ This directory stores Architecture Decision Records.
 - `ADR-010-llm-fallback-and-escalation-policy.md` (Phase 2, deferred)
 - `ADR-011-llm-cache-policy.md` (Phase 2, deferred)
 - `ADR-012-llm-output-validation.md` (Phase 2, deferred)
-- `ADR-013-signal-alert-decision-log-screen-boundaries.md` (Proposed)
+- `ADR-013-signal-alert-decision-log-screen-boundaries.md` (Proposed, §2 amended by ADR-014)
+- `ADR-014-settings-consolidation-and-alerts-split.md` (Proposed)
 
 ## Writing Rules
 
