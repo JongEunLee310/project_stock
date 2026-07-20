@@ -179,22 +179,26 @@ Evaluator/Delivery 워커 분리는 2차.
 흐름(스켈레톤):
 
 1. 스케줄러 주기 작업이 `enabled=true` 규칙을 대상 유형별로 조회한다.
-2. 대상별 현재 지표 스냅샷을 수집한다(기존 `signals`·`watchlists.trend_service`·`prices`·
-   `portfolios`·`earnings` 재사용). 신규 수집 파이프라인은 만들지 않는다.
-   대상을 확정하지 못하면 `NO_TARGET`, 대상은 있으나 계산할 데이터가 없으면 `NO_DATA`로
-   구분한다. 다자산 지표는 일부 자산에만 스냅샷이 있으면 나머지를 집계 대상에서 제외한다.
-3. 조건 평가기가 `condition`을 스냅샷에 적용한다.
-4. 충족 시 중복·cooldown·state-transition 검사(§6)를 통과한 건만 `AlertEvent` 생성.
+2. 규칙의 대상 자산 목록을 확정하고 자산별 지표 스냅샷을 수집한다(기존 `signals`·
+   `watchlists.trend_service`·`prices`·`portfolios`·`earnings` 재사용). 신규 수집 파이프라인은
+   만들지 않는다. 대상을 확정하지 못하면 `NO_TARGET`, 대상은 있으나 계산할 데이터가 없으면
+   `NO_DATA`로 구분한다. ADR-015에 따라 여러 자산의 지표를 하나로 합치지 않는다.
+3. 조건 평가기가 `condition`을 자산별 스냅샷에 각각 적용한다.
+4. 충족한 자산마다 중복·cooldown·state-transition 검사(§6)를 통과한 건만 `AlertEvent` 생성.
+   이벤트는 (규칙 × 자산) 단위이며 `asset_id`로 어느 종목인지 가리킨다.
 5. 규칙 `channels`에 대해 `AlertDelivery` 생성. MVP는 `APP`을 즉시 `SUCCESS`로 기록.
 6. 규칙 `last_triggered_at` 갱신.
 
 함수 스켈레톤(시그니처 · 책임만):
 
-- `AlertEvaluator.evaluate_rule(rule, snapshot) -> AlertEvaluationResult` — 단일 규칙을
-  스냅샷에 대해 평가, 충족 여부·triggered_value·evidence 반환.
-- `AlertEngineService.run_cycle() -> AlertCycleSummary` — 활성 규칙 순회·평가·이벤트/전달
-  생성 오케스트레이션. 스케줄러 job에서 호출.
-- `AlertDedupService.should_emit(rule, result) -> bool` — dedup_key·cooldown·전이 검사.
+- `MetricSnapshotProvider.get_snapshots(rule, as_of) -> list[MetricSnapshot]` — 대상 자산을
+  확정하고 자산별 스냅샷을 반환. 각 스냅샷은 자신이 어느 자산의 것인지 담는다.
+- `AlertEvaluator.evaluate_rule(rule, snapshot) -> AlertEvaluationResult` — 단일 규칙을 단일
+  자산 스냅샷에 대해 평가, 충족 여부·triggered_value·evidence 반환.
+- `AlertEngineService.run_cycle() -> AlertCycleSummary` — 활성 규칙 순회, 규칙마다 자산별
+  평가·이벤트/전달 생성 오케스트레이션. 스케줄러 job에서 호출.
+- `AlertDedupService.should_emit(rule, result, asset_id) -> bool` — (규칙 × 자산) 단위의
+  dedup_key·cooldown·전이 검사.
 
 **경계**: 엔진은 시그널을 생성하지 않는다. 이미 존재하는 지표·시그널의 변화만 감시한다
 (ADR-013 §15).
@@ -203,14 +207,17 @@ Evaluator/Delivery 워커 분리는 2차.
 
 ## 6. 중복 방지
 
-세 가지를 조합한다.
+세 가지를 조합한다. ADR-015에 따라 판정 단위는 (규칙 × 자산)이다.
 
-- **dedup_key**: `rule_id` + `target_id` + `event_fingerprint`(조건 충족 상태의 해시).
-  `alert_events`의 `UniqueConstraint(user_id, dedup_key)`로 물리 차단.
-- **cooldown**: 규칙 `cooldown_seconds` 내 동일 규칙 재발송 금지.
+- **dedup_key**: `rule_id` + `target_id` + `asset_id` + `event_fingerprint`(조건 충족 상태의
+  해시). `alert_events`의 `UniqueConstraint(user_id, dedup_key)`로 물리 차단.
+- **cooldown**: 규칙 `cooldown_seconds` 내 동일 규칙·동일 자산 재발송 금지. 판정 근거는
+  `alert_events`에서 조회한 (규칙, 자산)의 최근 발생 시각이다. `alert_rules.last_triggered_at`은
+  규칙이 마지막으로 발동한 시각을 보여주는 표시용으로만 남는다.
 - **state-transition**: `delivery_policy=ONCE_PER_TRANSITION`이면 상태가 실제로 전이될 때만
-  발생(예: Medium→High). High 유지 중 재발생 금지. High→Critical 상승은 새 이벤트.
-  `ONCE_PER_DAY`이면 대상·규칙당 하루 1회로 제한.
+  발생(예: Medium→High). High 유지 중 재발생 금지. High→Critical 상승은 새 이벤트. 전이는
+  자산별 이전·현재 스냅샷으로 판정하며 다른 자산의 상태는 영향을 주지 않는다.
+  `ONCE_PER_DAY`이면 자산·규칙당 하루 1회로 제한한다.
 
 ---
 
