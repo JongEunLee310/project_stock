@@ -19,6 +19,18 @@ DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
         "reason": "Mock conflict analysis is neutral.",
         "invalidation_triggered": False,
     },
+    "DecisionAssistResult": {
+        "structured_thesis": "Mock structured thesis.",
+        "structured_rationale": "Mock structured rationale.",
+        "counter_arguments": ["Mock counter argument."],
+        "risk_candidates": [
+            {"type": "VALUATION", "reason": "Mock risk candidate."}
+        ],
+        "bias_candidates": [{"type": "FOMO", "reason": "Mock bias candidate."}],
+        "vague_flags": [
+            {"quote": "Mock vague phrase", "suggestion": "Add a measurable basis."}
+        ],
+    },
     "BriefingResult": {
         "headline": "Mock briefing headline.",
         "body": "Mock briefing body.",

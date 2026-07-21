@@ -24,6 +24,7 @@ def test_llm_task_type_values_match_contract() -> None:
         "WATCHLIST_EVALUATION": "WATCHLIST_EVALUATION",
         "STOCK_RECOMMENDATION": "STOCK_RECOMMENDATION",
         "RESEARCH_SUMMARY": "RESEARCH_SUMMARY",
+        "DECISION_ASSIST": "DECISION_ASSIST",
         "TAG_SENTIMENT": "TAG_SENTIMENT",
         "AGENT": "AGENT",
     }

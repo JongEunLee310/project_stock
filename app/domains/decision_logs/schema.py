@@ -21,6 +21,42 @@ class DecisionTarget(BaseModel):
     label: str | None = None
 
 
+class DecisionAssistTarget(BaseModel):
+    type: TargetType
+    id: str = Field(min_length=1, max_length=64)
+
+
+class DecisionAssistRequest(BaseModel):
+    target: DecisionAssistTarget
+    decision_type: DecisionType | None = None
+    thesis: str | None = None
+    rationale: str | None = None
+    memo: str | None = None
+
+
+class DecisionAssistCheckCandidate(BaseModel):
+    type: str
+    reason: str
+
+
+class DecisionAssistVagueFlag(BaseModel):
+    quote: str
+    suggestion: str
+
+
+class DecisionAssistResult(BaseModel):
+    structured_thesis: str | None = None
+    structured_rationale: str | None = None
+    counter_arguments: list[str] = Field(default_factory=list)
+    risk_candidates: list[DecisionAssistCheckCandidate] = Field(default_factory=list)
+    bias_candidates: list[DecisionAssistCheckCandidate] = Field(default_factory=list)
+    vague_flags: list[DecisionAssistVagueFlag] = Field(default_factory=list)
+
+
+class DecisionAssistResponse(DecisionAssistResult):
+    pass
+
+
 class DecisionEvidenceInput(BaseModel):
     type: str = Field(min_length=1, max_length=30)
     id: str | None = Field(default=None, max_length=64)

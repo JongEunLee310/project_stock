@@ -50,6 +50,17 @@ class ThesisConflictSnapshot(CloudSafePayload):
     news_negative_factors: list[str]
 
 
+class DecisionAssistSnapshot(CloudSafePayload):
+    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
+
+    target_type: str
+    symbol: str | None
+    decision_type: str | None
+    thesis: str | None
+    rationale: str | None
+    memo: str | None
+
+
 class PortfolioConcentrationSnapshot(CloudSafePayload):
     sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
 
