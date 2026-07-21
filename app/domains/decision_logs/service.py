@@ -27,8 +27,6 @@ class DecisionLogService:
         user_id: int,
         data: DecisionLogCreate,
     ) -> DecisionLogResponse:
-        if data.decided_at is None:
-            data = data.model_copy(update={"decided_at": self._now()})
         decision_log = self.repo.create(user_id=user_id, data=data)
         return DecisionLogResponse.model_validate(decision_log)
 
@@ -112,10 +110,10 @@ class DecisionLogService:
         data: DecisionLogUpdate,
     ) -> DecisionLogUpdate:
         values = data.model_dump(exclude_unset=True)
-        if data.decision_status == DecisionStatus.REVIEWED:
+        if data.status == DecisionStatus.REVIEWED:
             if "reviewed_at" not in values and decision_log.reviewed_at is None:
                 values["reviewed_at"] = self._now()
-        if data.decision_status == DecisionStatus.CLOSED:
+        if data.status == DecisionStatus.CLOSED:
             if "closed_at" not in values and decision_log.closed_at is None:
                 values["closed_at"] = self._now()
         if not values:

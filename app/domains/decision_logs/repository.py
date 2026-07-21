@@ -62,8 +62,11 @@ class DecisionLogRepository:
 
     def create(self, user_id: int, data: DecisionLogCreate) -> DecisionLog:
         values = data.model_dump()
+        values["target_type"] = data.target_type.value
         values["decision_type"] = data.decision_type.value
-        values["decision_status"] = data.decision_status.value
+        values["status"] = data.status.value
+        if data.confidence_level is not None:
+            values["confidence_level"] = data.confidence_level.value
         values["created_by"] = data.created_by.value
         decision_log = DecisionLog(user_id=user_id, **values)
         self.db.add(decision_log)
@@ -73,7 +76,13 @@ class DecisionLogRepository:
 
     def update(self, decision_log: DecisionLog, data: DecisionLogUpdate) -> DecisionLog:
         values = data.model_dump(exclude_unset=True)
-        for enum_field in ("decision_type", "decision_status", "created_by"):
+        for enum_field in (
+            "target_type",
+            "decision_type",
+            "status",
+            "confidence_level",
+            "created_by",
+        ):
             if isinstance(values.get(enum_field), Enum):
                 values[enum_field] = values[enum_field].value
         for field, value in values.items():

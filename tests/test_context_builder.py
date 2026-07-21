@@ -302,9 +302,11 @@ def _create_decision_log(
 ) -> DecisionLog:
     decision_log = DecisionLog(
         user_id=user_id,
-        ticker=ticker,
+        target_type="SYMBOL",
+        target_id=ticker,
+        symbol=ticker,
         decision_type="WATCH",
-        reason=reason,
+        rationale=reason,
         created_by="USER",
         decided_at=datetime(2026, 6, 26, tzinfo=UTC),
     )

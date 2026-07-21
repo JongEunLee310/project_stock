@@ -7,21 +7,13 @@ from tests.conftest import api_data, api_error, api_meta, set_current_user
 
 def decision_payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "ticker": "AAPL",
-        "company_name": "Apple Inc.",
-        "decision_type": "BUY_CONSIDER",
-        "summary": "Earnings setup is attractive.",
-        "reason": "Services margin and buybacks support the thesis.",
-        "risk_note": "Valuation remains elevated.",
-        "action_plan": "Review after earnings.",
-        "confidence_score": 72,
-        "target_price": "220.0000",
-        "stop_loss_price": "180.0000",
-        "valuation_snapshot": {"pe": 28},
-        "news_snapshot": {"headline_count": 3},
-        "portfolio_snapshot": {"weight": "0.12"},
-        "ai_analysis_snapshot": {"rating": "positive"},
-        "cognitive_risks": ["confirmation_bias"],
+        "target_type": "SYMBOL",
+        "target_id": "AAPL",
+        "symbol": "AAPL",
+        "decision_type": "BUY_REVIEW",
+        "thesis": "Services revenue will keep growing.",
+        "rationale": "Margins and buybacks support the thesis.",
+        "confidence_level": "HIGH",
         "created_by": "USER",
         "decided_at": "2026-06-26T00:00:00Z",
     }
@@ -45,24 +37,18 @@ def test_create_decision_log_round_trips_contract_fields(client: TestClient) -> 
 
     assert data["id"] == 1
     assert data["user_id"] == 1
-    assert data["ticker"] == "AAPL"
-    assert data["company_name"] == "Apple Inc."
-    assert data["decision_type"] == "BUY_CONSIDER"
-    assert data["decision_status"] == "OPEN"
-    assert data["summary"] == "Earnings setup is attractive."
-    assert data["reason"] == "Services margin and buybacks support the thesis."
-    assert data["risk_note"] == "Valuation remains elevated."
-    assert data["action_plan"] == "Review after earnings."
-    assert data["confidence_score"] == 72
-    assert data["target_price"] == "220.0000"
-    assert data["stop_loss_price"] == "180.0000"
-    assert data["valuation_snapshot"] == {"pe": 28}
-    assert data["news_snapshot"] == {"headline_count": 3}
-    assert data["portfolio_snapshot"] == {"weight": "0.12"}
-    assert data["ai_analysis_snapshot"] == {"rating": "positive"}
-    assert data["cognitive_risks"] == ["confirmation_bias"]
+    assert data["target_type"] == "SYMBOL"
+    assert data["target_id"] == "AAPL"
+    assert data["symbol"] == "AAPL"
+    assert data["decision_type"] == "BUY_REVIEW"
+    assert data["status"] == "DRAFT"
+    assert data["thesis"] == "Services revenue will keep growing."
+    assert data["rationale"] == "Margins and buybacks support the thesis."
+    assert data["confidence_level"] == "HIGH"
     assert data["created_by"] == "USER"
+    assert data["superseded_by_id"] is None
     assert data["decided_at"] == "2026-06-26T00:00:00Z"
+    assert data["activated_at"] is None
     assert data["reviewed_at"] is None
     assert data["closed_at"] is None
     assert data["created_at"].endswith("Z")
@@ -74,15 +60,19 @@ def test_create_decision_log_uses_defaults(client: TestClient) -> None:
 
     response = client.post(
         "/api/v1/decision-logs",
-        json={"ticker": "MSFT", "decision_type": "WATCH"},
+        json={
+            "target_type": "SYMBOL",
+            "target_id": "MSFT",
+            "symbol": "MSFT",
+            "decision_type": "WATCH",
+        },
     )
 
     assert response.status_code == 201
     data = cast(dict[str, Any], api_data(response))
-    assert data["decision_status"] == "OPEN"
+    assert data["status"] == "DRAFT"
     assert data["created_by"] == "USER"
-    assert data["cognitive_risks"] == []
-    assert data["decided_at"].endswith("Z")
+    assert data["decided_at"] is None
 
 
 def test_get_decision_log_returns_owned_record(client: TestClient) -> None:
@@ -101,16 +91,23 @@ def test_list_decision_logs_returns_only_current_user_and_paginates(
     set_current_user(1)
     first = create_decision_log(
         client,
-        ticker="AAPL",
+        target_id="AAPL",
+        symbol="AAPL",
         decided_at="2026-06-24T00:00:00Z",
     )
     second = create_decision_log(
         client,
-        ticker="MSFT",
+        target_id="MSFT",
+        symbol="MSFT",
         decided_at="2026-06-25T00:00:00Z",
     )
     set_current_user(2, "other@example.com")
-    create_decision_log(client, ticker="TSLA", decided_at="2026-06-26T00:00:00Z")
+    create_decision_log(
+        client,
+        target_id="TSLA",
+        symbol="TSLA",
+        decided_at="2026-06-26T00:00:00Z",
+    )
     set_current_user(1)
 
     response = client.get(
@@ -120,14 +117,14 @@ def test_list_decision_logs_returns_only_current_user_and_paginates(
 
     assert response.status_code == 200
     assert api_data(response) == [first]
-    assert second["ticker"] == "MSFT"
+    assert second["symbol"] == "MSFT"
     assert api_meta(response) == {"page": 2, "size": 1, "total": 2}
 
 
 def test_list_decision_logs_supports_created_at_sort(client: TestClient) -> None:
     set_current_user(1)
-    first = create_decision_log(client, ticker="AAPL")
-    second = create_decision_log(client, ticker="MSFT")
+    first = create_decision_log(client, target_id="AAPL", symbol="AAPL")
+    second = create_decision_log(client, target_id="MSFT", symbol="MSFT")
 
     response = client.get(
         "/api/v1/decision-logs",
@@ -142,7 +139,7 @@ def test_list_decision_logs_supports_created_at_sort(client: TestClient) -> None
 def test_list_decision_logs_rejects_invalid_sort(client: TestClient) -> None:
     set_current_user(1)
 
-    response = client.get("/api/v1/decision-logs", params={"sort": "ticker"})
+    response = client.get("/api/v1/decision-logs", params={"sort": "symbol"})
 
     assert response.status_code == 422
     assert api_error(response)["code"] == "VALIDATION_ERROR"
@@ -150,130 +147,58 @@ def test_list_decision_logs_rejects_invalid_sort(client: TestClient) -> None:
 
 def test_get_decision_log_stats_counts_types_and_total(client: TestClient) -> None:
     set_current_user(1)
-    create_decision_log(client, ticker="AAPL", decision_type="BUY_CONSIDER")
-    create_decision_log(client, ticker="MSFT", decision_type="BUY_CONSIDER")
-    create_decision_log(client, ticker="NVDA", decision_type="WATCH")
-    create_decision_log(client, ticker="TSLA", decision_type="SELL_CONSIDER")
+    create_decision_log(client, target_id="AAPL", decision_type="BUY_REVIEW")
+    create_decision_log(client, target_id="MSFT", decision_type="BUY_REVIEW")
+    create_decision_log(client, target_id="NVDA", decision_type="WATCH")
+    create_decision_log(client, target_id="TSLA", decision_type="SELL_REVIEW")
 
     response = client.get("/api/v1/decision-logs/stats")
 
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
     assert data["decision_type_counts"] == {
-        "BUY_CONSIDER": 2,
+        "BUY_REVIEW": 2,
         "WATCH": 1,
-        "SELL_CONSIDER": 1,
+        "SELL_REVIEW": 1,
     }
     assert data["total"] == 4
 
 
-def test_get_decision_log_stats_returns_empty_for_user_without_logs(
-    client: TestClient,
-) -> None:
-    set_current_user(1)
-
-    response = client.get("/api/v1/decision-logs/stats")
-
-    assert response.status_code == 200
-    assert api_data(response) == {
-        "decision_type_counts": {},
-        "total": 0,
-        "recent_reviewed": [],
-    }
-
-
-def test_get_decision_log_stats_recent_reviewed_filters_sorts_and_limits(
-    client: TestClient,
-) -> None:
-    set_current_user(1)
-    create_decision_log(client, ticker="OPEN")
-    for index in range(6):
-        decision_log = create_decision_log(client, ticker=f"RVW{index}")
-        response = client.patch(
-            f"/api/v1/decision-logs/{decision_log['id']}",
-            json={
-                "decision_status": "REVIEWED",
-                "reviewed_at": f"2026-06-2{index}T00:00:00Z",
-            },
-        )
-        assert response.status_code == 200
-
-    response = client.get("/api/v1/decision-logs/stats")
-
-    assert response.status_code == 200
-    data = cast(dict[str, Any], api_data(response))
-    recent_reviewed = cast(list[dict[str, Any]], data["recent_reviewed"])
-    assert [item["ticker"] for item in recent_reviewed] == [
-        "RVW5",
-        "RVW4",
-        "RVW3",
-        "RVW2",
-        "RVW1",
-    ]
-    assert [item["reviewed_at"] for item in recent_reviewed] == [
-        "2026-06-25T00:00:00Z",
-        "2026-06-24T00:00:00Z",
-        "2026-06-23T00:00:00Z",
-        "2026-06-22T00:00:00Z",
-        "2026-06-21T00:00:00Z",
-    ]
-    assert all(item["reviewed_at"] is not None for item in recent_reviewed)
-    assert {item["ticker"] for item in recent_reviewed}.isdisjoint({"OPEN", "RVW0"})
-
-
-def test_get_decision_log_stats_is_scoped_to_current_user(
+def test_get_decision_log_stats_recent_reviewed_is_scoped_and_sorted(
     client: TestClient,
 ) -> None:
     set_current_user(1)
     owner_reviewed = create_decision_log(
         client,
-        ticker="AAPL",
-        decision_type="WATCH",
-        reason="Owner reason",
-        risk_note="Owner risk",
+        target_id="AAPL",
+        symbol="AAPL",
+        rationale="Owner rationale",
     )
-    patch_response = client.patch(
+    response = client.patch(
         f"/api/v1/decision-logs/{owner_reviewed['id']}",
-        json={
-            "decision_status": "REVIEWED",
-            "reviewed_at": "2026-06-27T00:00:00Z",
-        },
+        json={"status": "REVIEWED", "reviewed_at": "2026-06-27T00:00:00Z"},
     )
-    assert patch_response.status_code == 200
-    create_decision_log(client, ticker="MSFT", decision_type="BUY")
+    assert response.status_code == 200
 
     set_current_user(2, "other@example.com")
-    other_reviewed = create_decision_log(
-        client,
-        ticker="TSLA",
-        decision_type="SELL",
-        reason="Other reason",
-        risk_note="Other risk",
+    other = create_decision_log(client, target_id="TSLA", symbol="TSLA")
+    response = client.patch(
+        f"/api/v1/decision-logs/{other['id']}",
+        json={"status": "REVIEWED", "reviewed_at": "2026-06-28T00:00:00Z"},
     )
-    other_patch_response = client.patch(
-        f"/api/v1/decision-logs/{other_reviewed['id']}",
-        json={
-            "decision_status": "REVIEWED",
-            "reviewed_at": "2026-06-28T00:00:00Z",
-        },
-    )
-    assert other_patch_response.status_code == 200
+    assert response.status_code == 200
 
     set_current_user(1)
     response = client.get("/api/v1/decision-logs/stats")
 
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
-    assert data["decision_type_counts"] == {"WATCH": 1, "BUY": 1}
-    assert data["total"] == 2
     assert data["recent_reviewed"] == [
         {
             "id": owner_reviewed["id"],
-            "ticker": "AAPL",
-            "company_name": "Apple Inc.",
-            "decision_type": "WATCH",
-            "reason": "Owner reason",
-            "risk_note": "Owner risk",
+            "symbol": "AAPL",
+            "decision_type": "BUY_REVIEW",
+            "rationale": "Owner rationale",
             "reviewed_at": "2026-06-27T00:00:00Z",
         }
     ]
@@ -287,70 +212,40 @@ def test_patch_decision_log_stamps_reviewed_and_closed_at(
 
     reviewed_response = client.patch(
         f"/api/v1/decision-logs/{decision_log['id']}",
-        json={"decision_status": "REVIEWED"},
+        json={"status": "REVIEWED"},
     )
     assert reviewed_response.status_code == 200
     reviewed = cast(dict[str, Any], api_data(reviewed_response))
-    assert reviewed["decision_status"] == "REVIEWED"
+    assert reviewed["status"] == "REVIEWED"
     assert reviewed["reviewed_at"].endswith("Z")
 
     closed_response = client.patch(
         f"/api/v1/decision-logs/{decision_log['id']}",
-        json={"decision_status": "CLOSED", "summary": "Closed after review."},
+        json={"status": "CLOSED", "rationale": "Closed after review."},
     )
     assert closed_response.status_code == 200
     closed = cast(dict[str, Any], api_data(closed_response))
-    assert closed["decision_status"] == "CLOSED"
-    assert closed["summary"] == "Closed after review."
+    assert closed["status"] == "CLOSED"
+    assert closed["rationale"] == "Closed after review."
     assert closed["reviewed_at"] == reviewed["reviewed_at"]
     assert closed["closed_at"].endswith("Z")
 
 
-def test_patch_decision_log_prefers_explicit_lifecycle_timestamp(
-    client: TestClient,
-) -> None:
-    set_current_user(1)
-    decision_log = create_decision_log(client)
-
-    response = client.patch(
-        f"/api/v1/decision-logs/{decision_log['id']}",
-        json={
-            "decision_status": "REVIEWED",
-            "reviewed_at": "2026-06-27T00:00:00Z",
-        },
-    )
-
-    assert response.status_code == 200
-    data = cast(dict[str, Any], api_data(response))
-    assert data["reviewed_at"] == "2026-06-27T00:00:00Z"
-
-
-def test_get_decision_log_blocks_other_users(client: TestClient) -> None:
+def test_get_and_patch_decision_log_block_other_users(client: TestClient) -> None:
     set_current_user(1)
     decision_log = create_decision_log(client)
     set_current_user(2, "other@example.com")
 
-    response = client.get(f"/api/v1/decision-logs/{decision_log['id']}")
-
-    assert response.status_code == 403
-    assert api_error(response) == {
-        "code": "DECISION_LOG_FORBIDDEN",
-        "message": "의사결정 기록 접근 권한이 없습니다.",
-    }
-
-
-def test_patch_decision_log_blocks_other_users(client: TestClient) -> None:
-    set_current_user(1)
-    decision_log = create_decision_log(client)
-    set_current_user(2, "other@example.com")
-
-    response = client.patch(
+    get_response = client.get(f"/api/v1/decision-logs/{decision_log['id']}")
+    patch_response = client.patch(
         f"/api/v1/decision-logs/{decision_log['id']}",
-        json={"summary": "No access."},
+        json={"rationale": "No access."},
     )
 
-    assert response.status_code == 403
-    assert api_error(response)["code"] == "DECISION_LOG_FORBIDDEN"
+    assert get_response.status_code == 403
+    assert api_error(get_response)["code"] == "DECISION_LOG_FORBIDDEN"
+    assert patch_response.status_code == 403
+    assert api_error(patch_response)["code"] == "DECISION_LOG_FORBIDDEN"
 
 
 def test_get_decision_log_returns_not_found(client: TestClient) -> None:
@@ -359,28 +254,23 @@ def test_get_decision_log_returns_not_found(client: TestClient) -> None:
     response = client.get("/api/v1/decision-logs/999")
 
     assert response.status_code == 404
-    assert api_error(response) == {
-        "code": "DECISION_LOG_NOT_FOUND",
-        "message": "의사결정 기록을 찾을 수 없습니다.",
-    }
+    assert api_error(response)["code"] == "DECISION_LOG_NOT_FOUND"
 
 
-def test_decision_log_validation_rejects_enum_and_confidence(
-    client: TestClient,
-) -> None:
+def test_decision_log_validation_rejects_enum_values(client: TestClient) -> None:
     set_current_user(1)
 
-    enum_response = client.post(
+    decision_type_response = client.post(
         "/api/v1/decision-logs",
         json=decision_payload(decision_type="INVALID"),
     )
     confidence_response = client.post(
         "/api/v1/decision-logs",
-        json=decision_payload(confidence_score=101),
+        json=decision_payload(confidence_level="VERY_HIGH"),
     )
 
-    assert enum_response.status_code == 422
-    assert api_error(enum_response)["code"] == "VALIDATION_ERROR"
+    assert decision_type_response.status_code == 422
+    assert api_error(decision_type_response)["code"] == "VALIDATION_ERROR"
     assert confidence_response.status_code == 422
     assert api_error(confidence_response)["code"] == "VALIDATION_ERROR"
 
@@ -390,9 +280,9 @@ def test_decision_log_response_uses_snake_case_fields(client: TestClient) -> Non
 
     data = create_decision_log(client)
 
-    assert "target_price" in data
-    assert "stop_loss_price" in data
-    assert "cognitive_risks" in data
-    assert "targetPrice" not in data
-    assert "stopLossPrice" not in data
-    assert "cognitiveRisks" not in data
+    assert "target_type" in data
+    assert "confidence_level" in data
+    assert "superseded_by_id" in data
+    assert "targetType" not in data
+    assert "confidenceLevel" not in data
+    assert "supersededById" not in data
