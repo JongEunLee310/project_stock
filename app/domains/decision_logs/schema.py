@@ -280,3 +280,38 @@ class DecisionOverviewResponse(BaseModel):
     active_count: int
     decision_type_distribution: list[DecisionTypeDistributionItem]
     as_of: UtcDatetime
+
+
+class ConfidenceDistributionItem(BaseModel):
+    level: ConfidenceLevel
+    count: int
+    share: float
+
+
+class OutcomeByConfidenceItem(BaseModel):
+    level: ConfidenceLevel
+    thesis_result: ThesisResult
+    count: int
+
+
+class RiskTagFrequencyItem(BaseModel):
+    type: str
+    count: int
+
+
+class ReviewAdherence(BaseModel):
+    reviewed_count: int
+    overdue_count: int
+    adherence_rate: float
+
+
+class DecisionAnalyticsResponse(BaseModel):
+    total_count: int
+    decision_type_distribution: list[DecisionTypeDistributionItem]
+    counter_argument_rate: float
+    confidence_distribution: list[ConfidenceDistributionItem]
+    outcome_by_confidence: list[OutcomeByConfidenceItem]
+    risk_tag_frequency: list[RiskTagFrequencyItem]
+    review_adherence: ReviewAdherence
+    process_quality_averages: dict[str, float]
+    as_of: UtcDatetime

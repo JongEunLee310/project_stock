@@ -11,6 +11,8 @@ from app.domains.decision_logs.repository import (
 )
 from app.domains.decision_logs.schema import (
     DecisionActivateRequest,
+    ConfidenceDistributionItem,
+    DecisionAnalyticsResponse,
     DecisionEvidenceInput,
     DecisionEvidenceResponse,
     DecisionLogCreate,
@@ -26,6 +28,9 @@ from app.domains.decision_logs.schema import (
     DecisionSnapshotResponse,
     DecisionTarget,
     DecisionTypeDistributionItem,
+    OutcomeByConfidenceItem,
+    ReviewAdherence,
+    RiskTagFrequencyItem,
 )
 from app.domains.decision_logs.types import (
     ConfidenceLevel,
@@ -140,6 +145,65 @@ class DecisionLogService:
             review_due_count=overview.review_due_count,
             active_count=overview.active_count,
             decision_type_distribution=distribution,
+            as_of=now,
+        )
+
+    def get_analytics(self, user_id: int) -> DecisionAnalyticsResponse:
+        now = self._now()
+        analytics = self.repo.aggregate_analytics(user_id, now)
+        confidence_total = sum(analytics.confidence_counts.values())
+        adherence_total = analytics.reviewed_count + analytics.overdue_count
+        return DecisionAnalyticsResponse(
+            total_count=analytics.total_count,
+            decision_type_distribution=[
+                DecisionTypeDistributionItem(
+                    type=DecisionType(decision_type),
+                    count=count,
+                    share=count / analytics.total_count,
+                )
+                for decision_type, count in analytics.decision_type_counts.items()
+            ]
+            if analytics.total_count
+            else [],
+            counter_argument_rate=(
+                analytics.counter_argument_count / analytics.total_count
+                if analytics.total_count
+                else 0.0
+            ),
+            confidence_distribution=[
+                ConfidenceDistributionItem(
+                    level=ConfidenceLevel(level),
+                    count=count,
+                    share=count / confidence_total,
+                )
+                for level, count in analytics.confidence_counts.items()
+            ]
+            if confidence_total
+            else [],
+            outcome_by_confidence=[
+                OutcomeByConfidenceItem(
+                    level=ConfidenceLevel(level),
+                    thesis_result=ThesisResult(thesis_result),
+                    count=count,
+                )
+                for (level, thesis_result), count in (
+                    analytics.outcome_by_confidence_counts.items()
+                )
+            ],
+            risk_tag_frequency=[
+                RiskTagFrequencyItem(type=risk_type, count=count)
+                for risk_type, count in analytics.risk_tag_counts.items()
+            ],
+            review_adherence=ReviewAdherence(
+                reviewed_count=analytics.reviewed_count,
+                overdue_count=analytics.overdue_count,
+                adherence_rate=(
+                    analytics.reviewed_count / adherence_total
+                    if adherence_total
+                    else 0.0
+                ),
+            ),
+            process_quality_averages=analytics.process_quality_averages,
             as_of=now,
         )
 

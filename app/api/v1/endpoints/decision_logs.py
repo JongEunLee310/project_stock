@@ -11,6 +11,7 @@ from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.decision_logs.schema import (
     DecisionActivateRequest,
+    DecisionAnalyticsResponse,
     DecisionAssistRequest,
     DecisionAssistResponse,
     DecisionLogCreate,
@@ -99,6 +100,19 @@ def get_decision_log_overview(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[DecisionOverviewResponse]:
     return success(DecisionLogService(db).get_overview(current_user.id))
+
+
+@router.get(
+    "/analytics",
+    response_model=ApiResponse[DecisionAnalyticsResponse],
+    summary="Get decision log analytics",
+    description="Return decision quality aggregates for the authenticated user.",
+)
+def get_decision_log_analytics(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[DecisionAnalyticsResponse]:
+    return success(DecisionLogService(db).get_analytics(current_user.id))
 
 
 @router.get(

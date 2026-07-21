@@ -4,7 +4,13 @@ from typing import Any, cast
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 
-from app.domains.decision_logs.model import DecisionLog, DecisionReviewTrigger
+from app.domains.decision_logs.model import (
+    DecisionEvidence,
+    DecisionLog,
+    DecisionReview,
+    DecisionReviewTrigger,
+    DecisionRisk,
+)
 from app.domains.decision_logs.service import DecisionLogService
 from app.main import app
 from tests.conftest import (
@@ -670,6 +676,211 @@ def test_overview_aggregates_owned_decisions_at_boundaries(
         item["share"] for item in overview["decision_type_distribution"]
     ) == 1.0
     assert overview["as_of"] == "2026-08-08T12:00:00Z"
+
+
+def test_analytics_returns_safe_empty_state(client: TestClient) -> None:
+    set_current_user(1)
+
+    response = client.get("/api/v1/decision-logs/analytics")
+
+    assert response.status_code == 200
+    analytics = api_data(response)
+    assert analytics == {
+        "total_count": 0,
+        "decision_type_distribution": [],
+        "counter_argument_rate": 0.0,
+        "confidence_distribution": [],
+        "outcome_by_confidence": [],
+        "risk_tag_frequency": [],
+        "review_adherence": {
+            "reviewed_count": 0,
+            "overdue_count": 0,
+            "adherence_rate": 0.0,
+        },
+        "process_quality_averages": {},
+        "as_of": analytics["as_of"],
+    }
+    assert analytics["as_of"].endswith("Z")
+    assert "/api/v1/decision-logs/analytics" in app.openapi()["paths"]
+
+
+def test_analytics_aggregates_owned_decision_quality_metrics(
+    client: TestClient,
+    monkeypatch: Any,
+) -> None:
+    now = datetime(2026, 8, 8, 12, tzinfo=UTC)
+    monkeypatch.setattr(DecisionLogService, "_now", staticmethod(lambda: now))
+    set_current_user(1)
+    high_reviewed = create_decision_log(
+        client,
+        decision_type="BUY_REVIEW",
+        confidence_level="HIGH",
+    )
+    medium_reviewed = create_decision_log(
+        client,
+        decision_type="WATCH",
+        confidence_level="MEDIUM",
+    )
+    high_overdue = create_decision_log(
+        client,
+        decision_type="WATCH",
+        confidence_level="HIGH",
+    )
+    no_confidence_overdue = create_decision_log(
+        client,
+        decision_type="HOLD",
+        confidence_level=None,
+    )
+    set_current_user(2, "other@example.com")
+    other = create_decision_log(
+        client,
+        decision_type="SELL_REVIEW",
+        confidence_level="LOW",
+    )
+
+    with TestingSessionLocal() as db:
+        high_overdue_log = db.get(DecisionLog, high_overdue["id"])
+        assert high_overdue_log is not None
+        high_overdue_log.status = "REVIEW_DUE"
+        db.add_all(
+            [
+                DecisionEvidence(
+                    decision_id=high_reviewed["id"],
+                    evidence_type="NEWS",
+                    title="반대 근거",
+                    relationship="CONTRADICTING",
+                ),
+                DecisionEvidence(
+                    decision_id=other["id"],
+                    evidence_type="NEWS",
+                    title="타 사용자 반대 근거",
+                    relationship="CONTRADICTING",
+                ),
+                DecisionRisk(
+                    decision_id=high_reviewed["id"],
+                    risk_type="VALUATION",
+                    severity="HIGH",
+                ),
+                DecisionRisk(
+                    decision_id=medium_reviewed["id"],
+                    risk_type="VALUATION",
+                    severity="MEDIUM",
+                ),
+                DecisionRisk(
+                    decision_id=medium_reviewed["id"],
+                    risk_type="FOMO",
+                    severity="LOW",
+                ),
+                DecisionRisk(
+                    decision_id=high_overdue["id"],
+                    risk_type="LIQUIDITY",
+                    severity="LOW",
+                ),
+                DecisionRisk(
+                    decision_id=other["id"],
+                    risk_type="OTHER_ONLY",
+                    severity="HIGH",
+                ),
+                DecisionReview(
+                    decision_id=high_reviewed["id"],
+                    outcome_status="THESIS_CONFIRMED",
+                    thesis_result="CONFIRMED",
+                    process_quality={
+                        "evidence_quality": 4,
+                        "counter_argument_review": 2,
+                        "boolean_is_not_a_score": True,
+                    },
+                    reviewed_at=now - timedelta(days=2),
+                ),
+                DecisionReview(
+                    decision_id=medium_reviewed["id"],
+                    outcome_status="THESIS_INVALIDATED",
+                    thesis_result="INVALIDATED",
+                    process_quality={
+                        "evidence_quality": 2,
+                        "discipline": 3.5,
+                        "note": "numeric values only",
+                    },
+                    reviewed_at=now - timedelta(days=1),
+                ),
+                DecisionReview(
+                    decision_id=other["id"],
+                    outcome_status="THESIS_CONFIRMED",
+                    thesis_result="CONFIRMED",
+                    process_quality={"evidence_quality": 99},
+                    reviewed_at=now,
+                ),
+                DecisionReviewTrigger(
+                    decision_id=no_confidence_overdue["id"],
+                    trigger_type="DATE",
+                    condition={},
+                    scheduled_at=now - timedelta(hours=1),
+                    status="PENDING",
+                ),
+                DecisionReviewTrigger(
+                    decision_id=no_confidence_overdue["id"],
+                    trigger_type="DATE",
+                    condition={},
+                    scheduled_at=now - timedelta(hours=2),
+                    status="PENDING",
+                ),
+            ]
+        )
+        db.commit()
+
+    set_current_user(1)
+    select_count = 0
+
+    def count_selects(*args: Any) -> None:
+        nonlocal select_count
+        statement = str(args[2]).lstrip().upper()
+        if statement.startswith("SELECT"):
+            select_count += 1
+
+    event.listen(engine, "before_cursor_execute", count_selects)
+    try:
+        response = client.get("/api/v1/decision-logs/analytics")
+    finally:
+        event.remove(engine, "before_cursor_execute", count_selects)
+
+    assert response.status_code == 200
+    assert select_count == 6
+    analytics = api_data(response)
+    assert analytics["total_count"] == 4
+    assert analytics["decision_type_distribution"] == [
+        {"type": "WATCH", "count": 2, "share": 0.5},
+        {"type": "BUY_REVIEW", "count": 1, "share": 0.25},
+        {"type": "HOLD", "count": 1, "share": 0.25},
+    ]
+    assert sum(
+        item["share"] for item in analytics["decision_type_distribution"]
+    ) == 1.0
+    assert analytics["counter_argument_rate"] == 0.25
+    assert analytics["confidence_distribution"] == [
+        {"level": "HIGH", "count": 2, "share": 2 / 3},
+        {"level": "MEDIUM", "count": 1, "share": 1 / 3},
+    ]
+    assert sum(item["share"] for item in analytics["confidence_distribution"]) == 1.0
+    assert analytics["outcome_by_confidence"] == [
+        {"level": "HIGH", "thesis_result": "CONFIRMED", "count": 1},
+        {"level": "MEDIUM", "thesis_result": "INVALIDATED", "count": 1},
+    ]
+    assert analytics["risk_tag_frequency"] == [
+        {"type": "VALUATION", "count": 2},
+        {"type": "FOMO", "count": 1},
+        {"type": "LIQUIDITY", "count": 1},
+    ]
+    assert analytics["review_adherence"] == {
+        "reviewed_count": 2,
+        "overdue_count": 2,
+        "adherence_rate": 0.5,
+    }
+    assert analytics["process_quality_averages"] == {
+        "counter_argument_review": 2.0,
+        "discipline": 3.5,
+        "evidence_quality": 3.0,
+    }
+    assert analytics["as_of"] == "2026-08-08T12:00:00Z"
 
 
 def test_all_item_routes_enforce_ownership(client: TestClient) -> None:
