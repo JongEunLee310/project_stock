@@ -2,10 +2,11 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+from typing import Any
 
-from sqlalchemy import Select, case, func, or_, select
+from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.sql.elements import ColumnElement
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from app.domains.decision_logs.model import (
     DecisionEvidence,
@@ -25,6 +26,7 @@ from app.domains.decision_logs.schema import (
 from app.domains.decision_logs.types import (
     CreatedBy,
     DecisionStatus,
+    EvidenceRelationship,
     ReviewTriggerStatus,
     ReviewTriggerType,
 )
@@ -37,6 +39,19 @@ class OverviewAgg:
     review_due_count: int
     active_count: int
     decision_type_counts: dict[str, int]
+
+
+@dataclass(frozen=True)
+class AnalyticsAgg:
+    total_count: int
+    decision_type_counts: dict[str, int]
+    counter_argument_count: int
+    confidence_counts: dict[str, int]
+    outcome_by_confidence_counts: dict[tuple[str, str], int]
+    risk_tag_counts: dict[str, int]
+    reviewed_count: int
+    overdue_count: int
+    process_quality_averages: dict[str, float]
 
 
 class DecisionReviewRepository:
@@ -333,6 +348,142 @@ class DecisionLogRepository:
             active_count=int(active_count or 0),
             decision_type_counts=decision_type_counts,
         )
+
+    def aggregate_analytics(self, user_id: int, now: datetime) -> AnalyticsAgg:
+        has_review = (
+            select(DecisionReview.id)
+            .where(DecisionReview.decision_id == DecisionLog.id)
+            .exists()
+        )
+        has_counter_argument = (
+            select(DecisionEvidence.id)
+            .where(
+                DecisionEvidence.decision_id == DecisionLog.id,
+                DecisionEvidence.relationship
+                == EvidenceRelationship.CONTRADICTING.value,
+            )
+            .exists()
+        )
+        review_due = or_(
+            DecisionLog.status == DecisionStatus.REVIEW_DUE.value,
+            self._pending_date_review_at() <= now,
+        )
+        counts_stmt = select(
+            func.count(DecisionLog.id),
+            func.sum(case((has_counter_argument, 1), else_=0)),
+            func.sum(case((has_review, 1), else_=0)),
+            func.sum(case((and_(review_due, ~has_review), 1), else_=0)),
+        ).where(DecisionLog.user_id == user_id)
+        total_count, counter_argument_count, reviewed_count, overdue_count = (
+            self.db.execute(counts_stmt).one()
+        )
+
+        decision_type_counts = self._grouped_counts(
+            DecisionLog.decision_type,
+            user_id,
+        )
+        confidence_counts = self._grouped_counts(
+            DecisionLog.confidence_level,
+            user_id,
+            exclude_null=True,
+        )
+
+        outcome_count = func.count(DecisionReview.id).label("outcome_count")
+        outcome_stmt = (
+            select(
+                DecisionLog.confidence_level,
+                DecisionReview.thesis_result,
+                outcome_count,
+            )
+            .join(DecisionReview, DecisionReview.decision_id == DecisionLog.id)
+            .where(
+                DecisionLog.user_id == user_id,
+                DecisionLog.confidence_level.is_not(None),
+            )
+            .group_by(
+                DecisionLog.confidence_level,
+                DecisionReview.thesis_result,
+            )
+            .order_by(
+                DecisionLog.confidence_level,
+                DecisionReview.thesis_result,
+            )
+        )
+        outcome_by_confidence_counts = {
+            (str(confidence), str(thesis_result)): int(count)
+            for confidence, thesis_result, count in self.db.execute(outcome_stmt)
+        }
+
+        risk_count = func.count(DecisionRisk.id).label("risk_count")
+        risk_stmt = (
+            select(DecisionRisk.risk_type, risk_count)
+            .join(DecisionLog, DecisionLog.id == DecisionRisk.decision_id)
+            .where(DecisionLog.user_id == user_id)
+            .group_by(DecisionRisk.risk_type)
+            .order_by(risk_count.desc(), DecisionRisk.risk_type)
+        )
+        risk_tag_counts = {
+            str(risk_type): int(count)
+            for risk_type, count in self.db.execute(risk_stmt)
+        }
+
+        return AnalyticsAgg(
+            total_count=int(total_count or 0),
+            decision_type_counts=decision_type_counts,
+            counter_argument_count=int(counter_argument_count or 0),
+            confidence_counts=confidence_counts,
+            outcome_by_confidence_counts=outcome_by_confidence_counts,
+            risk_tag_counts=risk_tag_counts,
+            reviewed_count=int(reviewed_count or 0),
+            overdue_count=int(overdue_count or 0),
+            process_quality_averages=self._process_quality_averages(user_id),
+        )
+
+    def _grouped_counts(
+        self,
+        field: InstrumentedAttribute[Any],
+        user_id: int,
+        *,
+        exclude_null: bool = False,
+    ) -> dict[str, int]:
+        item_count = func.count(DecisionLog.id).label("item_count")
+        stmt = (
+            select(field, item_count)
+            .where(DecisionLog.user_id == user_id)
+            .group_by(field)
+            .order_by(item_count.desc(), field)
+        )
+        if exclude_null:
+            stmt = stmt.where(field.is_not(None))
+        return {
+            str(value): int(count)
+            for value, count in self.db.execute(stmt)
+            if value is not None
+        }
+
+    def _process_quality_averages(self, user_id: int) -> dict[str, float]:
+        # process_quality는 자유 JSON이라 DB 방언별 JSON 집계 대신 Python으로 평균을
+        # 낸다. 사용자당 복기 수가 적어 부담이 없고, 방언 분기 없이 검증 가능하다.
+        stmt = (
+            select(DecisionReview.process_quality)
+            .join(DecisionLog, DecisionLog.id == DecisionReview.decision_id)
+            .where(
+                DecisionLog.user_id == user_id,
+                DecisionReview.process_quality.is_not(None),
+            )
+        )
+        sums: dict[str, float] = {}
+        counts: dict[str, int] = {}
+        for (quality,) in self.db.execute(stmt):
+            if not isinstance(quality, dict):
+                continue
+            for key, value in quality.items():
+                # bool은 int 하위형이므로 수치에서 제외한다.
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    continue
+                sums[key] = sums.get(key, 0.0) + float(value)
+                counts[key] = counts.get(key, 0) + 1
+        return {key: sums[key] / counts[key] for key in sorted(sums)}
 
     def create(
         self,
