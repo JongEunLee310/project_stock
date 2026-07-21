@@ -75,6 +75,9 @@ class DecisionReviewRepository:
 
 
 class DecisionLogRepository:
+    _TARGET_SIMILARITY_WEIGHT = 100
+    _DECISION_TYPE_SIMILARITY_WEIGHT = 10
+
     def __init__(self, db: Session) -> None:
         self.db = db
 
@@ -224,6 +227,56 @@ class DecisionLogRepository:
             for decision_id, review_at in self.db.execute(stmt)
             if review_at is not None
         }
+
+    def list_similar(
+        self,
+        base: DecisionLog,
+        user_id: int,
+        limit: int,
+    ) -> list[DecisionLog]:
+        decision_logs = list(
+            self.db.scalars(
+                select(DecisionLog).where(DecisionLog.user_id == user_id)
+            ).all()
+        )
+        excluded_ids = self._version_chain_ids(base.id, decision_logs)
+        candidate_logs = [
+            decision_log
+            for decision_log in decision_logs
+            if decision_log.id not in excluded_ids
+        ]
+        risk_types_by_decision = self.list_risk_types_by_decision(
+            [base.id, *(decision_log.id for decision_log in candidate_logs)]
+        )
+        base_risk_types = set(risk_types_by_decision[base.id])
+
+        def similarity_score(decision_log: DecisionLog) -> int:
+            target_score = (
+                self._TARGET_SIMILARITY_WEIGHT
+                if self._has_same_target(base, decision_log)
+                else 0
+            )
+            decision_type_score = (
+                self._DECISION_TYPE_SIMILARITY_WEIGHT
+                if decision_log.decision_type == base.decision_type
+                else 0
+            )
+            risk_score = len(
+                base_risk_types.intersection(
+                    risk_types_by_decision[decision_log.id]
+                )
+            )
+            return target_score + decision_type_score + risk_score
+
+        candidate_logs.sort(
+            key=lambda decision_log: (
+                similarity_score(decision_log),
+                decision_log.created_at,
+                decision_log.id,
+            ),
+            reverse=True,
+        )
+        return candidate_logs[:limit]
 
     def aggregate_overview(self, user_id: int, now: datetime) -> OverviewAgg:
         # A rolling seven-day window avoids week-boundary and timezone ambiguity.
@@ -541,6 +594,38 @@ class DecisionLogRepository:
         if sort == "decided_at":
             return stmt.order_by(DecisionLog.decided_at, DecisionLog.id)
         return stmt.order_by(DecisionLog.decided_at.desc(), DecisionLog.id.desc())
+
+    @staticmethod
+    def _has_same_target(base: DecisionLog, candidate: DecisionLog) -> bool:
+        if base.symbol is not None and candidate.symbol is not None:
+            return base.symbol == candidate.symbol
+        return (
+            base.target_type == candidate.target_type
+            and base.target_id == candidate.target_id
+        )
+
+    @staticmethod
+    def _version_chain_ids(
+        base_id: int,
+        decision_logs: list[DecisionLog],
+    ) -> set[int]:
+        chain_ids = {base_id}
+        while True:
+            connected_ids = {
+                decision_log.id
+                for decision_log in decision_logs
+                if decision_log.id in chain_ids
+                or decision_log.superseded_by_id in chain_ids
+            }
+            connected_ids.update(
+                decision_log.superseded_by_id
+                for decision_log in decision_logs
+                if decision_log.id in chain_ids
+                and decision_log.superseded_by_id is not None
+            )
+            if connected_ids.issubset(chain_ids):
+                return chain_ids
+            chain_ids.update(connected_ids)
 
     @staticmethod
     def _pending_date_review_at() -> ColumnElement[datetime | None]:

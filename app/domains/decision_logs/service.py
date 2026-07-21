@@ -123,6 +123,15 @@ class DecisionLogService:
         total = self.repo.count_review_due(user_id, now)
         return self._to_list_items(decision_logs), total
 
+    def list_similar(
+        self,
+        decision_log_id: int,
+        user_id: int,
+        limit: int,
+    ) -> list[DecisionLogListItem]:
+        base = self._get_owned_decision_log(decision_log_id, user_id)
+        return self._to_list_items(self.repo.list_similar(base, user_id, limit))
+
     def get_overview(self, user_id: int) -> DecisionOverviewResponse:
         now = self._now()
         overview = self.repo.aggregate_overview(user_id, now)
