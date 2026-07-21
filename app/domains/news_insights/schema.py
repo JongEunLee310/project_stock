@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field, field_serializer, field_validator, model_
 
 from app.core.schema import UtcDatetime
 from app.domains.news_insights.types import (
+    AgentRunStatus,
+    AgentStage,
     DocumentType,
     EvidenceRole,
     EventType,
@@ -13,6 +15,7 @@ from app.domains.news_insights.types import (
     FlowDirection,
     InvestorType,
     LifecycleStatus,
+    MarketEventKind,
     SentimentDirection,
     SymbolRelationship,
     TopicCategory,
@@ -66,6 +69,17 @@ class TopicEvidenceQuery(BaseModel):
 class InvestorFlowsQuery(BaseModel):
     market: str = Field(min_length=1)
     window: str = Field(pattern=r"^[1-9]\d*[hd]$")
+    topic_id: int | None = Field(default=None, ge=1)
+
+    @field_validator("market")
+    @classmethod
+    def normalize_market(cls, value: str) -> str:
+        return value.strip().upper()
+
+
+class CalendarQuery(BaseModel):
+    window: str = Field(pattern=r"^[1-9]\d*[hd]$")
+    market: str = Field(min_length=1)
     topic_id: int | None = Field(default=None, ge=1)
 
     @field_validator("market")
@@ -131,6 +145,32 @@ class InvestorFlowsResponse(BaseModel):
     by_investor_type: list[InvestorFlowItem]
     narrative_alignment: NarrativeAlignment
     availability: InvestorFlowAvailability
+
+
+class CalendarItem(BaseModel):
+    scheduled_at: UtcDatetime
+    event_kind: MarketEventKind
+    title: str
+    symbol: str | None
+    market: str | None
+    importance: float = Field(ge=0.0, le=1.0)
+    related_topic_ids: list[int]
+
+
+class AgentRunStageItem(BaseModel):
+    name: AgentStage
+    status: AgentRunStatus
+    delayed: bool
+
+
+class AgentRunsResponse(BaseModel):
+    last_processed_at: UtcDatetime
+    processed_documents: int = Field(ge=0)
+    extracted_events: int = Field(ge=0)
+    active_topics: int = Field(ge=0)
+    stages: list[AgentRunStageItem]
+    analysis_version: str
+    has_delay: bool
 
 
 class EventImportance(BaseModel):
