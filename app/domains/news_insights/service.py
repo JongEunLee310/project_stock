@@ -10,6 +10,8 @@ from app.core.exceptions import AppException
 from app.core.pagination import decode_datetime_cursor, encode_datetime_cursor
 from app.domains.news_insights.briefing import build_briefing
 from app.domains.news_insights.repository import (
+    AgentRunRecords,
+    CalendarRecord,
     HIGH_IMPORTANCE_MIN,
     MEDIUM_IMPORTANCE_MIN,
     EventDetailRecords,
@@ -25,6 +27,10 @@ from app.domains.news_insights.repository import (
 )
 from app.domains.news_insights.schema import (
     AffectedSymbol,
+    AgentRunsResponse,
+    AgentRunStageItem,
+    CalendarItem,
+    CalendarQuery,
     EventAffectedSymbol,
     EventDetailEvidence,
     EventDetailImportance,
@@ -64,6 +70,8 @@ from app.domains.news_insights.schema import (
     TopicTrendResponse,
 )
 from app.domains.news_insights.types import (
+    AgentRunStatus,
+    AgentStage,
     DocumentType,
     EvidenceRole,
     EventType,
@@ -71,6 +79,7 @@ from app.domains.news_insights.types import (
     ImportanceLevel,
     InvestorType,
     LifecycleStatus,
+    MarketEventKind,
     SentimentDirection,
     SymbolRelationship,
     TopicCategory,
@@ -144,6 +153,28 @@ class NewsInsightsService:
             has_more=page.has_more,
             next_cursor=next_cursor,
         )
+
+    def get_calendar(
+        self,
+        query: CalendarQuery,
+        *,
+        as_of: datetime | None = None,
+    ) -> list[CalendarItem]:
+        start = as_of or datetime.now(UTC)
+        return [
+            self._calendar_item(record)
+            for record in self.repository.list_calendar_events(
+                query,
+                start=start,
+                end=start + self._parse_window(query.window),
+            )
+        ]
+
+    def get_agent_runs(self) -> AgentRunsResponse:
+        records = self.repository.latest_agent_run_records()
+        if records is None:
+            raise RuntimeError("No agent run is available")
+        return self._agent_runs_response(records)
 
     def get_event_detail(self, event_id: int) -> EventDetailResponse:
         records = self.repository.event_detail_records(event_id)
@@ -440,6 +471,44 @@ class NewsInsightsService:
             ),
             evidence_count=record.evidence_count,
             topic_ids=list(record.topic_ids),
+        )
+
+    @classmethod
+    def _calendar_item(cls, record: CalendarRecord) -> CalendarItem:
+        return CalendarItem(
+            scheduled_at=cls._as_utc(record.event.scheduled_at),
+            event_kind=MarketEventKind(record.event.event_kind),
+            title=record.event.title,
+            symbol=record.event.symbol,
+            market=record.event.market,
+            importance=record.event.importance_score,
+            related_topic_ids=list(record.related_topic_ids),
+        )
+
+    @classmethod
+    def _agent_runs_response(cls, records: AgentRunRecords) -> AgentRunsResponse:
+        run = records.run
+        stages_by_name = {stage.stage: stage for stage in records.stages}
+        stages = [
+            AgentRunStageItem(
+                name=stage_name,
+                status=AgentRunStatus(stage.status),
+                delayed=stage.delayed,
+            )
+            for stage_name in AgentStage
+            if (stage := stages_by_name.get(stage_name.value)) is not None
+        ]
+        return AgentRunsResponse(
+            last_processed_at=cls._as_utc(run.finished_at or run.started_at),
+            processed_documents=run.processed_documents,
+            extracted_events=run.extracted_events,
+            active_topics=run.active_topics,
+            stages=stages,
+            analysis_version=run.analysis_version,
+            has_delay=(
+                run.status == AgentRunStatus.DELAYED.value
+                or any(stage.delayed for stage in records.stages)
+            ),
         )
 
     @classmethod

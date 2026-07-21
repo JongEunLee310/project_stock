@@ -9,10 +9,14 @@ from sqlalchemy.orm import Session
 from app.core.pagination import DateTimeCursor
 from app.domains.news_insights.briefing import BriefingCandidate
 from app.domains.news_insights.model import (
+    AgentRun,
+    AgentRunStage,
     EventEvidence,
     ExtractedEvent,
     InvestorFlow,
     KeywordRelation,
+    MarketEvent,
+    MarketEventTopic,
     SourceDocument,
     TopicCluster,
     TopicInsight,
@@ -20,6 +24,7 @@ from app.domains.news_insights.model import (
     TopicSymbolSensitivity,
 )
 from app.domains.news_insights.schema import (
+    CalendarQuery,
     EventsQuery,
     InvestorFlowsQuery,
     TopicEvidenceQuery,
@@ -129,6 +134,18 @@ class InvestorFlowRecords:
     fallback_source_kinds: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class CalendarRecord:
+    event: MarketEvent
+    related_topic_ids: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class AgentRunRecords:
+    run: AgentRun
+    stages: tuple[AgentRunStage, ...]
+
+
 class NewsInsightsRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -162,6 +179,73 @@ class NewsInsightsRepository:
             ),
             has_more=has_more,
         )
+
+    def list_calendar_events(
+        self,
+        query: CalendarQuery,
+        *,
+        start: datetime,
+        end: datetime,
+    ) -> tuple[CalendarRecord, ...]:
+        conditions = [
+            MarketEvent.scheduled_at >= start,
+            MarketEvent.scheduled_at <= end,
+            MarketEvent.market == query.market,
+        ]
+        stmt = select(MarketEvent)
+        if query.topic_id is not None:
+            stmt = stmt.join(
+                MarketEventTopic,
+                MarketEventTopic.market_event_id == MarketEvent.id,
+            )
+            conditions.append(MarketEventTopic.topic_id == query.topic_id)
+        events = tuple(
+            self.db.scalars(
+                stmt.where(*conditions).order_by(
+                    MarketEvent.scheduled_at,
+                    MarketEvent.id,
+                )
+            ).all()
+        )
+        event_ids = [event.id for event in events]
+        topic_ids_by_event: dict[int, list[int]] = {}
+        if event_ids:
+            for event_id, topic_id in self.db.execute(
+                select(
+                    MarketEventTopic.market_event_id,
+                    MarketEventTopic.topic_id,
+                )
+                .where(MarketEventTopic.market_event_id.in_(event_ids))
+                .order_by(
+                    MarketEventTopic.market_event_id,
+                    MarketEventTopic.topic_id,
+                )
+            ).all():
+                topic_ids_by_event.setdefault(event_id, []).append(topic_id)
+        return tuple(
+            CalendarRecord(
+                event=event,
+                related_topic_ids=tuple(topic_ids_by_event.get(event.id, ())),
+            )
+            for event in events
+        )
+
+    def latest_agent_run_records(self) -> AgentRunRecords | None:
+        run = self.db.scalars(
+            select(AgentRun)
+            .order_by(AgentRun.started_at.desc(), AgentRun.id.desc())
+            .limit(1)
+        ).first()
+        if run is None:
+            return None
+        stages = tuple(
+            self.db.scalars(
+                select(AgentRunStage)
+                .where(AgentRunStage.agent_run_id == run.id)
+                .order_by(AgentRunStage.id)
+            ).all()
+        )
+        return AgentRunRecords(run=run, stages=stages)
 
     def event_detail_records(self, event_id: int) -> EventDetailRecords | None:
         event = self.db.get(ExtractedEvent, event_id)

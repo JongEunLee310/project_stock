@@ -6,10 +6,14 @@ from fastapi.testclient import TestClient
 
 from app.domains.news_insights.briefing import validate_evidence_event_ids
 from app.domains.news_insights.model import (
+    AgentRun,
+    AgentRunStage,
     EventEvidence,
     ExtractedEvent,
     InvestorFlow,
     KeywordRelation,
+    MarketEvent,
+    MarketEventTopic,
     SourceDocument,
     TopicCluster,
     TopicInsight,
@@ -17,6 +21,8 @@ from app.domains.news_insights.model import (
 )
 from app.domains.news_insights.seed import seed_mock_news_insights
 from app.domains.news_insights.types import (
+    AgentRunStatus,
+    AgentStage,
     DocumentType,
     EvidenceRole,
     EventStatus,
@@ -24,6 +30,7 @@ from app.domains.news_insights.types import (
     FlowDirection,
     InvestorType,
     LifecycleStatus,
+    MarketEventKind,
     ProcessingStatus,
     SentimentDirection,
     TopicCategory,
@@ -360,6 +367,126 @@ def test_investor_flows_reports_unavailable_market_without_estimation(
     assert "ETF" in data["availability"]["fallback"]
     assert "거래량" in data["availability"]["fallback"]
     assert data["narrative_alignment"]["aligned"] is False
+
+
+def test_calendar_returns_upcoming_market_events_with_related_topics(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    now = datetime.now(UTC)
+    with TestingSessionLocal() as session:
+        topic_id = session.query(TopicCluster.id).scalar()
+        included_at = now + timedelta(hours=1)
+        included = MarketEvent(
+            scheduled_at=included_at,
+            event_kind=MarketEventKind.RATE_DECISION.value,
+            title="한국은행 기준금리 결정",
+            symbol=None,
+            market="KR",
+            importance_score=0.93,
+        )
+        excluded_market = MarketEvent(
+            scheduled_at=now + timedelta(days=1),
+            event_kind=MarketEventKind.EARNINGS.value,
+            title="미국 기업 실적 발표",
+            symbol="AAPL",
+            market="US",
+            importance_score=0.8,
+        )
+        excluded_window = MarketEvent(
+            scheduled_at=now + timedelta(days=2),
+            event_kind=MarketEventKind.POLICY.value,
+            title="장기 정책 일정",
+            symbol=None,
+            market="KR",
+            importance_score=0.7,
+        )
+        session.add_all([included, excluded_market, excluded_window])
+        session.flush()
+        session.add(MarketEventTopic(market_event_id=included.id, topic_id=topic_id))
+        session.commit()
+
+    response = client.get(
+        "/api/v1/news-insights/calendar",
+        params={"window": "1d", "market": "kr", "topic_id": topic_id},
+    )
+
+    assert response.status_code == 200
+    items = cast(list[dict[str, Any]], api_data(response))
+    assert items == [
+        {
+            "scheduled_at": included_at.isoformat().replace("+00:00", "Z"),
+            "event_kind": "RATE_DECISION",
+            "title": "한국은행 기준금리 결정",
+            "symbol": None,
+            "market": "KR",
+            "importance": 0.93,
+            "related_topic_ids": [topic_id],
+        }
+    ]
+
+
+def test_agent_runs_returns_latest_verifiable_stage_summary(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        latest = AgentRun(
+            started_at=SEEDED_AT + timedelta(minutes=10),
+            finished_at=SEEDED_AT + timedelta(minutes=20),
+            status=AgentRunStatus.DELAYED.value,
+            processed_documents=42,
+            extracted_events=7,
+            active_topics=3,
+            analysis_version="news-intelligence-v3",
+        )
+        session.add(latest)
+        session.flush()
+        session.add_all(
+            [
+                AgentRunStage(
+                    agent_run_id=latest.id,
+                    stage=AgentStage.COLLECT.value,
+                    status=AgentRunStatus.COMPLETED.value,
+                    delayed=False,
+                ),
+                AgentRunStage(
+                    agent_run_id=latest.id,
+                    stage=AgentStage.EXTRACT.value,
+                    status=AgentRunStatus.DELAYED.value,
+                    delayed=True,
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get("/api/v1/news-insights/agent-runs")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert set(data) == {
+        "last_processed_at",
+        "processed_documents",
+        "extracted_events",
+        "active_topics",
+        "stages",
+        "analysis_version",
+        "has_delay",
+    }
+    assert data == {
+        "last_processed_at": "2026-07-21T10:20:00Z",
+        "processed_documents": 42,
+        "extracted_events": 7,
+        "active_topics": 3,
+        "stages": [
+            {"name": "COLLECT", "status": "COMPLETED", "delayed": False},
+            {"name": "EXTRACT", "status": "DELAYED", "delayed": True},
+        ],
+        "analysis_version": "news-intelligence-v3",
+        "has_delay": True,
+    }
 
 
 def test_topic_map_returns_typed_nodes_and_keyword_relation_edges(

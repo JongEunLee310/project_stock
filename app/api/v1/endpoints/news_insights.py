@@ -8,6 +8,9 @@ from app.api.v1.deps import get_current_user
 from app.core.response import ApiResponse, cursor_paginated, success
 from app.db.session import get_db
 from app.domains.news_insights.schema import (
+    AgentRunsResponse,
+    CalendarItem,
+    CalendarQuery,
     EventDetailResponse,
     EventListItem,
     EventsQuery,
@@ -77,6 +80,36 @@ def get_news_insight_investor_flows(
         topic_id=topic_id,
     )
     return success(NewsInsightsService(db).get_investor_flows(query))
+
+
+@router.get(
+    "/calendar",
+    response_model=ApiResponse[list[CalendarItem]],
+    summary="List news insight calendar events",
+    description="Return upcoming market events with their related topic IDs.",
+)
+def list_news_insight_calendar(
+    window: Annotated[str, Query(pattern=r"^[1-9]\d*[hd]$")],
+    market: Annotated[str, Query(min_length=1)],
+    topic_id: Annotated[int | None, Query(ge=1)] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[list[CalendarItem]]:
+    query = CalendarQuery(window=window, market=market, topic_id=topic_id)
+    return success(NewsInsightsService(db).get_calendar(query))
+
+
+@router.get(
+    "/agent-runs",
+    response_model=ApiResponse[AgentRunsResponse],
+    summary="Get latest news insight agent run",
+    description="Return verifiable processing counts and stage statuses only.",
+)
+def get_news_insight_agent_runs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[AgentRunsResponse]:
+    return success(NewsInsightsService(db).get_agent_runs())
 
 
 @router.get(
