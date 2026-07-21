@@ -196,6 +196,27 @@ def list_decision_reviews(
 
 
 @router.get(
+    "/{decision_log_id}/similar",
+    response_model=ApiResponse[list[DecisionLogListItem]],
+    summary="List similar decision logs",
+    description="Return the most similar decision logs owned by the user.",
+)
+def list_similar_decision_logs(
+    decision_log_id: int,
+    limit: Annotated[int, Query(ge=1, le=20)] = 5,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[list[DecisionLogListItem]]:
+    return success(
+        DecisionLogService(db).list_similar(
+            decision_log_id,
+            current_user.id,
+            limit,
+        )
+    )
+
+
+@router.get(
     "/{decision_log_id}",
     response_model=ApiResponse[DecisionLogDetailResponse],
     summary="Get decision log",
