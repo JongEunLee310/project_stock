@@ -8,6 +8,7 @@ from app.api.v1.deps import get_current_user
 from app.core.response import ApiResponse, cursor_paginated, success
 from app.db.session import get_db
 from app.domains.news_insights.schema import (
+    EventDetailResponse,
     EventListItem,
     EventsQuery,
     OverviewQuery,
@@ -90,6 +91,20 @@ def list_news_insight_events(
         has_more=result.has_more,
         next_cursor=result.next_cursor,
     )
+
+
+@router.get(
+    "/events/{event_id}",
+    response_model=ApiResponse[EventDetailResponse],
+    summary="Get news insight event detail",
+    description="Return an event with affected symbols, evidence, and related topics.",
+)
+def get_news_insight_event_detail(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[EventDetailResponse]:
+    return success(NewsInsightsService(db).get_event_detail(event_id))
 
 
 @router.get(

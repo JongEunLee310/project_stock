@@ -119,6 +119,42 @@ class EventListItem(BaseModel):
     topic_ids: list[int]
 
 
+class EventDetailImportance(EventImportance):
+    explanation: str
+
+
+class EventAffectedSymbol(BaseModel):
+    symbol: str
+    direction: SentimentDirection
+    exposure_score: float = Field(ge=0.0, le=1.0)
+    reason: str
+
+
+class EventDetailEvidence(BaseModel):
+    document_id: int
+    document_type: DocumentType
+    source: str
+    title: str
+    published_at: UtcDatetime
+    evidence_role: EvidenceRole
+
+
+class EventRelatedTopic(BaseModel):
+    topic_id: int
+    title: str
+
+
+class EventDetailResponse(BaseModel):
+    event_type: EventType
+    title: str
+    summary: str
+    importance: EventDetailImportance
+    sentiment: EventSentiment
+    affected_symbols: list[EventAffectedSymbol]
+    evidence: list[EventDetailEvidence]
+    related_topics: list[EventRelatedTopic]
+
+
 class TopicMapNode(BaseModel):
     id: str
     label: str
