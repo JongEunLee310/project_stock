@@ -1,26 +1,40 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from app.domains.news_insights.model import (
+    AgentRun,
+    AgentRunStage,
     EventEvidence,
     ExtractedEvent,
+    InvestorFlow,
     KeywordRelation,
+    MarketEvent,
+    MarketEventTopic,
     SourceDocument,
     TopicCluster,
     TopicInsight,
     TopicKeyword,
+    TopicSymbolSensitivity,
 )
 from app.domains.news_insights.types import (
+    AgentRunStatus,
+    AgentStage,
     DocumentType,
     EventStatus,
     EventType,
     EvidenceRole,
+    FlowDirection,
+    InvestorType,
     LifecycleStatus,
+    MarketEventKind,
     ProcessingStatus,
     SentimentDirection,
+    SymbolRelationship,
     TopicCategory,
+    ValuationBurden,
 )
 
 
@@ -33,6 +47,12 @@ class SeededNewsInsights:
     keywords: tuple[TopicKeyword, ...]
     relations: tuple[KeywordRelation, ...]
     insights: tuple[TopicInsight, ...]
+    investor_flows: tuple[InvestorFlow, ...]
+    symbol_sensitivities: tuple[TopicSymbolSensitivity, ...]
+    market_events: tuple[MarketEvent, ...]
+    market_event_topics: tuple[MarketEventTopic, ...]
+    agent_runs: tuple[AgentRun, ...]
+    agent_run_stages: tuple[AgentRunStage, ...]
 
 
 def seed_mock_news_insights(
@@ -137,6 +157,61 @@ def seed_mock_news_insights(
     session.add_all([evidence, *keywords, relation, insight])
     session.flush()
 
+    investor_flow = InvestorFlow(
+        market="KR",
+        topic_id=topic.id,
+        investor_type=InvestorType.FOREIGN.value,
+        net_value=Decimal("12500000000.0000"),
+        direction=FlowDirection.BUY.value,
+        window="5d",
+        as_of=seeded_at,
+        source_kind="INVESTOR_TYPE",
+    )
+    symbol_sensitivity = TopicSymbolSensitivity(
+        topic_id=topic.id,
+        symbol="005930",
+        exposure_score=0.91,
+        impact_direction=SentimentDirection.POSITIVE.value,
+        relationship=SymbolRelationship.DIRECT.value,
+        valuation_burden=ValuationBurden.MEDIUM.value,
+        note="장기 공급계약의 직접 수혜 가능성이 있다.",
+    )
+    market_event = MarketEvent(
+        scheduled_at=seeded_at + timedelta(days=2),
+        event_kind=MarketEventKind.IR_EVENT.value,
+        title="반도체 사업부 기업설명회",
+        symbol="005930",
+        market="KR",
+        importance_score=0.82,
+    )
+    agent_run = AgentRun(
+        started_at=seeded_at - timedelta(minutes=15),
+        finished_at=seeded_at - timedelta(minutes=2),
+        status=AgentRunStatus.COMPLETED.value,
+        processed_documents=1,
+        extracted_events=1,
+        active_topics=1,
+        analysis_version="mock-news-intelligence-v2",
+    )
+    session.add_all([investor_flow, symbol_sensitivity, market_event, agent_run])
+    session.flush()
+
+    market_event_topic = MarketEventTopic(
+        market_event_id=market_event.id,
+        topic_id=topic.id,
+    )
+    agent_run_stages = tuple(
+        AgentRunStage(
+            agent_run_id=agent_run.id,
+            stage=stage.value,
+            status=AgentRunStatus.COMPLETED.value,
+            delayed=False,
+        )
+        for stage in AgentStage
+    )
+    session.add_all([market_event_topic, *agent_run_stages])
+    session.flush()
+
     return SeededNewsInsights(
         documents=(document,),
         events=(event,),
@@ -145,4 +220,10 @@ def seed_mock_news_insights(
         keywords=keywords,
         relations=(relation,),
         insights=(insight,),
+        investor_flows=(investor_flow,),
+        symbol_sensitivities=(symbol_sensitivity,),
+        market_events=(market_event,),
+        market_event_topics=(market_event_topic,),
+        agent_runs=(agent_run,),
+        agent_run_stages=agent_run_stages,
     )

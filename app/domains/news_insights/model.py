@@ -1,14 +1,17 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -210,3 +213,132 @@ class TopicInsight(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class InvestorFlow(Base):
+    __tablename__ = "investor_flows"
+    __table_args__ = (
+        Index(
+            "ix_investor_flows_topic_id_investor_type",
+            "topic_id",
+            "investor_type",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    market: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    topic_id: Mapped[int | None] = mapped_column(
+        ForeignKey("topic_clusters.id"), nullable=True
+    )
+    investor_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    net_value: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    direction: Mapped[str] = mapped_column(String(20), nullable=False)
+    window: Mapped[str] = mapped_column(String(30), nullable=False)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class TopicSymbolSensitivity(Base):
+    __tablename__ = "topic_symbol_sensitivity"
+    __table_args__ = (
+        _score_constraint("topic_symbol_sensitivity", "exposure_score"),
+        UniqueConstraint(
+            "topic_id",
+            "symbol",
+            name="uq_topic_symbol_sensitivity_topic_symbol",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    topic_id: Mapped[int] = mapped_column(
+        ForeignKey("topic_clusters.id"), nullable=False
+    )
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    exposure_score: Mapped[float] = mapped_column(Float, nullable=False)
+    impact_direction: Mapped[str] = mapped_column(String(20), nullable=False)
+    relationship: Mapped[str] = mapped_column(String(30), nullable=False)
+    valuation_burden: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class MarketEvent(Base):
+    __tablename__ = "market_events"
+    __table_args__ = (
+        _score_constraint("market_events", "importance_score"),
+        Index("ix_market_events_scheduled_at", "scheduled_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scheduled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    event_kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    symbol: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    market: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    importance_score: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class MarketEventTopic(Base):
+    __tablename__ = "market_event_topics"
+    __table_args__ = (
+        UniqueConstraint(
+            "market_event_id",
+            "topic_id",
+            name="uq_market_event_topics_event_topic",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    market_event_id: Mapped[int] = mapped_column(
+        ForeignKey("market_events.id"), nullable=False
+    )
+    topic_id: Mapped[int] = mapped_column(
+        ForeignKey("topic_clusters.id"), nullable=False
+    )
+
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    processed_documents: Mapped[int] = mapped_column(Integer, nullable=False)
+    extracted_events: Mapped[int] = mapped_column(Integer, nullable=False)
+    active_topics: Mapped[int] = mapped_column(Integer, nullable=False)
+    analysis_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AgentRunStage(Base):
+    __tablename__ = "agent_run_stages"
+    __table_args__ = (
+        UniqueConstraint(
+            "agent_run_id",
+            "stage",
+            name="uq_agent_run_stages_run_stage",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    agent_run_id: Mapped[int] = mapped_column(
+        ForeignKey("agent_runs.id"), nullable=False
+    )
+    stage: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    delayed: Mapped[bool] = mapped_column(Boolean, nullable=False)
