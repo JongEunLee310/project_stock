@@ -4,12 +4,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.adapters.factory import get_llm_gateway
 from app.api.v1.deps import get_current_user
 from app.core.pagination import PaginationParams, SortParams, sort_param
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.decision_logs.schema import (
     DecisionActivateRequest,
+    DecisionAssistRequest,
+    DecisionAssistResponse,
     DecisionLogCreate,
     DecisionLogDetailResponse,
     DecisionLogListItem,
@@ -17,6 +20,7 @@ from app.domains.decision_logs.schema import (
     DecisionLogResponse,
     DecisionLogUpdate,
 )
+from app.domains.decision_logs.assist_service import DecisionAssistService
 from app.domains.decision_logs.service import DecisionLogService
 from app.domains.decision_logs.types import DecisionStatus, DecisionType, TargetType
 from app.domains.users.model import User
@@ -116,6 +120,24 @@ def get_decision_log_review_queue(
         page=pagination.page,
         size=pagination.size,
         total=total,
+    )
+
+
+@router.post(
+    "/assist",
+    response_model=ApiResponse[DecisionAssistResponse],
+    summary="Assist decision draft",
+    description=(
+        "Return non-persistent AI suggestions for an authenticated user's "
+        "decision draft."
+    ),
+)
+def assist_decision_log(
+    data: DecisionAssistRequest,
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[DecisionAssistResponse]:
+    return success(
+        DecisionAssistService(get_llm_gateway()).assist(current_user.id, data)
     )
 
 
