@@ -11,6 +11,7 @@ from app.domains.news_insights.briefing import build_briefing
 from app.domains.news_insights.repository import (
     HIGH_IMPORTANCE_MIN,
     MEDIUM_IMPORTANCE_MIN,
+    EventDetailRecords,
     EventRecord,
     EvidenceRecord,
     NewsInsightsRepository,
@@ -21,8 +22,13 @@ from app.domains.news_insights.repository import (
 )
 from app.domains.news_insights.schema import (
     AffectedSymbol,
+    EventAffectedSymbol,
+    EventDetailEvidence,
+    EventDetailImportance,
+    EventDetailResponse,
     EventImportance,
     EventListItem,
+    EventRelatedTopic,
     EventSentiment,
     EventSource,
     EventsQuery,
@@ -124,6 +130,12 @@ class NewsInsightsService:
             next_cursor=next_cursor,
         )
 
+    def get_event_detail(self, event_id: int) -> EventDetailResponse:
+        records = self.repository.event_detail_records(event_id)
+        if records is None:
+            self._raise_event_not_found()
+        return self._event_detail_response(records)
+
     def get_topic_map(
         self,
         query: TopicMapQuery,
@@ -205,6 +217,14 @@ class NewsInsightsService:
         )
 
     @staticmethod
+    def _raise_event_not_found() -> NoReturn:
+        raise AppException(
+            status_code=404,
+            detail="뉴스 인사이트 이벤트를 찾을 수 없습니다.",
+            error_code=ErrorCode.NEWS_INSIGHT_EVENT_NOT_FOUND,
+        )
+
+    @staticmethod
     def _as_utc(value: datetime) -> datetime:
         if value.tzinfo is None:
             return value.replace(tzinfo=UTC)
@@ -283,6 +303,61 @@ class NewsInsightsService:
             ),
             evidence_count=record.evidence_count,
             topic_ids=list(record.topic_ids),
+        )
+
+    @classmethod
+    def _event_detail_response(
+        cls,
+        records: EventDetailRecords,
+    ) -> EventDetailResponse:
+        event = records.event
+        evidence = [
+            EventDetailEvidence(
+                document_id=record.document.id,
+                document_type=DocumentType(record.document.document_type),
+                source=record.document.source_name,
+                title=record.document.title,
+                published_at=cls._as_utc(record.document.published_at),
+                evidence_role=EvidenceRole(record.evidence.evidence_role),
+            )
+            for record in records.evidence
+        ]
+        exposure_score = max(
+            (
+                record.evidence.relevance_score
+                for record in records.evidence
+            ),
+            default=event.importance_score,
+        )
+        affected_symbols = []
+        if event.primary_symbol is not None:
+            affected_symbols.append(
+                EventAffectedSymbol(
+                    symbol=event.primary_symbol,
+                    direction=SentimentDirection(event.sentiment_direction),
+                    exposure_score=exposure_score,
+                    reason=event.summary,
+                )
+            )
+        return EventDetailResponse(
+            event_type=EventType(event.event_type),
+            title=event.title,
+            summary=event.summary,
+            importance=EventDetailImportance(
+                score=event.importance_score,
+                level=cls._importance_level(event.importance_score),
+                explanation=event.summary,
+            ),
+            sentiment=EventSentiment(
+                direction=SentimentDirection(event.sentiment_direction),
+                score=event.sentiment_score,
+            ),
+            affected_symbols=affected_symbols,
+            evidence=evidence,
+            related_topics=[
+                EventRelatedTopic(topic_id=topic.id, title=topic.title)
+                for topic in records.topics
+            ],
         )
 
     @staticmethod

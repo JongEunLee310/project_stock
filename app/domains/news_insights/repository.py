@@ -81,6 +81,13 @@ class EvidenceRecord:
 
 
 @dataclass(frozen=True)
+class EventDetailRecords:
+    event: ExtractedEvent
+    evidence: tuple[EvidenceRecord, ...]
+    topics: tuple[TopicCluster, ...]
+
+
+@dataclass(frozen=True)
 class EvidencePage:
     records: tuple[EvidenceRecord, ...]
     has_more: bool
@@ -124,6 +131,24 @@ class NewsInsightsRepository:
                 for event in events
             ),
             has_more=has_more,
+        )
+
+    def event_detail_records(self, event_id: int) -> EventDetailRecords | None:
+        event = self.db.get(ExtractedEvent, event_id)
+        if event is None:
+            return None
+        topic_ids = self._topic_ids_by_event([event_id]).get(event_id, [])
+        topics = tuple(
+            self.db.scalars(
+                select(TopicCluster)
+                .where(TopicCluster.id.in_(topic_ids))
+                .order_by(TopicCluster.id)
+            ).all()
+        )
+        return EventDetailRecords(
+            event=event,
+            evidence=self._evidence_records([event_id]),
+            topics=topics,
         )
 
     def aggregate_summary(

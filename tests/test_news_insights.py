@@ -201,6 +201,69 @@ def test_events_rejects_invalid_cursor(client: TestClient) -> None:
     assert response.status_code == 422
 
 
+def test_event_detail_returns_evidence_and_related_topics(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        event_id = session.query(ExtractedEvent.id).scalar()
+
+    response = client.get(f"/api/v1/news-insights/events/{event_id}")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert set(data) == {
+        "event_type",
+        "title",
+        "summary",
+        "importance",
+        "sentiment",
+        "affected_symbols",
+        "evidence",
+        "related_topics",
+    }
+    assert data["event_type"] == "SUPPLY_CONTRACT"
+    assert data["importance"] == {
+        "score": 0.88,
+        "level": "HIGH",
+        "explanation": "신규 장기 계약으로 반도체 공급 가시성이 높아졌다.",
+    }
+    assert data["sentiment"] == {"direction": "POSITIVE", "score": 0.79}
+    assert data["affected_symbols"] == [
+        {
+            "symbol": "005930",
+            "direction": "POSITIVE",
+            "exposure_score": 0.96,
+            "reason": "신규 장기 계약으로 반도체 공급 가시성이 높아졌다.",
+        }
+    ]
+    assert len(data["evidence"]) == 1
+    assert set(data["evidence"][0]) == {
+        "document_id",
+        "document_type",
+        "source",
+        "title",
+        "published_at",
+        "evidence_role",
+    }
+    assert data["evidence"][0]["document_type"] == "DISCLOSURE"
+    assert data["evidence"][0]["source"] == "DART"
+    assert data["evidence"][0]["published_at"].endswith("Z")
+    assert data["evidence"][0]["evidence_role"] == "PRIMARY"
+    assert len(data["related_topics"]) == 1
+    assert data["related_topics"][0]["title"] == "반도체 장기 수요 회복"
+
+
+def test_event_detail_returns_404_for_unknown_event(client: TestClient) -> None:
+    set_current_user(1)
+
+    response = client.get("/api/v1/news-insights/events/999")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NEWS_INSIGHT_EVENT_NOT_FOUND"
+
+
 def test_topic_map_returns_typed_nodes_and_keyword_relation_edges(
     client: TestClient,
 ) -> None:
