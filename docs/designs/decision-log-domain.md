@@ -1,5 +1,8 @@
 # BE 추가 필요 작업: 의사결정 저널(decision-log) 도메인
 
+> **Superseded by `348-decision-log-redesign.md` (ADR-016, 2026-07-21).** 판단 기록
+> 재설계로 이 단일 테이블 계약은 대체됐다. 아래는 이력이다.
+
 상태: **계약 확정(Frozen)** — 초안 2026-06-23, 계약 확정 2026-06-26(Opus, ADR-006).
 `docs/api/contract-alignment.md`의 G10/N1 후속. FE `DecisionLog`(의사결정 저널) 화면을
 백엔드로 영속화하기 위한 신규 도메인. **구현은 아래 §6 계약 확정을 정본으로 따른다**
