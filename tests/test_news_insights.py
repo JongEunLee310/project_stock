@@ -560,6 +560,81 @@ def test_topic_detail_returns_latest_insight_and_required_fields(
     assert data["updated_at"].endswith("Z")
 
 
+def test_topic_symbols_separates_exposure_from_direction(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        topic_id = session.query(TopicCluster.id).scalar()
+
+    response = client.get(
+        f"/api/v1/news-insights/topics/{topic_id}/symbols"
+    )
+
+    assert response.status_code == 200
+    items = cast(list[dict[str, Any]], api_data(response))
+    assert items == [
+        {
+            "symbol": "005930",
+            "exposure_score": 0.91,
+            "impact_direction": "POSITIVE",
+            "relationship": "DIRECT",
+            "valuation_burden": "MEDIUM",
+            "portfolio_weight": None,
+            "current_signal": None,
+        }
+    ]
+    assert isinstance(items[0]["exposure_score"], float)
+    assert isinstance(items[0]["impact_direction"], str)
+
+
+def test_topic_graph_returns_keyword_nodes_edges_and_references(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        topic_id = session.query(TopicCluster.id).scalar()
+        event_id = session.query(ExtractedEvent.id).scalar()
+
+    response = client.get(
+        f"/api/v1/news-insights/topics/{topic_id}/graph"
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert set(data) == {"nodes", "edges"}
+    assert len(data["nodes"]) == 2
+    assert all(
+        set(node)
+        == {
+            "id",
+            "label",
+            "type",
+            "mention_count",
+            "sentiment_score",
+            "related_event_ids",
+            "related_symbols",
+        }
+        for node in data["nodes"]
+    )
+    assert {node["type"] for node in data["nodes"]} == {"KEYWORD"}
+    assert all(node["related_event_ids"] == [event_id] for node in data["nodes"])
+    assert all(node["related_symbols"] == ["005930"] for node in data["nodes"])
+    assert {node["sentiment_score"] for node in data["nodes"]} == {0.78, 0.74}
+
+    assert len(data["edges"]) == 1
+    edge = data["edges"][0]
+    assert set(edge) == {"source", "target", "strength", "cooccurrence_count"}
+    assert edge["strength"] == 0.86
+    assert edge["cooccurrence_count"] == 5
+    node_ids = {node["id"] for node in data["nodes"]}
+    assert edge["source"] in node_ids
+    assert edge["target"] in node_ids
+    assert "sentiment_score" not in edge
+
+
 def test_topic_trend_returns_aggregated_points_markers_and_sources(
     client: TestClient,
 ) -> None:
@@ -677,7 +752,7 @@ def test_topic_detail_routes_return_404_for_unknown_topic(
 ) -> None:
     set_current_user(1)
 
-    for suffix in ("", "/trend", "/evidence"):
+    for suffix in ("", "/trend", "/evidence", "/symbols", "/graph"):
         response = client.get(f"/api/v1/news-insights/topics/999{suffix}")
         assert response.status_code == 404
         assert response.json()["error"]["code"] == "NEWS_INSIGHT_TOPIC_NOT_FOUND"

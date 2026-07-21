@@ -17,6 +17,7 @@ from app.domains.news_insights.model import (
     TopicCluster,
     TopicInsight,
     TopicKeyword,
+    TopicSymbolSensitivity,
 )
 from app.domains.news_insights.schema import (
     EventsQuery,
@@ -63,6 +64,14 @@ class TopicMapRecords:
     topics: tuple[TopicCluster, ...]
     keywords: tuple[TopicKeyword, ...]
     relations: tuple[KeywordRelation, ...]
+
+
+@dataclass(frozen=True)
+class TopicGraphRecords:
+    keywords: tuple[TopicKeyword, ...]
+    relations: tuple[KeywordRelation, ...]
+    related_event_ids: tuple[int, ...]
+    related_symbols: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -296,6 +305,65 @@ class NewsInsightsRepository:
 
     def topic_exists(self, topic_id: int) -> bool:
         return self.db.get(TopicCluster, topic_id) is not None
+
+    def list_topic_symbol_sensitivities(
+        self,
+        topic_id: int,
+    ) -> tuple[TopicSymbolSensitivity, ...]:
+        return tuple(
+            self.db.scalars(
+                select(TopicSymbolSensitivity)
+                .where(TopicSymbolSensitivity.topic_id == topic_id)
+                .order_by(
+                    TopicSymbolSensitivity.exposure_score.desc(),
+                    TopicSymbolSensitivity.symbol,
+                )
+            ).all()
+        )
+
+    def topic_graph_records(self, topic_id: int) -> TopicGraphRecords:
+        keywords = tuple(
+            self.db.scalars(
+                select(TopicKeyword)
+                .where(TopicKeyword.topic_id == topic_id)
+                .order_by(TopicKeyword.weight.desc(), TopicKeyword.id)
+            ).all()
+        )
+        relations = tuple(
+            self.db.scalars(
+                select(KeywordRelation)
+                .where(KeywordRelation.topic_id == topic_id)
+                .order_by(KeywordRelation.id)
+            ).all()
+        )
+        related_event_ids = tuple(sorted(self._topic_event_ids(topic_id)))
+        event_symbols = self.db.scalars(
+            select(ExtractedEvent.primary_symbol)
+            .where(
+                ExtractedEvent.id.in_(related_event_ids),
+                ExtractedEvent.primary_symbol.is_not(None),
+            )
+            .order_by(ExtractedEvent.primary_symbol)
+        ).all()
+        sensitivity_symbols = self.db.scalars(
+            select(TopicSymbolSensitivity.symbol)
+            .where(TopicSymbolSensitivity.topic_id == topic_id)
+            .order_by(TopicSymbolSensitivity.symbol)
+        ).all()
+        return TopicGraphRecords(
+            keywords=keywords,
+            relations=relations,
+            related_event_ids=related_event_ids,
+            related_symbols=tuple(
+                sorted(
+                    {
+                        symbol
+                        for symbol in (*event_symbols, *sensitivity_symbols)
+                        if symbol is not None
+                    }
+                )
+            ),
+        )
 
     def investor_flow_records(
         self,

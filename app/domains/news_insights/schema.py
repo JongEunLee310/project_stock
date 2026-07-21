@@ -16,7 +16,9 @@ from app.domains.news_insights.types import (
     SentimentDirection,
     SymbolRelationship,
     TopicCategory,
+    ValuationBurden,
 )
+from app.domains.signals.types import SignalType
 
 
 class OverviewQuery(BaseModel):
@@ -217,6 +219,38 @@ class TopicMapEdge(BaseModel):
 class TopicMapResponse(BaseModel):
     nodes: list[TopicMapNode]
     edges: list[TopicMapEdge]
+
+
+class TopicSymbolSensitivityItem(BaseModel):
+    symbol: str
+    exposure_score: float = Field(ge=0.0, le=1.0)
+    impact_direction: SentimentDirection
+    relationship: SymbolRelationship
+    valuation_burden: ValuationBurden | None
+    portfolio_weight: float | None = Field(default=None, ge=0.0, le=1.0)
+    current_signal: SignalType | None = None
+
+
+class TopicGraphNode(BaseModel):
+    id: str
+    label: str
+    type: Literal["KEYWORD"]
+    mention_count: int = Field(ge=0)
+    sentiment_score: float = Field(ge=0.0, le=1.0)
+    related_event_ids: list[int]
+    related_symbols: list[str]
+
+
+class TopicGraphEdge(BaseModel):
+    source: str
+    target: str
+    strength: float = Field(ge=0.0, le=1.0)
+    cooccurrence_count: int = Field(ge=0)
+
+
+class TopicGraphResponse(BaseModel):
+    nodes: list[TopicGraphNode]
+    edges: list[TopicGraphEdge]
 
 
 class TopicScores(BaseModel):

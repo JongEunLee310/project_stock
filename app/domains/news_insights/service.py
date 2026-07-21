@@ -19,6 +19,7 @@ from app.domains.news_insights.repository import (
     NewsInsightsRepository,
     SummaryCounts,
     TopicDetailRecords,
+    TopicGraphRecords,
     TopicMapRecords,
     TopicTrendRecords,
 )
@@ -47,11 +48,15 @@ from app.domains.news_insights.schema import (
     TopicEvidenceItem,
     TopicEvidenceQuery,
     TopicInsightResponse,
+    TopicGraphEdge,
+    TopicGraphNode,
+    TopicGraphResponse,
     TopicMapEdge,
     TopicMapNode,
     TopicMapQuery,
     TopicMapResponse,
     TopicScores,
+    TopicSymbolSensitivityItem,
     TopicSourceDistribution,
     TopicTrendMarker,
     TopicTrendPoint,
@@ -69,6 +74,7 @@ from app.domains.news_insights.types import (
     SentimentDirection,
     SymbolRelationship,
     TopicCategory,
+    ValuationBurden,
 )
 
 
@@ -194,6 +200,33 @@ class NewsInsightsService:
         if records is None:
             self._raise_topic_not_found()
         return self._topic_detail_response(records)
+
+    def get_topic_symbols(self, topic_id: int) -> list[TopicSymbolSensitivityItem]:
+        if not self.repository.topic_exists(topic_id):
+            self._raise_topic_not_found()
+        return [
+            TopicSymbolSensitivityItem(
+                symbol=item.symbol,
+                exposure_score=item.exposure_score,
+                impact_direction=SentimentDirection(item.impact_direction),
+                relationship=SymbolRelationship(item.relationship),
+                valuation_burden=(
+                    ValuationBurden(item.valuation_burden)
+                    if item.valuation_burden is not None
+                    else None
+                ),
+                portfolio_weight=None,
+                current_signal=None,
+            )
+            for item in self.repository.list_topic_symbol_sensitivities(topic_id)
+        ]
+
+    def get_topic_graph(self, topic_id: int) -> TopicGraphResponse:
+        if not self.repository.topic_exists(topic_id):
+            self._raise_topic_not_found()
+        return self._topic_graph_response(
+            self.repository.topic_graph_records(topic_id)
+        )
 
     def get_topic_trend(
         self,
@@ -520,6 +553,38 @@ class NewsInsightsService:
             and (relation.topic_id, relation.target_keyword) in keyword_ids
         ]
         return TopicMapResponse(nodes=[*topic_nodes, *keyword_nodes], edges=edges)
+
+    @classmethod
+    def _topic_graph_response(cls, records: TopicGraphRecords) -> TopicGraphResponse:
+        node_ids = {
+            keyword.keyword: cls._keyword_node_id(keyword.id)
+            for keyword in records.keywords
+        }
+        return TopicGraphResponse(
+            nodes=[
+                TopicGraphNode(
+                    id=cls._keyword_node_id(keyword.id),
+                    label=keyword.keyword,
+                    type="KEYWORD",
+                    mention_count=keyword.mention_count,
+                    sentiment_score=keyword.sentiment_score,
+                    related_event_ids=list(records.related_event_ids),
+                    related_symbols=list(records.related_symbols),
+                )
+                for keyword in records.keywords
+            ],
+            edges=[
+                TopicGraphEdge(
+                    source=node_ids[relation.source_keyword],
+                    target=node_ids[relation.target_keyword],
+                    strength=relation.strength,
+                    cooccurrence_count=relation.cooccurrence_count,
+                )
+                for relation in records.relations
+                if relation.source_keyword in node_ids
+                and relation.target_keyword in node_ids
+            ],
+        )
 
     @classmethod
     def _topic_detail_response(
