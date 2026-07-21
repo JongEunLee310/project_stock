@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
-from sqlalchemy import Float, Select, String, and_, case, cast, func, or_, select, true
+from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
@@ -409,39 +409,28 @@ class DecisionLogRepository:
         }
 
     def _process_quality_averages(self, user_id: int) -> dict[str, float]:
-        dialect_name = self.db.get_bind().dialect.name
-        if dialect_name == "postgresql":
-            quality_items = func.json_each(
-                DecisionReview.process_quality
-            ).table_valued("key", "value")
-            numeric_condition = func.json_typeof(quality_items.c.value) == "number"
-            numeric_value = cast(cast(quality_items.c.value, String), Float)
-        else:
-            quality_items = func.json_each(
-                DecisionReview.process_quality
-            ).table_valued("key", "value", "type")
-            numeric_condition = quality_items.c.type.in_(("integer", "real"))
-            numeric_value = cast(quality_items.c.value, Float)
-
-        average = func.avg(numeric_value).label("average")
+        # process_quality는 자유 JSON이라 DB 방언별 JSON 집계 대신 Python으로 평균을
+        # 낸다. 사용자당 복기 수가 적어 부담이 없고, 방언 분기 없이 검증 가능하다.
         stmt = (
-            select(quality_items.c.key, average)
-            .select_from(DecisionReview)
+            select(DecisionReview.process_quality)
             .join(DecisionLog, DecisionLog.id == DecisionReview.decision_id)
-            .join(quality_items, true())
             .where(
                 DecisionLog.user_id == user_id,
                 DecisionReview.process_quality.is_not(None),
-                numeric_condition,
             )
-            .group_by(quality_items.c.key)
-            .order_by(quality_items.c.key)
         )
-        return {
-            str(key): float(value)
-            for key, value in self.db.execute(stmt)
-            if value is not None
-        }
+        sums: dict[str, float] = {}
+        counts: dict[str, int] = {}
+        for (quality,) in self.db.execute(stmt):
+            if not isinstance(quality, dict):
+                continue
+            for key, value in quality.items():
+                # bool은 int 하위형이므로 수치에서 제외한다.
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    continue
+                sums[key] = sums.get(key, 0.0) + float(value)
+                counts[key] = counts.get(key, 0) + 1
+        return {key: sums[key] / counts[key] for key in sorted(sums)}
 
     def create(
         self,
