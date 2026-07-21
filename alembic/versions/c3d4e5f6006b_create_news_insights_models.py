@@ -5,6 +5,7 @@ Revises: c3d4e5f6006a
 """
 
 from collections.abc import Sequence
+from typing import Any
 
 from alembic import op
 import sqlalchemy as sa
@@ -15,7 +16,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def _created_at_column() -> sa.Column[object]:
+def _created_at_column() -> "sa.Column[Any]":
     return sa.Column(
         "created_at",
         sa.DateTime(timezone=True),

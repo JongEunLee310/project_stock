@@ -1,11 +1,12 @@
 import importlib.util
 from datetime import UTC, datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any, cast
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import create_engine, inspect, select
+from sqlalchemy import Table, create_engine, inspect, select
 from sqlalchemy.orm import Mapper, Session
 
 from app.domains.news_insights.model import (
@@ -32,6 +33,10 @@ from app.domains.news_insights.types import (
     TopicCategory,
 )
 
+def _enum_values(enum_type: type[Enum]) -> list[Any]:
+    return [member.value for member in enum_type]
+
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TABLE_NAMES = {
     "source_documents",
@@ -45,7 +50,7 @@ TABLE_NAMES = {
 
 
 def test_news_insight_enums_match_frozen_contract() -> None:
-    expected = {
+    expected: dict[type[Enum], list[str]] = {
         DocumentType: [
             "NEWS",
             "DISCLOSURE",
@@ -84,7 +89,7 @@ def test_news_insight_enums_match_frozen_contract() -> None:
     }
 
     for enum_type, values in expected.items():
-        assert [item.value for item in enum_type] == values
+        assert _enum_values(enum_type) == values
 
 
 def test_news_insight_models_define_foreign_keys_and_constraints() -> None:
@@ -113,7 +118,10 @@ def test_news_insight_models_define_foreign_keys_and_constraints() -> None:
             column = mapper.columns[column_name]
             assert {key.target_fullname for key in column.foreign_keys} == {target}
 
-    source_indexes = {index.name: index for index in SourceDocument.__table__.indexes}
+    source_indexes = {
+        str(index.name): index
+        for index in cast(Table, SourceDocument.__table__).indexes
+    }
     assert source_indexes["ix_source_documents_content_hash"].unique is True
     assert [
         column.name
@@ -121,11 +129,13 @@ def test_news_insight_models_define_foreign_keys_and_constraints() -> None:
             "ix_source_documents_document_type_published_at"
         ].columns
     ] == ["document_type", "published_at"]
-    event_indexes = {index.name for index in ExtractedEvent.__table__.indexes}
+    event_indexes = {
+        index.name for index in cast(Table, ExtractedEvent.__table__).indexes
+    }
     assert "ix_extracted_events_event_fingerprint" in event_indexes
     assert any(
         constraint.name == "uq_topic_insights_topic_version"
-        for constraint in TopicInsight.__table__.constraints
+        for constraint in cast(Table, TopicInsight.__table__).constraints
     )
 
 
