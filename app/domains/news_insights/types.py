@@ -84,3 +84,44 @@ class InvestorType(str, Enum):
     INSTITUTION = "INSTITUTION"
     RETAIL = "RETAIL"
     ETF = "ETF"
+
+
+class MarketEventKind(str, Enum):
+    EARNINGS = "EARNINGS"
+    IR_EVENT = "IR_EVENT"
+    POLICY = "POLICY"
+    RATE_DECISION = "RATE_DECISION"
+    SHAREHOLDER_MEETING = "SHAREHOLDER_MEETING"
+    PRODUCT_EVENT = "PRODUCT_EVENT"
+    REGULATION = "REGULATION"
+    LOCKUP_EXPIRY = "LOCKUP_EXPIRY"
+    OTHER = "OTHER"
+
+
+class ValuationBurden(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
+class AgentStage(str, Enum):
+    COLLECT = "COLLECT"
+    NORMALIZE = "NORMALIZE"
+    EXTRACT = "EXTRACT"
+    CLUSTER = "CLUSTER"
+    SENTIMENT = "SENTIMENT"
+    IMPACT = "IMPACT"
+    LINK = "LINK"
+
+
+class AgentRunStatus(str, Enum):
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    DELAYED = "DELAYED"
+    FAILED = "FAILED"
+
+
+class FlowDirection(str, Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+    NEUTRAL = "NEUTRAL"
