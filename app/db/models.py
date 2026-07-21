@@ -10,6 +10,7 @@ import app.domains.earnings.model  # noqa: F401 — registers earnings models
 import app.domains.jobs.model  # noqa: F401 — registers JobRun model for autogenerate
 import app.domains.llm_analysis.model  # noqa: F401 — registers LLM analysis run model
 import app.domains.news.model  # noqa: F401 — registers NewsItem model for autogenerate
+import app.domains.news_insights.model  # noqa: F401 — registers news insight models
 import app.domains.notification_channels.model  # noqa: F401 — registers channel model
 import app.domains.portfolios.model  # noqa: F401 — registers Portfolio models for autogenerate
 import app.domains.prices.model  # noqa: F401 — registers price bar model
