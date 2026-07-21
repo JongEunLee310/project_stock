@@ -18,8 +18,10 @@ from app.domains.news_insights.schema import (
     TopicDetailResponse,
     TopicEvidenceItem,
     TopicEvidenceQuery,
+    TopicGraphResponse,
     TopicMapQuery,
     TopicMapResponse,
+    TopicSymbolSensitivityItem,
     TopicTrendQuery,
     TopicTrendResponse,
 )
@@ -159,6 +161,34 @@ def get_news_insight_topic_detail(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[TopicDetailResponse]:
     return success(NewsInsightsService(db).get_topic_detail(topic_id))
+
+
+@router.get(
+    "/topics/{topic_id}/symbols",
+    response_model=ApiResponse[list[TopicSymbolSensitivityItem]],
+    summary="List news insight topic symbol sensitivities",
+    description="Return symbol exposure and impact direction for a topic.",
+)
+def list_news_insight_topic_symbols(
+    topic_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[list[TopicSymbolSensitivityItem]]:
+    return success(NewsInsightsService(db).get_topic_symbols(topic_id))
+
+
+@router.get(
+    "/topics/{topic_id}/graph",
+    response_model=ApiResponse[TopicGraphResponse],
+    summary="Get news insight topic keyword graph",
+    description="Return topic-scoped keyword nodes, references, and relation edges.",
+)
+def get_news_insight_topic_graph(
+    topic_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[TopicGraphResponse]:
+    return success(NewsInsightsService(db).get_topic_graph(topic_id))
 
 
 @router.get(
