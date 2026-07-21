@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed
+Superseded by ADR-016 (2026-07-21). 판단 기록 재설계로 단일 테이블·enum·상태 계약이
+대체됐다. 아래 원문은 이력으로 남긴다.
 
 ## Context
 

@@ -1,99 +1,167 @@
-from datetime import datetime
-from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from app.core.schema import UtcDatetime
-from app.domains.decision_logs.types import CreatedBy, DecisionStatus, DecisionType
+from app.domains.decision_logs.types import (
+    ConfidenceLevel,
+    CreatedBy,
+    DecisionStatus,
+    DecisionType,
+    EvidenceRelationship,
+    ReviewTriggerType,
+    RiskSeverity,
+    TargetType,
+)
+
+
+class DecisionTarget(BaseModel):
+    type: TargetType
+    id: str = Field(min_length=1, max_length=64)
+    label: str | None = None
+
+
+class DecisionEvidenceInput(BaseModel):
+    type: str = Field(min_length=1, max_length=30)
+    id: str | None = Field(default=None, max_length=64)
+    version: int | None = None
+    title: str | None = Field(default=None, max_length=255)
+    summary: str | None = None
+    snapshot: dict[str, Any] | None = None
+    relationship: EvidenceRelationship = EvidenceRelationship.SUPPORTING
+
+
+class DecisionRiskInput(BaseModel):
+    type: str = Field(min_length=1, max_length=40)
+    severity: RiskSeverity
+    description: str | None = None
+
+
+class DecisionReviewTriggerInput(BaseModel):
+    type: ReviewTriggerType
+    condition: dict[str, Any]
+    scheduled_at: UtcDatetime | None = None
+
+
+class DecisionSnapshotInput(BaseModel):
+    snapshot_type: str = Field(min_length=1, max_length=30)
+    data: dict[str, Any]
 
 
 class DecisionLogCreate(BaseModel):
-    ticker: str = Field(max_length=20)
+    target: DecisionTarget
     decision_type: DecisionType
-    company_name: str | None = Field(default=None, max_length=255)
-    decision_status: DecisionStatus = DecisionStatus.OPEN
-    summary: str | None = None
-    reason: str | None = None
-    risk_note: str | None = None
-    action_plan: str | None = None
-    confidence_score: int | None = Field(default=None, ge=0, le=100)
-    target_price: Decimal | None = None
-    stop_loss_price: Decimal | None = None
-    valuation_snapshot: dict[str, Any] | None = None
-    news_snapshot: dict[str, Any] | None = None
-    portfolio_snapshot: dict[str, Any] | None = None
-    ai_analysis_snapshot: dict[str, Any] | None = None
-    cognitive_risks: list[str] = Field(default_factory=list)
+    thesis: str | None = None
+    rationale: str | None = None
+    confidence_level: ConfidenceLevel | None = None
+    supporting_reasons: list[str] = Field(default_factory=list)
+    counter_arguments: list[str] = Field(default_factory=list)
+    risks: list[DecisionRiskInput] = Field(default_factory=list)
+    evidence: list[DecisionEvidenceInput] = Field(default_factory=list)
+    review_triggers: list[DecisionReviewTriggerInput] = Field(default_factory=list)
     created_by: CreatedBy = CreatedBy.USER
-    decided_at: datetime | None = None
 
 
 class DecisionLogUpdate(BaseModel):
-    ticker: str | None = Field(default=None, max_length=20)
+    target: DecisionTarget | None = None
     decision_type: DecisionType | None = None
-    company_name: str | None = Field(default=None, max_length=255)
-    decision_status: DecisionStatus | None = None
-    summary: str | None = None
-    reason: str | None = None
-    risk_note: str | None = None
-    action_plan: str | None = None
-    confidence_score: int | None = Field(default=None, ge=0, le=100)
-    target_price: Decimal | None = None
-    stop_loss_price: Decimal | None = None
-    valuation_snapshot: dict[str, Any] | None = None
-    news_snapshot: dict[str, Any] | None = None
-    portfolio_snapshot: dict[str, Any] | None = None
-    ai_analysis_snapshot: dict[str, Any] | None = None
-    cognitive_risks: list[str] | None = None
+    thesis: str | None = None
+    rationale: str | None = None
+    confidence_level: ConfidenceLevel | None = None
     created_by: CreatedBy | None = None
-    decided_at: datetime | None = None
-    reviewed_at: datetime | None = None
-    closed_at: datetime | None = None
+
+
+class DecisionActivateRequest(BaseModel):
+    snapshots: list[DecisionSnapshotInput] = Field(default_factory=list)
+
+
+class DecisionEvidenceResponse(BaseModel):
+    id: int
+    type: str
+    evidence_id: str | None = None
+    version: int | None = None
+    title: str
+    summary: str | None = None
+    snapshot: dict[str, Any] | None = None
+    relationship: str
+    created_at: UtcDatetime
+
+
+class DecisionRiskResponse(BaseModel):
+    id: int
+    type: str
+    description: str | None = None
+    severity: str
+    created_at: UtcDatetime
+
+
+class DecisionReviewTriggerResponse(BaseModel):
+    id: int
+    type: str
+    condition: dict[str, Any]
+    scheduled_at: UtcDatetime | None = None
+    status: str
+    triggered_at: UtcDatetime | None = None
+    created_at: UtcDatetime
+
+
+class DecisionSnapshotResponse(BaseModel):
+    id: int
+    snapshot_type: str
+    data: dict[str, Any]
+    captured_at: UtcDatetime
 
 
 class DecisionLogResponse(BaseModel):
-    model_config = {"from_attributes": True}
-
     id: int
     user_id: int
-    ticker: str
-    company_name: str | None = None
+    target_type: str
+    target_id: str
+    symbol: str | None = None
     decision_type: str
-    decision_status: str
-    summary: str | None = None
-    reason: str | None = None
-    risk_note: str | None = None
-    action_plan: str | None = None
-    confidence_score: int | None = None
-    target_price: Decimal | None = None
-    stop_loss_price: Decimal | None = None
-    valuation_snapshot: dict[str, Any] | None = None
-    news_snapshot: dict[str, Any] | None = None
-    portfolio_snapshot: dict[str, Any] | None = None
-    ai_analysis_snapshot: dict[str, Any] | None = None
-    cognitive_risks: list[str] = Field(default_factory=list)
+    status: str
+    thesis: str | None = None
+    rationale: str | None = None
+    confidence_level: str | None = None
     created_by: str
-    decided_at: UtcDatetime
+    superseded_by_id: int | None = None
+    decided_at: UtcDatetime | None = None
+    activated_at: UtcDatetime | None = None
     reviewed_at: UtcDatetime | None = None
     closed_at: UtcDatetime | None = None
     created_at: UtcDatetime
     updated_at: UtcDatetime
+    risks: list[DecisionRiskResponse]
+    evidence: list[DecisionEvidenceResponse]
+    review_triggers: list[DecisionReviewTriggerResponse]
 
 
-class ReviewedDecisionItem(BaseModel):
-    model_config = {"from_attributes": True}
+class DecisionLogDetailResponse(DecisionLogResponse):
+    snapshots: list[DecisionSnapshotResponse]
 
+
+class DecisionLogListItem(BaseModel):
     id: int
-    ticker: str
-    company_name: str | None = None
-    decision_type: str
-    reason: str | None = None
-    risk_note: str | None = None
-    reviewed_at: UtcDatetime
+    target: DecisionTarget
+    decision_type: DecisionType
+    summary: str | None = None
+    risks: list[str]
+    confidence_level: ConfidenceLevel | None = None
+    status: DecisionStatus
+    review_at: UtcDatetime | None = None
+    created_at: UtcDatetime
 
 
-class DecisionLogStatsResponse(BaseModel):
-    decision_type_counts: dict[str, int]
-    total: int
-    recent_reviewed: list[ReviewedDecisionItem]
+class DecisionTypeDistributionItem(BaseModel):
+    type: DecisionType
+    count: int
+    share: float
+
+
+class DecisionOverviewResponse(BaseModel):
+    total_count: int
+    created_this_week: int
+    review_due_count: int
+    active_count: int
+    decision_type_distribution: list[DecisionTypeDistributionItem]
+    as_of: UtcDatetime

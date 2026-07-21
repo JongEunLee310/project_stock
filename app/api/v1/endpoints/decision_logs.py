@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import get_current_user
@@ -8,41 +9,56 @@ from app.core.pagination import PaginationParams, SortParams, sort_param
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.decision_logs.schema import (
+    DecisionActivateRequest,
     DecisionLogCreate,
+    DecisionLogDetailResponse,
+    DecisionLogListItem,
+    DecisionOverviewResponse,
     DecisionLogResponse,
-    DecisionLogStatsResponse,
     DecisionLogUpdate,
 )
 from app.domains.decision_logs.service import DecisionLogService
+from app.domains.decision_logs.types import DecisionStatus, DecisionType, TargetType
 from app.domains.users.model import User
 
 router = APIRouter()
 decision_log_sort = sort_param(
     allowed_fields={"decided_at", "created_at"},
-    default="-decided_at",
+    default="-created_at",
 )
 
 
 @router.get(
     "",
-    response_model=ApiResponse[list[DecisionLogResponse]],
+    response_model=ApiResponse[list[DecisionLogListItem]],
     summary="List decision logs",
     description="Return paginated decision logs for the authenticated user.",
 )
 def list_decision_logs(
     pagination: Annotated[PaginationParams, Depends()],
     sort: Annotated[SortParams, Depends(decision_log_sort)],
+    target_type: TargetType | None = None,
+    symbol: Annotated[str | None, Query(min_length=1, max_length=20)] = None,
+    decision_type: DecisionType | None = None,
+    status: DecisionStatus | None = None,
+    risk_type: Annotated[str | None, Query(min_length=1, max_length=40)] = None,
+    review_due_before: datetime | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ApiResponse[list[DecisionLogResponse]]:
+) -> ApiResponse[list[DecisionLogListItem]]:
     service = DecisionLogService(db)
-    items = service.list_decision_logs(
+    items, total = service.list_decision_logs(
         current_user.id,
         offset=pagination.offset,
         limit=pagination.limit,
         sort=sort.value,
+        target_type=target_type,
+        symbol=symbol,
+        decision_type=decision_type,
+        status=status,
+        risk_type=risk_type,
+        review_due_before=review_due_before,
     )
-    total = service.count_decision_logs(current_user.id)
     return paginated(
         items,
         page=pagination.page,
@@ -63,25 +79,49 @@ def create_decision_log(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[DecisionLogResponse]:
-    return success(DecisionLogService(db).create_decision_log(current_user.id, data))
+    return success(DecisionLogService(db).create_decision(current_user.id, data))
 
 
 @router.get(
-    "/stats",
-    response_model=ApiResponse[DecisionLogStatsResponse],
-    summary="Get decision log stats",
-    description="Return decision type counts and recent reviewed decisions.",
+    "/overview",
+    response_model=ApiResponse[DecisionOverviewResponse],
+    summary="Get decision log overview",
+    description="Return decision activity aggregates for the authenticated user.",
 )
-def get_decision_log_stats(
+def get_decision_log_overview(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ApiResponse[DecisionLogStatsResponse]:
-    return success(DecisionLogService(db).get_stats(current_user.id))
+) -> ApiResponse[DecisionOverviewResponse]:
+    return success(DecisionLogService(db).get_overview(current_user.id))
+
+
+@router.get(
+    "/review-queue",
+    response_model=ApiResponse[list[DecisionLogListItem]],
+    summary="List decision logs due for review",
+    description="Return due DATE reviews for the authenticated user.",
+)
+def get_decision_log_review_queue(
+    pagination: Annotated[PaginationParams, Depends()],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[list[DecisionLogListItem]]:
+    items, total = DecisionLogService(db).get_review_queue(
+        current_user.id,
+        offset=pagination.offset,
+        limit=pagination.limit,
+    )
+    return paginated(
+        items,
+        page=pagination.page,
+        size=pagination.size,
+        total=total,
+    )
 
 
 @router.get(
     "/{decision_log_id}",
-    response_model=ApiResponse[DecisionLogResponse],
+    response_model=ApiResponse[DecisionLogDetailResponse],
     summary="Get decision log",
     description="Return one decision log owned by the authenticated user.",
 )
@@ -89,9 +129,9 @@ def get_decision_log(
     decision_log_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ApiResponse[DecisionLogResponse]:
+) -> ApiResponse[DecisionLogDetailResponse]:
     return success(
-        DecisionLogService(db).get_decision_log(decision_log_id, current_user.id),
+        DecisionLogService(db).get_decision(decision_log_id, current_user.id),
     )
 
 
@@ -108,9 +148,30 @@ def update_decision_log(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[DecisionLogResponse]:
     return success(
-        DecisionLogService(db).update_decision_log(
+        DecisionLogService(db).update_draft(
             decision_log_id,
             current_user.id,
             data,
         ),
+    )
+
+
+@router.post(
+    "/{decision_log_id}/activate",
+    response_model=ApiResponse[DecisionLogResponse],
+    summary="Activate decision log",
+    description="Activate a draft decision log and preserve supplied snapshots.",
+)
+def activate_decision_log(
+    decision_log_id: int,
+    data: DecisionActivateRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[DecisionLogResponse]:
+    return success(
+        DecisionLogService(db).activate(
+            decision_log_id,
+            current_user.id,
+            data or DecisionActivateRequest(),
+        )
     )

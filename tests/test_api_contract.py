@@ -95,23 +95,11 @@ def create_decision_log(client: TestClient) -> dict[str, Any]:
     response = client.post(
         "/api/v1/decision-logs",
         json={
-            "ticker": "AAPL",
-            "company_name": "Apple Inc.",
-            "decision_type": "BUY_CONSIDER",
-            "summary": "Earnings setup is attractive.",
-            "reason": "Services margin and buybacks support the thesis.",
-            "risk_note": "Valuation remains elevated.",
-            "action_plan": "Review after earnings.",
-            "confidence_score": 72,
-            "target_price": "220.0000",
-            "stop_loss_price": "180.0000",
-            "valuation_snapshot": {"pe": 28},
-            "news_snapshot": {"headline_count": 3},
-            "portfolio_snapshot": {"weight": "0.12"},
-            "ai_analysis_snapshot": {"rating": "positive"},
-            "cognitive_risks": ["confirmation_bias"],
-            "created_by": "USER",
-            "decided_at": "2026-06-26T00:00:00Z",
+            "target": {"type": "SYMBOL", "id": "AAPL", "label": "Apple"},
+            "decision_type": "BUY_REVIEW",
+            "thesis": "Services revenue will keep growing.",
+            "rationale": "Margins and buybacks support the thesis.",
+            "confidence_level": "HIGH",
         },
     )
     assert response.status_code == 201
@@ -605,28 +593,37 @@ SIGNAL_CONTRACT: Contract = {
 DECISION_LOG_CONTRACT: Contract = {
     "id": int,
     "user_id": int,
-    "ticker": str,
-    "company_name": (str, type(None)),
+    "target_type": str,
+    "target_id": str,
+    "symbol": (str, type(None)),
     "decision_type": str,
-    "decision_status": str,
-    "summary": (str, type(None)),
-    "reason": (str, type(None)),
-    "risk_note": (str, type(None)),
-    "action_plan": (str, type(None)),
-    "confidence_score": (int, type(None)),
-    "target_price": (str, type(None)),
-    "stop_loss_price": (str, type(None)),
-    "valuation_snapshot": (dict, type(None)),
-    "news_snapshot": (dict, type(None)),
-    "portfolio_snapshot": (dict, type(None)),
-    "ai_analysis_snapshot": (dict, type(None)),
-    "cognitive_risks": list,
+    "status": str,
+    "thesis": (str, type(None)),
+    "rationale": (str, type(None)),
+    "confidence_level": (str, type(None)),
     "created_by": str,
-    "decided_at": str,
+    "superseded_by_id": (int, type(None)),
+    "decided_at": (str, type(None)),
+    "activated_at": (str, type(None)),
     "reviewed_at": (str, type(None)),
     "closed_at": (str, type(None)),
     "created_at": str,
     "updated_at": str,
+    "risks": list,
+    "evidence": list,
+    "review_triggers": list,
+}
+
+DECISION_LOG_LIST_ITEM_CONTRACT: Contract = {
+    "id": int,
+    "target": dict,
+    "decision_type": str,
+    "summary": (str, type(None)),
+    "risks": list,
+    "confidence_level": (str, type(None)),
+    "status": str,
+    "review_at": (str, type(None)),
+    "created_at": str,
 }
 
 LOGIN_TOKEN_CONTRACT: Contract = {
@@ -1318,8 +1315,7 @@ def test_decision_log_response_contract(client: TestClient) -> None:
     assert list_response.status_code == 200
     assert_envelope(list_response.json(), has_meta=True)
     decision_logs = cast(list[dict[str, Any]], api_data(list_response))
-    assert_contract(decision_logs[0], DECISION_LOG_CONTRACT)
-    assert isinstance(decision_logs[0]["cognitive_risks"][0], str)
+    assert_contract(decision_logs[0], DECISION_LOG_LIST_ITEM_CONTRACT)
     assert api_meta(list_response) == {"page": 1, "size": 20, "total": 1}
 
     assert get_response.status_code == 200
@@ -1372,8 +1368,9 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/alert-events/{alert_event_id}/read",
         "/api/v1/notification-channels",
         "/api/v1/decision-logs",
-        "/api/v1/decision-logs/stats",
+        "/api/v1/decision-logs/overview",
         "/api/v1/decision-logs/{decision_log_id}",
+        "/api/v1/decision-logs/{decision_log_id}/activate",
     }
     assert expected_paths <= set(schema["paths"])
 
@@ -1408,8 +1405,8 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "AlertEventDetailProjection",
         "AlertEventReadRequest",
         "DecisionLogResponse",
-        "DecisionLogStatsResponse",
-        "ReviewedDecisionItem",
+        "DecisionOverviewResponse",
+        "DecisionTypeDistributionItem",
         "ResearchCoverageResponse",
         "CoverageAxis",
         "ResearchQueueData",

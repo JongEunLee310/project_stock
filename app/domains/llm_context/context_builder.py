@@ -124,13 +124,13 @@ class ContextBuilder:
         )
         return [
             RecentDecision(
-                symbol=decision_log.ticker,
+                symbol=decision_log.symbol or decision_log.target_id,
                 decision_type=decision_log.decision_type,
-                reason=decision_log.reason or "",
-                created_at=decision_log.decided_at,
+                reason=decision_log.rationale or "",
+                created_at=decision_log.decided_at or decision_log.created_at,
             )
             for decision_log in decision_logs
-            if decision_log.ticker == symbol
+            if decision_log.symbol == symbol
         ]
 
     def build_context_bundle(
