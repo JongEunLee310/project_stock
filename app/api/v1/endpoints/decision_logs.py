@@ -11,8 +11,8 @@ from app.domains.decision_logs.schema import (
     DecisionActivateRequest,
     DecisionLogCreate,
     DecisionLogDetailResponse,
+    DecisionOverviewResponse,
     DecisionLogResponse,
-    DecisionLogStatsResponse,
     DecisionLogUpdate,
 )
 from app.domains.decision_logs.service import DecisionLogService
@@ -69,16 +69,16 @@ def create_decision_log(
 
 
 @router.get(
-    "/stats",
-    response_model=ApiResponse[DecisionLogStatsResponse],
-    summary="Get decision log stats",
-    description="Return decision type counts and recent reviewed decisions.",
+    "/overview",
+    response_model=ApiResponse[DecisionOverviewResponse],
+    summary="Get decision log overview",
+    description="Return decision activity aggregates for the authenticated user.",
 )
-def get_decision_log_stats(
+def get_decision_log_overview(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ApiResponse[DecisionLogStatsResponse]:
-    return success(DecisionLogService(db).get_stats(current_user.id))
+) -> ApiResponse[DecisionOverviewResponse]:
+    return success(DecisionLogService(db).get_overview(current_user.id))
 
 
 @router.get(

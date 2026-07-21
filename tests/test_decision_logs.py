@@ -1,9 +1,11 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from fastapi.testclient import TestClient
 
-from app.domains.decision_logs.model import DecisionLog
+from app.domains.decision_logs.model import DecisionLog, DecisionReviewTrigger
+from app.domains.decision_logs.service import DecisionLogService
+from app.main import app
 from tests.conftest import (
     TestingSessionLocal,
     api_data,
@@ -216,7 +218,7 @@ def test_activate_transitions_and_persists_snapshots(client: TestClient) -> None
     assert api_error(repeated)["code"] == "DECISION_LOG_INVALID_STATE"
 
 
-def test_list_uses_offset_pagination_and_keeps_stats(client: TestClient) -> None:
+def test_list_uses_offset_pagination(client: TestClient) -> None:
     set_current_user(1)
     first = create_decision_log(
         client,
@@ -236,16 +238,10 @@ def test_list_uses_offset_pagination_and_keeps_stats(client: TestClient) -> None
         "/api/v1/decision-logs",
         params={"page": 2, "size": 1, "sort": "-created_at"},
     )
-    stats_response = client.get("/api/v1/decision-logs/stats")
-
     assert list_response.status_code == 200
     assert api_data(list_response) == [first]
     assert second["target_id"] == "MSFT"
     assert api_meta(list_response) == {"page": 2, "size": 1, "total": 2}
-    assert api_data(stats_response)["decision_type_counts"] == {
-        "BUY_REVIEW": 1,
-        "WATCH": 1,
-    }
 
 
 def test_list_rejects_invalid_sort(client: TestClient) -> None:
@@ -257,41 +253,136 @@ def test_list_rejects_invalid_sort(client: TestClient) -> None:
     assert api_error(response)["code"] == "VALIDATION_ERROR"
 
 
-def test_stats_keeps_recent_reviewed_scope_and_sort(client: TestClient) -> None:
+def test_overview_returns_empty_state_and_replaces_stats(client: TestClient) -> None:
     set_current_user(1)
-    older = create_decision_log(
+
+    response = client.get("/api/v1/decision-logs/overview")
+
+    assert response.status_code == 200
+    assert api_data(response) == {
+        "total_count": 0,
+        "created_this_week": 0,
+        "review_due_count": 0,
+        "active_count": 0,
+        "decision_type_distribution": [],
+        "as_of": api_data(response)["as_of"],
+    }
+    assert api_data(response)["as_of"].endswith("Z")
+    assert "/api/v1/decision-logs/stats" not in app.openapi()["paths"]
+
+
+def test_overview_aggregates_owned_decisions_at_boundaries(
+    client: TestClient,
+    monkeypatch: Any,
+) -> None:
+    now = datetime(2026, 8, 8, 12, tzinfo=UTC)
+    monkeypatch.setattr(DecisionLogService, "_now", staticmethod(lambda: now))
+    set_current_user(1)
+    boundary = create_decision_log(
         client,
         target={"type": "SYMBOL", "id": "AAPL"},
-        rationale="Older review",
+        decision_type="BUY_REVIEW",
+        review_triggers=[
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-08T11:00:00Z",
+            }
+        ],
     )
-    newer = create_decision_log(
+    recent = create_decision_log(
         client,
         target={"type": "SYMBOL", "id": "MSFT"},
-        rationale="Newer review",
+        decision_type="WATCH",
+        review_triggers=[
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-08T12:00:00Z",
+            }
+        ],
+    )
+    old = create_decision_log(
+        client,
+        target={"type": "TOPIC", "id": "ai-capex"},
+        decision_type="WATCH",
     )
     set_current_user(2, "other@example.com")
     other = create_decision_log(
         client,
         target={"type": "SYMBOL", "id": "TSLA"},
+        decision_type="SELL_REVIEW",
+        review_triggers=[
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-01T00:00:00Z",
+            }
+        ],
     )
 
     with TestingSessionLocal() as db:
-        for decision_id, reviewed_at in (
-            (older["id"], datetime(2026, 8, 1, tzinfo=UTC)),
-            (newer["id"], datetime(2026, 8, 2, tzinfo=UTC)),
-            (other["id"], datetime(2026, 8, 3, tzinfo=UTC)),
+        for decision_id, created_at, status in (
+            (boundary["id"], now - timedelta(days=7), "ACTIVE"),
+            (recent["id"], now - timedelta(days=1), "REVIEW_DUE"),
+            (old["id"], now - timedelta(days=7, microseconds=1), "DRAFT"),
+            (other["id"], now, "ACTIVE"),
         ):
             decision_log = db.get(DecisionLog, decision_id)
             assert decision_log is not None
-            decision_log.reviewed_at = reviewed_at
+            decision_log.created_at = created_at
+            decision_log.status = status
+        db.add_all(
+            [
+                DecisionReviewTrigger(
+                    decision_id=boundary["id"],
+                    trigger_type="DATE",
+                    condition={},
+                    scheduled_at=now - timedelta(hours=2),
+                    status="PENDING",
+                ),
+                DecisionReviewTrigger(
+                    decision_id=old["id"],
+                    trigger_type="EVENT",
+                    condition={},
+                    scheduled_at=now - timedelta(days=1),
+                    status="PENDING",
+                ),
+                DecisionReviewTrigger(
+                    decision_id=old["id"],
+                    trigger_type="DATE",
+                    condition={},
+                    scheduled_at=now - timedelta(days=1),
+                    status="TRIGGERED",
+                ),
+                DecisionReviewTrigger(
+                    decision_id=old["id"],
+                    trigger_type="DATE",
+                    condition={},
+                    scheduled_at=now + timedelta(days=1),
+                    status="PENDING",
+                ),
+            ]
+        )
         db.commit()
 
     set_current_user(1)
-    response = client.get("/api/v1/decision-logs/stats")
+    response = client.get("/api/v1/decision-logs/overview")
 
     assert response.status_code == 200
-    recent_reviewed = api_data(response)["recent_reviewed"]
-    assert [item["id"] for item in recent_reviewed] == [newer["id"], older["id"]]
+    overview = api_data(response)
+    assert overview["total_count"] == 3
+    assert overview["created_this_week"] == 2
+    assert overview["review_due_count"] == 2
+    assert overview["active_count"] == 2
+    assert overview["decision_type_distribution"] == [
+        {"type": "WATCH", "count": 2, "share": 2 / 3},
+        {"type": "BUY_REVIEW", "count": 1, "share": 1 / 3},
+    ]
+    assert sum(
+        item["share"] for item in overview["decision_type_distribution"]
+    ) == 1.0
+    assert overview["as_of"] == "2026-08-08T12:00:00Z"
 
 
 def test_all_item_routes_enforce_ownership(client: TestClient) -> None:

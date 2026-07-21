@@ -1,7 +1,8 @@
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, case, func, select
 from sqlalchemy.orm import Session
 
 from app.domains.decision_logs.model import (
@@ -18,6 +19,15 @@ from app.domains.decision_logs.schema import (
     DecisionSnapshotInput,
 )
 from app.domains.decision_logs.types import DecisionStatus, ReviewTriggerStatus
+
+
+@dataclass(frozen=True)
+class OverviewAgg:
+    total_count: int
+    created_this_week: int
+    review_due_count: int
+    active_count: int
+    decision_type_counts: dict[str, int]
 
 
 class DecisionLogRepository:
@@ -55,28 +65,66 @@ class DecisionLogRepository:
         )
         return int(self.db.scalar(stmt) or 0)
 
-    def count_by_decision_type(self, user_id: int) -> dict[str, int]:
+    def aggregate_overview(self, user_id: int, now: datetime) -> OverviewAgg:
+        # A rolling seven-day window avoids week-boundary and timezone ambiguity.
+        week_start = now - timedelta(days=7)
+        counts_stmt = select(
+            func.count(DecisionLog.id),
+            func.sum(
+                case((DecisionLog.created_at >= week_start, 1), else_=0)
+            ),
+            func.sum(
+                case(
+                    (
+                        DecisionLog.status.in_(
+                            (
+                                DecisionStatus.ACTIVE.value,
+                                DecisionStatus.REVIEW_DUE.value,
+                            )
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
+        ).where(DecisionLog.user_id == user_id)
+        total_count, created_this_week, active_count = self.db.execute(
+            counts_stmt
+        ).one()
+
+        review_due_stmt = (
+            select(func.count(func.distinct(DecisionLog.id)))
+            .join(
+                DecisionReviewTrigger,
+                DecisionReviewTrigger.decision_id == DecisionLog.id,
+            )
+            .where(
+                DecisionLog.user_id == user_id,
+                DecisionReviewTrigger.trigger_type == "DATE",
+                DecisionReviewTrigger.status == ReviewTriggerStatus.PENDING.value,
+                DecisionReviewTrigger.scheduled_at <= now,
+            )
+        )
+        review_due_count = self.db.scalar(review_due_stmt)
+
+        type_count = func.count(DecisionLog.id).label("type_count")
         stmt = (
-            select(DecisionLog.decision_type, func.count())
+            select(DecisionLog.decision_type, type_count)
             .where(DecisionLog.user_id == user_id)
             .group_by(DecisionLog.decision_type)
+            .order_by(type_count.desc(), DecisionLog.decision_type)
         )
-        return {
+        decision_type_counts = {
             str(decision_type): int(count)
             for decision_type, count in self.db.execute(stmt).all()
         }
-
-    def list_recent_reviewed(self, user_id: int, limit: int) -> list[DecisionLog]:
-        stmt = (
-            select(DecisionLog)
-            .where(
-                DecisionLog.user_id == user_id,
-                DecisionLog.reviewed_at.is_not(None),
-            )
-            .order_by(DecisionLog.reviewed_at.desc(), DecisionLog.id.desc())
-            .limit(limit)
+        return OverviewAgg(
+            total_count=int(total_count or 0),
+            created_this_week=int(created_this_week or 0),
+            review_due_count=int(review_due_count or 0),
+            active_count=int(active_count or 0),
+            decision_type_counts=decision_type_counts,
         )
-        return list(self.db.scalars(stmt).all())
 
     def create(
         self,

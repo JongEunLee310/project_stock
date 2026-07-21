@@ -12,21 +12,19 @@ from app.domains.decision_logs.schema import (
     DecisionEvidenceResponse,
     DecisionLogCreate,
     DecisionLogDetailResponse,
+    DecisionOverviewResponse,
     DecisionLogResponse,
-    DecisionLogStatsResponse,
     DecisionLogUpdate,
     DecisionReviewTriggerResponse,
     DecisionRiskResponse,
     DecisionSnapshotResponse,
-    ReviewedDecisionItem,
+    DecisionTypeDistributionItem,
 )
 from app.domains.decision_logs.types import (
     DecisionStatus,
+    DecisionType,
     EvidenceRelationship,
 )
-
-RECENT_REVIEWED_LIMIT = 5
-
 
 class DecisionLogService:
     def __init__(self, db: Session) -> None:
@@ -71,19 +69,24 @@ class DecisionLogService:
     def count_decision_logs(self, user_id: int) -> int:
         return self.repo.count_by_user(user_id)
 
-    def get_stats(self, user_id: int) -> DecisionLogStatsResponse:
-        decision_type_counts = self.repo.count_by_decision_type(user_id)
-        recent_reviewed = [
-            ReviewedDecisionItem.model_validate(decision_log)
-            for decision_log in self.repo.list_recent_reviewed(
-                user_id,
-                limit=RECENT_REVIEWED_LIMIT,
+    def get_overview(self, user_id: int) -> DecisionOverviewResponse:
+        now = self._now()
+        overview = self.repo.aggregate_overview(user_id, now)
+        distribution = [
+            DecisionTypeDistributionItem(
+                type=DecisionType(decision_type),
+                count=count,
+                share=count / overview.total_count,
             )
+            for decision_type, count in overview.decision_type_counts.items()
         ]
-        return DecisionLogStatsResponse(
-            decision_type_counts=decision_type_counts,
-            total=sum(decision_type_counts.values()),
-            recent_reviewed=recent_reviewed,
+        return DecisionOverviewResponse(
+            total_count=overview.total_count,
+            created_this_week=overview.created_this_week,
+            review_due_count=overview.review_due_count,
+            active_count=overview.active_count,
+            decision_type_distribution=distribution,
+            as_of=now,
         )
 
     def get_decision(

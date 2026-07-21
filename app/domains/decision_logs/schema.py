@@ -139,17 +139,16 @@ class DecisionLogDetailResponse(DecisionLogResponse):
     snapshots: list[DecisionSnapshotResponse]
 
 
-class ReviewedDecisionItem(BaseModel):
-    model_config = {"from_attributes": True}
-
-    id: int
-    symbol: str | None = None
-    decision_type: str
-    rationale: str | None = None
-    reviewed_at: UtcDatetime
+class DecisionTypeDistributionItem(BaseModel):
+    type: DecisionType
+    count: int
+    share: float
 
 
-class DecisionLogStatsResponse(BaseModel):
-    decision_type_counts: dict[str, int]
-    total: int
-    recent_reviewed: list[ReviewedDecisionItem]
+class DecisionOverviewResponse(BaseModel):
+    total_count: int
+    created_this_week: int
+    review_due_count: int
+    active_count: int
+    decision_type_distribution: list[DecisionTypeDistributionItem]
+    as_of: UtcDatetime
