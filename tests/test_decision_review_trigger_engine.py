@@ -44,7 +44,6 @@ def test_review_trigger_condition_schemas_accept_contract_shapes(
 @pytest.mark.parametrize(
     ("trigger_type", "condition"),
     [
-        ("DATE", {"at": "tomorrow"}),
         ("PRICE", {"op": "eq", "value": 100}),
         ("PRICE", {"op": "gte", "value": "100"}),
         ("SIGNAL_CHANGE", {"to": "UNKNOWN"}),

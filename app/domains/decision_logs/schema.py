@@ -25,10 +25,6 @@ from app.domains.decision_logs.types import (
 from app.domains.signals.types import SignalType
 
 
-class DateReviewTriggerCondition(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
 class PriceReviewTriggerCondition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -56,8 +52,8 @@ class EventReviewTriggerCondition(BaseModel):
     event_type: str = Field(min_length=1)
 
 
+# DATE·MANUAL 트리거의 condition은 엔진이 평가하지 않으므로 자유 JSON으로 둔다.
 _REVIEW_CONDITION_MODELS: dict[ReviewTriggerType, type[BaseModel]] = {
-    ReviewTriggerType.DATE: DateReviewTriggerCondition,
     ReviewTriggerType.PRICE: PriceReviewTriggerCondition,
     ReviewTriggerType.SIGNAL_CHANGE: SignalChangeReviewTriggerCondition,
     ReviewTriggerType.METRIC: MetricReviewTriggerCondition,
