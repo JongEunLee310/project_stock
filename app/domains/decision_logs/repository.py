@@ -1,3 +1,4 @@
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.domains.decision_logs.model import (
     DecisionEvidence,
     DecisionLog,
+    DecisionReview,
     DecisionReviewTrigger,
     DecisionRisk,
     DecisionSnapshot,
@@ -17,9 +19,11 @@ from app.domains.decision_logs.schema import (
     DecisionEvidenceInput,
     DecisionLogCreate,
     DecisionLogUpdate,
+    DecisionReviewCreate,
     DecisionSnapshotInput,
 )
 from app.domains.decision_logs.types import (
+    CreatedBy,
     DecisionStatus,
     ReviewTriggerStatus,
     ReviewTriggerType,
@@ -33,6 +37,41 @@ class OverviewAgg:
     review_due_count: int
     active_count: int
     decision_type_counts: dict[str, int]
+
+
+class DecisionReviewRepository:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def create(
+        self,
+        decision_id: int,
+        data: DecisionReviewCreate,
+        reviewed_at: datetime,
+    ) -> DecisionReview:
+        review = DecisionReview(
+            decision_id=decision_id,
+            outcome_status=data.outcome_status.value,
+            thesis_result=data.thesis_result.value,
+            process_quality=data.process_quality,
+            result_metrics=data.result_metrics,
+            what_went_well=data.what_went_well,
+            what_was_missed=data.what_was_missed,
+            what_to_change=data.what_to_change,
+            reviewed_at=reviewed_at,
+        )
+        self.db.add(review)
+        self.db.commit()
+        self.db.refresh(review)
+        return review
+
+    def list_by_decision(self, decision_id: int) -> list[DecisionReview]:
+        stmt = (
+            select(DecisionReview)
+            .where(DecisionReview.decision_id == decision_id)
+            .order_by(DecisionReview.reviewed_at.desc(), DecisionReview.id.desc())
+        )
+        return list(self.db.scalars(stmt).all())
 
 
 class DecisionLogRepository:
@@ -326,6 +365,64 @@ class DecisionLogRepository:
         self.db.commit()
         self.db.refresh(decision_log)
         return decision_log
+
+    def revise(self, source: DecisionLog) -> DecisionLog:
+        evidence = self.list_evidence(source.id)
+        risks = self.list_risks(source.id)
+        review_triggers = self.list_review_triggers(source.id)
+        revised = DecisionLog(
+            user_id=source.user_id,
+            target_type=source.target_type,
+            target_id=source.target_id,
+            symbol=source.symbol,
+            decision_type=source.decision_type,
+            status=DecisionStatus.DRAFT.value,
+            thesis=source.thesis,
+            rationale=source.rationale,
+            confidence_level=source.confidence_level,
+            created_by=CreatedBy.USER.value,
+        )
+        self.db.add(revised)
+        self.db.flush()
+        self.db.add_all(
+            [
+                DecisionEvidence(
+                    decision_id=revised.id,
+                    evidence_type=item.evidence_type,
+                    evidence_id=item.evidence_id,
+                    evidence_version=item.evidence_version,
+                    title=item.title,
+                    summary=item.summary,
+                    snapshot=deepcopy(item.snapshot),
+                    relationship=item.relationship,
+                )
+                for item in evidence
+            ]
+            + [
+                DecisionRisk(
+                    decision_id=revised.id,
+                    risk_type=item.risk_type,
+                    description=item.description,
+                    severity=item.severity,
+                )
+                for item in risks
+            ]
+            + [
+                DecisionReviewTrigger(
+                    decision_id=revised.id,
+                    trigger_type=item.trigger_type,
+                    condition=deepcopy(item.condition),
+                    scheduled_at=item.scheduled_at,
+                    status=item.status,
+                    triggered_at=item.triggered_at,
+                )
+                for item in review_triggers
+            ]
+        )
+        source.superseded_by_id = revised.id
+        self.db.commit()
+        self.db.refresh(revised)
+        return revised
 
     def add_snapshots(
         self,

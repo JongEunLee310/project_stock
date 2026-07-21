@@ -16,9 +16,11 @@ from app.domains.decision_logs.types import (
     DecisionStatus,
     DecisionType,
     EvidenceRelationship,
+    OutcomeStatus,
     ReviewTriggerType,
     RiskSeverity,
     TargetType,
+    ThesisResult,
 )
 from app.domains.signals.types import SignalType
 
@@ -167,6 +169,16 @@ class DecisionActivateRequest(BaseModel):
     snapshots: list[DecisionSnapshotInput] = Field(default_factory=list)
 
 
+class DecisionReviewCreate(BaseModel):
+    outcome_status: OutcomeStatus
+    thesis_result: ThesisResult
+    process_quality: dict[str, Any] | None = None
+    result_metrics: dict[str, Any] | None = None
+    what_went_well: str | None = None
+    what_was_missed: str | None = None
+    what_to_change: str | None = None
+
+
 class DecisionEvidenceResponse(BaseModel):
     id: int
     type: str
@@ -202,6 +214,21 @@ class DecisionSnapshotResponse(BaseModel):
     snapshot_type: str
     data: dict[str, Any]
     captured_at: UtcDatetime
+
+
+class DecisionReviewResponse(BaseModel):
+    id: int
+    decision_id: int
+    outcome_status: OutcomeStatus
+    thesis_result: ThesisResult
+    process_quality: dict[str, Any] | None = None
+    result_metrics: dict[str, Any] | None = None
+    what_went_well: str | None = None
+    what_was_missed: str | None = None
+    what_to_change: str | None = None
+    reviewed_at: UtcDatetime
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class DecisionLogResponse(BaseModel):
