@@ -1,6 +1,13 @@
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictFloat,
+    StrictInt,
+    model_validator,
+)
 
 from app.core.schema import UtcDatetime
 from app.domains.decision_logs.types import (
@@ -13,6 +20,47 @@ from app.domains.decision_logs.types import (
     RiskSeverity,
     TargetType,
 )
+from app.domains.signals.types import SignalType
+
+
+class DateReviewTriggerCondition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class PriceReviewTriggerCondition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    op: Literal["gte", "lte"]
+    value: StrictInt | StrictFloat
+
+
+class SignalChangeReviewTriggerCondition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    to: SignalType
+
+
+class MetricReviewTriggerCondition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    metric: str = Field(min_length=1)
+    op: Literal["gte", "lte"]
+    value: StrictInt | StrictFloat
+
+
+class EventReviewTriggerCondition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_type: str = Field(min_length=1)
+
+
+_REVIEW_CONDITION_MODELS: dict[ReviewTriggerType, type[BaseModel]] = {
+    ReviewTriggerType.DATE: DateReviewTriggerCondition,
+    ReviewTriggerType.PRICE: PriceReviewTriggerCondition,
+    ReviewTriggerType.SIGNAL_CHANGE: SignalChangeReviewTriggerCondition,
+    ReviewTriggerType.METRIC: MetricReviewTriggerCondition,
+    ReviewTriggerType.EVENT: EventReviewTriggerCondition,
+}
 
 
 class DecisionTarget(BaseModel):
@@ -77,6 +125,14 @@ class DecisionReviewTriggerInput(BaseModel):
     type: ReviewTriggerType
     condition: dict[str, Any]
     scheduled_at: UtcDatetime | None = None
+
+    @model_validator(mode="after")
+    def validate_condition(self) -> "DecisionReviewTriggerInput":
+        condition_model = _REVIEW_CONDITION_MODELS.get(self.type)
+        if condition_model is not None:
+            parsed = condition_model.model_validate(self.condition)
+            self.condition = parsed.model_dump(mode="json")
+        return self
 
 
 class DecisionSnapshotInput(BaseModel):
