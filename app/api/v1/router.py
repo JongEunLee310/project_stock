@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     job_runs,
     llm_analysis,
     market,
+    news_insights,
     notification_channels,
     portfolios,
     prices,
@@ -74,3 +75,8 @@ api_router.include_router(
 )
 api_router.include_router(worker.router, prefix="/worker", tags=["worker"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+api_router.include_router(
+    news_insights.router,
+    prefix="/news-insights",
+    tags=["news-insights"],
+)

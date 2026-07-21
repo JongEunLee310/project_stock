@@ -1,5 +1,9 @@
+import base64
+import binascii
+import json
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import Query
@@ -33,6 +37,45 @@ class SortParams:
     def value(self) -> str:
         prefix = "-" if self.direction == "desc" else ""
         return f"{prefix}{self.field}"
+
+
+@dataclass(frozen=True)
+class DateTimeCursor:
+    timestamp: datetime
+    row_id: int
+
+
+def encode_datetime_cursor(timestamp: datetime, row_id: int) -> str:
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=UTC)
+    payload = json.dumps(
+        {"timestamp": timestamp.astimezone(UTC).isoformat(), "row_id": row_id},
+        separators=(",", ":"),
+    ).encode()
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
+
+
+def decode_datetime_cursor(cursor: str) -> DateTimeCursor:
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.b64decode(cursor + padding, altchars=b"-_", validate=True))
+        timestamp = datetime.fromisoformat(payload["timestamp"])
+        row_id = payload["row_id"]
+        if timestamp.tzinfo is None or not isinstance(row_id, int) or row_id < 1:
+            raise ValueError
+    except (binascii.Error, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        raise RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("query", "cursor"),
+                    "msg": "Invalid cursor",
+                    "input": cursor,
+                    "ctx": {"error": ValueError("Invalid cursor")},
+                }
+            ]
+        ) from None
+    return DateTimeCursor(timestamp=timestamp.astimezone(UTC), row_id=row_id)
 
 
 def parse_sort(
