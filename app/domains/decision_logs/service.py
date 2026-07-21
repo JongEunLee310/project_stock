@@ -4,8 +4,11 @@ from sqlalchemy.orm import Session
 
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
-from app.domains.decision_logs.model import DecisionLog
-from app.domains.decision_logs.repository import DecisionLogRepository
+from app.domains.decision_logs.model import DecisionLog, DecisionReview
+from app.domains.decision_logs.repository import (
+    DecisionLogRepository,
+    DecisionReviewRepository,
+)
 from app.domains.decision_logs.schema import (
     DecisionActivateRequest,
     DecisionEvidenceInput,
@@ -16,10 +19,12 @@ from app.domains.decision_logs.schema import (
     DecisionOverviewResponse,
     DecisionLogResponse,
     DecisionLogUpdate,
-    DecisionTarget,
+    DecisionReviewCreate,
+    DecisionReviewResponse,
     DecisionReviewTriggerResponse,
     DecisionRiskResponse,
     DecisionSnapshotResponse,
+    DecisionTarget,
     DecisionTypeDistributionItem,
 )
 from app.domains.decision_logs.types import (
@@ -27,7 +32,9 @@ from app.domains.decision_logs.types import (
     DecisionStatus,
     DecisionType,
     EvidenceRelationship,
+    OutcomeStatus,
     TargetType,
+    ThesisResult,
 )
 
 SUMMARY_MAX_LENGTH = 200
@@ -36,6 +43,7 @@ SUMMARY_MAX_LENGTH = 200
 class DecisionLogService:
     def __init__(self, db: Session) -> None:
         self.repo = DecisionLogRepository(db)
+        self.review_repo = DecisionReviewRepository(db)
 
     def create_decision(
         self,
@@ -181,6 +189,42 @@ class DecisionLogService:
         )
         return self._to_response(activated)
 
+    def create_review(
+        self,
+        decision_log_id: int,
+        user_id: int,
+        data: DecisionReviewCreate,
+    ) -> DecisionReviewResponse:
+        decision_log = self._get_owned_decision_log(decision_log_id, user_id)
+        if decision_log.status == DecisionStatus.DRAFT.value:
+            raise AppException(
+                status_code=409,
+                detail="초안 상태의 의사결정 기록은 복기할 수 없습니다.",
+                error_code=ErrorCode.DECISION_LOG_INVALID_STATE,
+            )
+
+        reviewed_at = self._now()
+        decision_log.status = DecisionStatus.REVIEWED.value
+        if decision_log.reviewed_at is None:
+            decision_log.reviewed_at = reviewed_at
+        review = self.review_repo.create(
+            decision_log.id,
+            data,
+            reviewed_at,
+        )
+        return self._to_review_response(review)
+
+    def list_reviews(
+        self,
+        decision_log_id: int,
+        user_id: int,
+    ) -> list[DecisionReviewResponse]:
+        decision_log = self._get_owned_decision_log(decision_log_id, user_id)
+        return [
+            self._to_review_response(review)
+            for review in self.review_repo.list_by_decision(decision_log.id)
+        ]
+
     def _get_owned_decision_log(
         self,
         decision_log_id: int,
@@ -300,6 +344,23 @@ class DecisionLogService:
             )
             for decision_log in decision_logs
         ]
+
+    @staticmethod
+    def _to_review_response(review: DecisionReview) -> DecisionReviewResponse:
+        return DecisionReviewResponse(
+            id=review.id,
+            decision_id=review.decision_id,
+            outcome_status=OutcomeStatus(review.outcome_status),
+            thesis_result=ThesisResult(review.thesis_result),
+            process_quality=review.process_quality,
+            result_metrics=review.result_metrics,
+            what_went_well=review.what_went_well,
+            what_was_missed=review.what_was_missed,
+            what_to_change=review.what_to_change,
+            reviewed_at=review.reviewed_at,
+            created_at=review.created_at,
+            updated_at=review.updated_at,
+        )
 
     @staticmethod
     def _text_evidence(

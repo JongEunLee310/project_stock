@@ -17,6 +17,8 @@ from app.domains.decision_logs.schema import (
     DecisionLogDetailResponse,
     DecisionLogListItem,
     DecisionOverviewResponse,
+    DecisionReviewCreate,
+    DecisionReviewResponse,
     DecisionLogResponse,
     DecisionLogUpdate,
 )
@@ -138,6 +140,44 @@ def assist_decision_log(
 ) -> ApiResponse[DecisionAssistResponse]:
     return success(
         DecisionAssistService(get_llm_gateway()).assist(current_user.id, data)
+    )
+
+
+@router.post(
+    "/{decision_log_id}/reviews",
+    response_model=ApiResponse[DecisionReviewResponse],
+    status_code=201,
+    summary="Create decision review",
+    description="Create a retrospective review for an owned decision log.",
+)
+def create_decision_review(
+    decision_log_id: int,
+    data: DecisionReviewCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[DecisionReviewResponse]:
+    return success(
+        DecisionLogService(db).create_review(
+            decision_log_id,
+            current_user.id,
+            data,
+        )
+    )
+
+
+@router.get(
+    "/{decision_log_id}/reviews",
+    response_model=ApiResponse[list[DecisionReviewResponse]],
+    summary="List decision reviews",
+    description="Return newest-first retrospective reviews for an owned decision log.",
+)
+def list_decision_reviews(
+    decision_log_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[list[DecisionReviewResponse]]:
+    return success(
+        DecisionLogService(db).list_reviews(decision_log_id, current_user.id)
     )
 
 

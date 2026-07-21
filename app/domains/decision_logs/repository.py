@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.domains.decision_logs.model import (
     DecisionEvidence,
     DecisionLog,
+    DecisionReview,
     DecisionReviewTrigger,
     DecisionRisk,
     DecisionSnapshot,
@@ -17,6 +18,7 @@ from app.domains.decision_logs.schema import (
     DecisionEvidenceInput,
     DecisionLogCreate,
     DecisionLogUpdate,
+    DecisionReviewCreate,
     DecisionSnapshotInput,
 )
 from app.domains.decision_logs.types import (
@@ -33,6 +35,41 @@ class OverviewAgg:
     review_due_count: int
     active_count: int
     decision_type_counts: dict[str, int]
+
+
+class DecisionReviewRepository:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def create(
+        self,
+        decision_id: int,
+        data: DecisionReviewCreate,
+        reviewed_at: datetime,
+    ) -> DecisionReview:
+        review = DecisionReview(
+            decision_id=decision_id,
+            outcome_status=data.outcome_status.value,
+            thesis_result=data.thesis_result.value,
+            process_quality=data.process_quality,
+            result_metrics=data.result_metrics,
+            what_went_well=data.what_went_well,
+            what_was_missed=data.what_was_missed,
+            what_to_change=data.what_to_change,
+            reviewed_at=reviewed_at,
+        )
+        self.db.add(review)
+        self.db.commit()
+        self.db.refresh(review)
+        return review
+
+    def list_by_decision(self, decision_id: int) -> list[DecisionReview]:
+        stmt = (
+            select(DecisionReview)
+            .where(DecisionReview.decision_id == decision_id)
+            .order_by(DecisionReview.reviewed_at.desc(), DecisionReview.id.desc())
+        )
+        return list(self.db.scalars(stmt).all())
 
 
 class DecisionLogRepository:
