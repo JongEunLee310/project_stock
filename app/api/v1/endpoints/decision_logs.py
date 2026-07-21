@@ -17,6 +17,8 @@ from app.domains.decision_logs.schema import (
     DecisionLogDetailResponse,
     DecisionLogListItem,
     DecisionOverviewResponse,
+    DecisionReviewCreate,
+    DecisionReviewResponse,
     DecisionLogResponse,
     DecisionLogUpdate,
 )
@@ -141,6 +143,44 @@ def assist_decision_log(
     )
 
 
+@router.post(
+    "/{decision_log_id}/reviews",
+    response_model=ApiResponse[DecisionReviewResponse],
+    status_code=201,
+    summary="Create decision review",
+    description="Create a retrospective review for an owned decision log.",
+)
+def create_decision_review(
+    decision_log_id: int,
+    data: DecisionReviewCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[DecisionReviewResponse]:
+    return success(
+        DecisionLogService(db).create_review(
+            decision_log_id,
+            current_user.id,
+            data,
+        )
+    )
+
+
+@router.get(
+    "/{decision_log_id}/reviews",
+    response_model=ApiResponse[list[DecisionReviewResponse]],
+    summary="List decision reviews",
+    description="Return newest-first retrospective reviews for an owned decision log.",
+)
+def list_decision_reviews(
+    decision_log_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[list[DecisionReviewResponse]]:
+    return success(
+        DecisionLogService(db).list_reviews(decision_log_id, current_user.id)
+    )
+
+
 @router.get(
     "/{decision_log_id}",
     response_model=ApiResponse[DecisionLogDetailResponse],
@@ -196,4 +236,20 @@ def activate_decision_log(
             current_user.id,
             data or DecisionActivateRequest(),
         )
+    )
+
+
+@router.post(
+    "/{decision_log_id}/revise",
+    response_model=ApiResponse[DecisionLogDetailResponse],
+    summary="Revise decision log",
+    description="Create a new draft that supersedes an owned decision log.",
+)
+def revise_decision_log(
+    decision_log_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[DecisionLogDetailResponse]:
+    return success(
+        DecisionLogService(db).revise(decision_log_id, current_user.id)
     )
