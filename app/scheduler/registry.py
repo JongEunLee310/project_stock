@@ -4,6 +4,9 @@ from app.core.config import settings
 from app.scheduler.interface import FunctionSchedulerJob, SchedulerJob
 from app.worker.jobs.analysis import analyze_all_watchlists_job
 from app.worker.jobs.alerts import evaluate_alert_rules_job
+from app.worker.jobs.decision_review_triggers import (
+    evaluate_decision_review_triggers_job,
+)
 from app.worker.jobs.news import collect_news_job
 from app.worker.jobs.prices import collect_prices_job
 from app.worker.jobs.signal_snapshots import snapshot_signal_states_job
@@ -29,6 +32,14 @@ class SchedulerRegistry:
 
 default_scheduler_registry = SchedulerRegistry(
     [
+        ScheduleDefinition(
+            job=FunctionSchedulerJob(
+                name="decision_review_trigger_evaluation",
+                func=evaluate_decision_review_triggers_job,
+            ),
+            cron="*/5 * * * *",
+            enabled=True,
+        ),
         ScheduleDefinition(
             job=FunctionSchedulerJob(
                 name="alert_evaluation",

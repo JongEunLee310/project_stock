@@ -180,10 +180,13 @@ def test_activate_transitions_and_persists_snapshots(client: TestClient) -> None
         review_triggers=[
             {
                 "type": "DATE",
-                "condition": {"reason": "earnings"},
+                "condition": {},
                 "scheduled_at": "2026-08-21T00:00:00Z",
             },
-            {"type": "EVENT", "condition": {"event": "guidance_change"}},
+            {
+                "type": "EVENT",
+                "condition": {"event_type": "guidance_change"},
+            },
         ],
     )
 
@@ -443,7 +446,7 @@ def test_review_queue_returns_owned_due_dates_in_nearest_order(
         review_triggers=[
             {
                 "type": "EVENT",
-                "condition": {},
+                "condition": {"event_type": "rates_changed"},
                 "scheduled_at": "2026-08-01T00:00:00Z",
             }
         ],
@@ -458,6 +461,9 @@ def test_review_queue_returns_owned_due_dates_in_nearest_order(
                 status="TRIGGERED",
             )
         )
+        future_decision = db.get(DecisionLog, future["id"])
+        assert future_decision is not None
+        future_decision.status = "REVIEW_DUE"
         db.commit()
 
     set_current_user(2, "other@example.com")
@@ -477,13 +483,17 @@ def test_review_queue_returns_owned_due_dates_in_nearest_order(
 
     assert response.status_code == 200
     items = api_data(response)
-    assert [item["id"] for item in items] == [older["id"], nearer["id"]]
+    assert [item["id"] for item in items] == [
+        older["id"],
+        nearer["id"],
+        future["id"],
+    ]
     assert [item["review_at"] for item in items] == [
         "2026-08-01T00:00:00Z",
         "2026-08-08T11:00:00Z",
+        "2026-08-09T00:00:00Z",
     ]
-    assert api_meta(response) == {"page": 1, "size": 20, "total": 2}
-    assert future["id"] not in {item["id"] for item in items}
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 3}
 
 
 def test_list_projection_uses_constant_query_count(client: TestClient) -> None:
@@ -575,7 +585,7 @@ def test_overview_aggregates_owned_decisions_at_boundaries(
             {
                 "type": "DATE",
                 "condition": {},
-                "scheduled_at": "2026-08-08T12:00:00Z",
+                "scheduled_at": "2026-08-09T12:00:00Z",
             }
         ],
     )

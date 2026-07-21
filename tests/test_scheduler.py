@@ -18,6 +18,9 @@ from app.scheduler.registry import (
 from app.scheduler.runner import ManualSchedulerRunner
 from app.worker.jobs.analysis import analyze_all_watchlists_job
 from app.worker.jobs.alerts import evaluate_alert_rules_job
+from app.worker.jobs.decision_review_triggers import (
+    evaluate_decision_review_triggers_job,
+)
 from app.worker.jobs.news import collect_news_job
 from app.worker.jobs.prices import collect_prices_job
 from app.worker.jobs.signal_snapshots import snapshot_signal_states_job
@@ -99,6 +102,7 @@ def test_default_scheduler_registry_contains_expected_jobs() -> None:
         "analysis_kr_post",
         "signal_snapshot",
         "alert_evaluation",
+        "decision_review_trigger_evaluation",
     }
     assert schedules_by_name["price_collection"].job.func is collect_prices_job
     assert schedules_by_name["price_collection"].cron == "10 22 * * 1-5"
@@ -109,6 +113,12 @@ def test_default_scheduler_registry_contains_expected_jobs() -> None:
     assert schedules_by_name["alert_evaluation"].job.func is evaluate_alert_rules_job
     assert schedules_by_name["alert_evaluation"].cron == "*/5 * * * *"
     assert schedules_by_name["alert_evaluation"].enabled is False
+    assert (
+        schedules_by_name["decision_review_trigger_evaluation"].job.func
+        is evaluate_decision_review_triggers_job
+    )
+    assert schedules_by_name["decision_review_trigger_evaluation"].cron == "*/5 * * * *"
+    assert schedules_by_name["decision_review_trigger_evaluation"].enabled is True
     # Source: docs/designs/243-analysis-triggers.md UTC conversion table.
     expected_analysis_crons = {
         "analysis_kr_open": "0 23 * * 0-4",
@@ -199,6 +209,7 @@ def test_cron_config_registers_enabled_scheduler_jobs(
     importlib.import_module("app.scheduler.cron_config")
 
     assert registered == [
+        (evaluate_decision_review_triggers_job, "default", "*/5 * * * *"),
         (collect_prices_job, "default", "10 22 * * 1-5"),
         (collect_news_job, "default", "0 * * * *"),
         (snapshot_signal_states_job, "default", "30 11 * * 1-5"),

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 
-from sqlalchemy import Select, case, func, select
+from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.orm import Session
 
@@ -155,9 +155,12 @@ class DecisionLogRepository:
             select(DecisionLog)
             .where(
                 DecisionLog.user_id == user_id,
-                review_at <= now,
+                or_(
+                    DecisionLog.status == DecisionStatus.REVIEW_DUE.value,
+                    review_at <= now,
+                ),
             )
-            .order_by(review_at, DecisionLog.id)
+            .order_by(review_at.asc().nullslast(), DecisionLog.id)
             .offset(offset)
         )
         if limit is not None:
@@ -171,7 +174,10 @@ class DecisionLogRepository:
             .select_from(DecisionLog)
             .where(
                 DecisionLog.user_id == user_id,
-                review_at <= now,
+                or_(
+                    DecisionLog.status == DecisionStatus.REVIEW_DUE.value,
+                    review_at <= now,
+                ),
             )
         )
         return int(self.db.scalar(stmt) or 0)
@@ -246,18 +252,13 @@ class DecisionLogRepository:
             counts_stmt
         ).one()
 
-        review_due_stmt = (
-            select(func.count(func.distinct(DecisionLog.id)))
-            .join(
-                DecisionReviewTrigger,
-                DecisionReviewTrigger.decision_id == DecisionLog.id,
-            )
-            .where(
-                DecisionLog.user_id == user_id,
-                DecisionReviewTrigger.trigger_type == "DATE",
-                DecisionReviewTrigger.status == ReviewTriggerStatus.PENDING.value,
-                DecisionReviewTrigger.scheduled_at <= now,
-            )
+        review_at = self._pending_date_review_at()
+        review_due_stmt = select(func.count()).select_from(DecisionLog).where(
+            DecisionLog.user_id == user_id,
+            or_(
+                DecisionLog.status == DecisionStatus.REVIEW_DUE.value,
+                review_at <= now,
+            ),
         )
         review_due_count = self.db.scalar(review_due_stmt)
 
@@ -466,6 +467,42 @@ class DecisionLogRepository:
             .order_by(DecisionReviewTrigger.id)
         )
         return list(self.db.scalars(stmt).all())
+
+    def list_pending_event_triggers(
+        self,
+    ) -> list[tuple[DecisionLog, DecisionReviewTrigger]]:
+        stmt = (
+            select(DecisionLog, DecisionReviewTrigger)
+            .join(
+                DecisionReviewTrigger,
+                DecisionReviewTrigger.decision_id == DecisionLog.id,
+            )
+            .where(
+                DecisionLog.status == DecisionStatus.ACTIVE.value,
+                DecisionReviewTrigger.status == ReviewTriggerStatus.PENDING.value,
+                DecisionReviewTrigger.trigger_type.in_(
+                    (
+                        ReviewTriggerType.PRICE.value,
+                        ReviewTriggerType.SIGNAL_CHANGE.value,
+                    )
+                ),
+            )
+            .order_by(DecisionReviewTrigger.id)
+        )
+        return [(decision, trigger) for decision, trigger in self.db.execute(stmt)]
+
+    def mark_triggered(
+        self,
+        decision_log: DecisionLog,
+        trigger: DecisionReviewTrigger,
+        at: datetime,
+    ) -> bool:
+        trigger.status = ReviewTriggerStatus.TRIGGERED.value
+        trigger.triggered_at = at
+        if decision_log.status != DecisionStatus.ACTIVE.value:
+            return False
+        decision_log.status = DecisionStatus.REVIEW_DUE.value
+        return True
 
     def list_snapshots(self, decision_log_id: int) -> list[DecisionSnapshot]:
         stmt = (

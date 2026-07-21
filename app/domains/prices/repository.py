@@ -86,6 +86,15 @@ class PriceBarRepository:
         )
         return list(reversed(self.db.scalars(stmt).all()))
 
+    def get_latest_by_symbol(self, symbol: str) -> StockPriceBar | None:
+        stmt = (
+            select(StockPriceBar)
+            .where(StockPriceBar.symbol == symbol.upper())
+            .order_by(StockPriceBar.timestamp.desc(), StockPriceBar.id.desc())
+            .limit(1)
+        )
+        return self.db.scalar(stmt)
+
     def get_latest_close_date(self, symbol: str, market: str) -> date | None:
         stmt = select(func.max(StockPriceBar.timestamp)).where(
             StockPriceBar.symbol == symbol,
