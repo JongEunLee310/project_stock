@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, cast
 
 from fastapi.testclient import TestClient
@@ -7,6 +8,7 @@ from app.domains.news_insights.briefing import validate_evidence_event_ids
 from app.domains.news_insights.model import (
     EventEvidence,
     ExtractedEvent,
+    InvestorFlow,
     KeywordRelation,
     SourceDocument,
     TopicCluster,
@@ -19,6 +21,8 @@ from app.domains.news_insights.types import (
     EvidenceRole,
     EventStatus,
     EventType,
+    FlowDirection,
+    InvestorType,
     LifecycleStatus,
     ProcessingStatus,
     SentimentDirection,
@@ -262,6 +266,100 @@ def test_event_detail_returns_404_for_unknown_event(client: TestClient) -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NEWS_INSIGHT_EVENT_NOT_FOUND"
+
+
+def test_investor_flows_returns_aggregates_alignment_and_decimal_strings(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        topic_id = session.query(TopicCluster.id).scalar()
+        session.add_all(
+            [
+                InvestorFlow(
+                    market="KR",
+                    topic_id=topic_id,
+                    investor_type=InvestorType.FOREIGN.value,
+                    net_value=Decimal("2500000000.0000"),
+                    direction=FlowDirection.BUY.value,
+                    window="5d",
+                    as_of=SEEDED_AT,
+                    source_kind="INVESTOR_TYPE",
+                ),
+                InvestorFlow(
+                    market="KR",
+                    topic_id=topic_id,
+                    investor_type=InvestorType.INSTITUTION.value,
+                    net_value=Decimal("-2000000000.0000"),
+                    direction=FlowDirection.SELL.value,
+                    window="5d",
+                    as_of=SEEDED_AT - timedelta(days=1),
+                    source_kind="INVESTOR_TYPE",
+                ),
+                InvestorFlow(
+                    market="KR",
+                    topic_id=topic_id,
+                    investor_type=InvestorType.INSTITUTION.value,
+                    net_value=Decimal("-3000000000.0000"),
+                    direction=FlowDirection.SELL.value,
+                    window="5d",
+                    as_of=SEEDED_AT,
+                    source_kind="INVESTOR_TYPE",
+                ),
+            ]
+        )
+        session.commit()
+
+    response = client.get(
+        "/api/v1/news-insights/investor-flows",
+        params={"market": "KR", "window": "5d", "topic_id": topic_id},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["as_of"].endswith("Z")
+    assert data["availability"] == {"available": True, "fallback": None}
+    assert data["narrative_alignment"]["aligned"] is True
+    assert data["narrative_alignment"]["note"]
+    assert data["by_investor_type"] == [
+        {
+            "investor_type": "FOREIGN",
+            "net_value": "15000000000.0000",
+            "direction": "BUY",
+            "change": 0.0,
+        },
+        {
+            "investor_type": "INSTITUTION",
+            "net_value": "-3000000000.0000",
+            "direction": "SELL",
+            "change": -50.0,
+        },
+    ]
+    assert all(
+        isinstance(item["net_value"], str)
+        for item in data["by_investor_type"]
+    )
+
+
+def test_investor_flows_reports_unavailable_market_without_estimation(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+
+    response = client.get(
+        "/api/v1/news-insights/investor-flows",
+        params={"market": "US", "window": "5d"},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["by_investor_type"] == []
+    assert data["availability"]["available"] is False
+    assert "ETF" in data["availability"]["fallback"]
+    assert "거래량" in data["availability"]["fallback"]
+    assert data["narrative_alignment"]["aligned"] is False
 
 
 def test_topic_map_returns_typed_nodes_and_keyword_relation_edges(

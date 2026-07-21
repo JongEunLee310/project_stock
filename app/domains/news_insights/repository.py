@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import and_, case, func, or_, select
@@ -10,13 +11,18 @@ from app.domains.news_insights.briefing import BriefingCandidate
 from app.domains.news_insights.model import (
     EventEvidence,
     ExtractedEvent,
+    InvestorFlow,
     KeywordRelation,
     SourceDocument,
     TopicCluster,
     TopicInsight,
     TopicKeyword,
 )
-from app.domains.news_insights.schema import EventsQuery, TopicEvidenceQuery
+from app.domains.news_insights.schema import (
+    EventsQuery,
+    InvestorFlowsQuery,
+    TopicEvidenceQuery,
+)
 from app.domains.news_insights.types import (
     EventStatus,
     EvidenceRole,
@@ -97,6 +103,21 @@ class EvidencePage:
 class TopicTrendRecords:
     events: tuple[ExtractedEvent, ...]
     evidence: tuple[EvidenceRecord, ...]
+
+
+@dataclass(frozen=True)
+class InvestorFlowAggregate:
+    investor_type: str
+    net_value: Decimal
+    previous_net_value: Decimal | None
+
+
+@dataclass(frozen=True)
+class InvestorFlowRecords:
+    as_of: datetime | None
+    aggregates: tuple[InvestorFlowAggregate, ...]
+    narrative_sentiment_score: float | None
+    fallback_source_kinds: tuple[str, ...]
 
 
 class NewsInsightsRepository:
@@ -275,6 +296,74 @@ class NewsInsightsRepository:
 
     def topic_exists(self, topic_id: int) -> bool:
         return self.db.get(TopicCluster, topic_id) is not None
+
+    def investor_flow_records(
+        self,
+        query: InvestorFlowsQuery,
+    ) -> InvestorFlowRecords:
+        conditions = [
+            InvestorFlow.market == query.market,
+            InvestorFlow.window == query.window,
+        ]
+        if query.topic_id is not None:
+            conditions.append(InvestorFlow.topic_id == query.topic_id)
+
+        rows = self.db.execute(
+            select(
+                InvestorFlow.investor_type,
+                InvestorFlow.as_of,
+                InvestorFlow.source_kind,
+                func.sum(InvestorFlow.net_value),
+            )
+            .where(*conditions)
+            .group_by(
+                InvestorFlow.investor_type,
+                InvestorFlow.as_of,
+                InvestorFlow.source_kind,
+            )
+            .order_by(
+                InvestorFlow.investor_type,
+                InvestorFlow.as_of.desc(),
+            )
+        ).all()
+        values_by_type: dict[str, list[tuple[datetime, Decimal]]] = {}
+        fallback_source_kinds: set[str] = set()
+        for investor_type, as_of, source_kind, net_value in rows:
+            if source_kind != "INVESTOR_TYPE":
+                fallback_source_kinds.add(source_kind)
+                continue
+            values_by_type.setdefault(investor_type, []).append(
+                (as_of, Decimal(net_value))
+            )
+
+        aggregates = tuple(
+            InvestorFlowAggregate(
+                investor_type=investor_type,
+                net_value=values[0][1],
+                previous_net_value=values[1][1] if len(values) > 1 else None,
+            )
+            for investor_type, values in sorted(values_by_type.items())
+        )
+        current_as_of = max(
+            (values[0][0] for values in values_by_type.values()),
+            default=None,
+        )
+        sentiment_score = self.db.scalar(
+            select(func.avg(TopicCluster.sentiment_score))
+            .join(InvestorFlow, InvestorFlow.topic_id == TopicCluster.id)
+            .where(
+                *conditions,
+                InvestorFlow.source_kind == "INVESTOR_TYPE",
+            )
+        )
+        return InvestorFlowRecords(
+            as_of=current_as_of,
+            aggregates=aggregates,
+            narrative_sentiment_score=(
+                float(sentiment_score) if sentiment_score is not None else None
+            ),
+            fallback_source_kinds=tuple(sorted(fallback_source_kinds)),
+        )
 
     def topic_detail_records(self, topic_id: int) -> TopicDetailRecords | None:
         topic = self.db.get(TopicCluster, topic_id)

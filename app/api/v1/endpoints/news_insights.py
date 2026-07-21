@@ -11,6 +11,8 @@ from app.domains.news_insights.schema import (
     EventDetailResponse,
     EventListItem,
     EventsQuery,
+    InvestorFlowsQuery,
+    InvestorFlowsResponse,
     OverviewQuery,
     OverviewResponse,
     TopicDetailResponse,
@@ -52,6 +54,27 @@ def get_news_insights_overview(
         portfolio_id=portfolio_id,
     )
     return success(NewsInsightsService(db).get_overview(query))
+
+
+@router.get(
+    "/investor-flows",
+    response_model=ApiResponse[InvestorFlowsResponse],
+    summary="Get investor flows",
+    description="Return aggregated investor flows and news narrative alignment.",
+)
+def get_news_insight_investor_flows(
+    market: Annotated[str, Query(min_length=1)],
+    window: Annotated[str, Query(pattern=r"^[1-9]\d*[hd]$")],
+    topic_id: Annotated[int | None, Query(ge=1)] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[InvestorFlowsResponse]:
+    query = InvestorFlowsQuery(
+        market=market,
+        window=window,
+        topic_id=topic_id,
+    )
+    return success(NewsInsightsService(db).get_investor_flows(query))
 
 
 @router.get(
