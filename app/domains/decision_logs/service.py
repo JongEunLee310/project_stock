@@ -7,13 +7,23 @@ from app.core.exceptions import AppException
 from app.domains.decision_logs.model import DecisionLog
 from app.domains.decision_logs.repository import DecisionLogRepository
 from app.domains.decision_logs.schema import (
+    DecisionActivateRequest,
+    DecisionEvidenceInput,
+    DecisionEvidenceResponse,
     DecisionLogCreate,
+    DecisionLogDetailResponse,
     DecisionLogResponse,
     DecisionLogStatsResponse,
     DecisionLogUpdate,
+    DecisionReviewTriggerResponse,
+    DecisionRiskResponse,
+    DecisionSnapshotResponse,
     ReviewedDecisionItem,
 )
-from app.domains.decision_logs.types import DecisionStatus
+from app.domains.decision_logs.types import (
+    DecisionStatus,
+    EvidenceRelationship,
+)
 
 RECENT_REVIEWED_LIMIT = 5
 
@@ -22,13 +32,24 @@ class DecisionLogService:
     def __init__(self, db: Session) -> None:
         self.repo = DecisionLogRepository(db)
 
-    def create_decision_log(
+    def create_decision(
         self,
         user_id: int,
         data: DecisionLogCreate,
     ) -> DecisionLogResponse:
-        decision_log = self.repo.create(user_id=user_id, data=data)
-        return DecisionLogResponse.model_validate(decision_log)
+        evidence = [
+            *data.evidence,
+            *self._text_evidence(
+                data.supporting_reasons,
+                EvidenceRelationship.SUPPORTING,
+            ),
+            *self._text_evidence(
+                data.counter_arguments,
+                EvidenceRelationship.CONTRADICTING,
+            ),
+        ]
+        decision_log = self.repo.create(user_id=user_id, data=data, evidence=evidence)
+        return self._to_response(decision_log)
 
     def list_decision_logs(
         self,
@@ -38,7 +59,7 @@ class DecisionLogService:
         sort: str = "-decided_at",
     ) -> list[DecisionLogResponse]:
         return [
-            DecisionLogResponse.model_validate(decision_log)
+            self._to_response(decision_log)
             for decision_log in self.repo.list_by_user(
                 user_id,
                 offset=offset,
@@ -65,24 +86,51 @@ class DecisionLogService:
             recent_reviewed=recent_reviewed,
         )
 
-    def get_decision_log(
+    def get_decision(
         self,
         decision_log_id: int,
         user_id: int,
-    ) -> DecisionLogResponse:
+    ) -> DecisionLogDetailResponse:
         decision_log = self._get_owned_decision_log(decision_log_id, user_id)
-        return DecisionLogResponse.model_validate(decision_log)
+        response = self._to_response(decision_log)
+        return DecisionLogDetailResponse(
+            **response.model_dump(),
+            snapshots=[
+                DecisionSnapshotResponse(
+                    id=item.id,
+                    snapshot_type=item.snapshot_type,
+                    data=item.data,
+                    captured_at=item.captured_at,
+                )
+                for item in self.repo.list_snapshots(decision_log.id)
+            ],
+        )
 
-    def update_decision_log(
+    def update_draft(
         self,
         decision_log_id: int,
         user_id: int,
         data: DecisionLogUpdate,
     ) -> DecisionLogResponse:
         decision_log = self._get_owned_decision_log(decision_log_id, user_id)
-        update_data = self._with_lifecycle_stamp(decision_log, data)
-        updated_decision_log = self.repo.update(decision_log, update_data)
-        return DecisionLogResponse.model_validate(updated_decision_log)
+        self._require_draft(decision_log)
+        updated_decision_log = self.repo.update(decision_log, data)
+        return self._to_response(updated_decision_log)
+
+    def activate(
+        self,
+        decision_log_id: int,
+        user_id: int,
+        data: DecisionActivateRequest,
+    ) -> DecisionLogResponse:
+        decision_log = self._get_owned_decision_log(decision_log_id, user_id)
+        self._require_draft(decision_log)
+        activated = self.repo.activate(
+            decision_log,
+            activated_at=self._now(),
+            snapshots=data.snapshots,
+        )
+        return self._to_response(activated)
 
     def _get_owned_decision_log(
         self,
@@ -104,21 +152,87 @@ class DecisionLogService:
             )
         return decision_log
 
-    def _with_lifecycle_stamp(
-        self,
-        decision_log: DecisionLog,
-        data: DecisionLogUpdate,
-    ) -> DecisionLogUpdate:
-        values = data.model_dump(exclude_unset=True)
-        if data.status == DecisionStatus.REVIEWED:
-            if "reviewed_at" not in values and decision_log.reviewed_at is None:
-                values["reviewed_at"] = self._now()
-        if data.status == DecisionStatus.CLOSED:
-            if "closed_at" not in values and decision_log.closed_at is None:
-                values["closed_at"] = self._now()
-        if not values:
-            return data
-        return data.model_copy(update=values)
+    @staticmethod
+    def _require_draft(decision_log: DecisionLog) -> None:
+        if decision_log.status != DecisionStatus.DRAFT.value:
+            raise AppException(
+                status_code=409,
+                detail="초안 상태의 의사결정 기록만 변경할 수 있습니다.",
+                error_code=ErrorCode.DECISION_LOG_INVALID_STATE,
+            )
 
-    def _now(self) -> datetime:
+    def _to_response(self, decision_log: DecisionLog) -> DecisionLogResponse:
+        return DecisionLogResponse(
+            id=decision_log.id,
+            user_id=decision_log.user_id,
+            target_type=decision_log.target_type,
+            target_id=decision_log.target_id,
+            symbol=decision_log.symbol,
+            decision_type=decision_log.decision_type,
+            status=decision_log.status,
+            thesis=decision_log.thesis,
+            rationale=decision_log.rationale,
+            confidence_level=decision_log.confidence_level,
+            created_by=decision_log.created_by,
+            superseded_by_id=decision_log.superseded_by_id,
+            decided_at=decision_log.decided_at,
+            activated_at=decision_log.activated_at,
+            reviewed_at=decision_log.reviewed_at,
+            closed_at=decision_log.closed_at,
+            created_at=decision_log.created_at,
+            updated_at=decision_log.updated_at,
+            evidence=[
+                DecisionEvidenceResponse(
+                    id=item.id,
+                    type=item.evidence_type,
+                    evidence_id=item.evidence_id,
+                    version=item.evidence_version,
+                    title=item.title,
+                    summary=item.summary,
+                    snapshot=item.snapshot,
+                    relationship=item.relationship,
+                    created_at=item.created_at,
+                )
+                for item in self.repo.list_evidence(decision_log.id)
+            ],
+            risks=[
+                DecisionRiskResponse(
+                    id=item.id,
+                    type=item.risk_type,
+                    description=item.description,
+                    severity=item.severity,
+                    created_at=item.created_at,
+                )
+                for item in self.repo.list_risks(decision_log.id)
+            ],
+            review_triggers=[
+                DecisionReviewTriggerResponse(
+                    id=item.id,
+                    type=item.trigger_type,
+                    condition=item.condition,
+                    scheduled_at=item.scheduled_at,
+                    status=item.status,
+                    triggered_at=item.triggered_at,
+                    created_at=item.created_at,
+                )
+                for item in self.repo.list_review_triggers(decision_log.id)
+            ],
+        )
+
+    @staticmethod
+    def _text_evidence(
+        items: list[str],
+        relationship: EvidenceRelationship,
+    ) -> list[DecisionEvidenceInput]:
+        return [
+            DecisionEvidenceInput(
+                type="USER_MEMO",
+                title=item,
+                relationship=relationship,
+            )
+            for item in items
+        ]
+
+    @staticmethod
+    def _now() -> datetime:
         return datetime.now(UTC)

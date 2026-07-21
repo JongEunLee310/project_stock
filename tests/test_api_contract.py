@@ -95,15 +95,11 @@ def create_decision_log(client: TestClient) -> dict[str, Any]:
     response = client.post(
         "/api/v1/decision-logs",
         json={
-            "target_type": "SYMBOL",
-            "target_id": "AAPL",
-            "symbol": "AAPL",
+            "target": {"type": "SYMBOL", "id": "AAPL", "label": "Apple"},
             "decision_type": "BUY_REVIEW",
             "thesis": "Services revenue will keep growing.",
             "rationale": "Margins and buybacks support the thesis.",
             "confidence_level": "HIGH",
-            "created_by": "USER",
-            "decided_at": "2026-06-26T00:00:00Z",
         },
     )
     assert response.status_code == 201
@@ -613,6 +609,9 @@ DECISION_LOG_CONTRACT: Contract = {
     "closed_at": (str, type(None)),
     "created_at": str,
     "updated_at": str,
+    "risks": list,
+    "evidence": list,
+    "review_triggers": list,
 }
 
 LOGIN_TOKEN_CONTRACT: Contract = {
@@ -1359,6 +1358,7 @@ def test_openapi_contains_frontend_contract_paths_and_components() -> None:
         "/api/v1/decision-logs",
         "/api/v1/decision-logs/stats",
         "/api/v1/decision-logs/{decision_log_id}",
+        "/api/v1/decision-logs/{decision_log_id}/activate",
     }
     assert expected_paths <= set(schema["paths"])
 

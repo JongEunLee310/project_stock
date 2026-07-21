@@ -8,7 +8,9 @@ from app.core.pagination import PaginationParams, SortParams, sort_param
 from app.core.response import ApiResponse, paginated, success
 from app.db.session import get_db
 from app.domains.decision_logs.schema import (
+    DecisionActivateRequest,
     DecisionLogCreate,
+    DecisionLogDetailResponse,
     DecisionLogResponse,
     DecisionLogStatsResponse,
     DecisionLogUpdate,
@@ -63,7 +65,7 @@ def create_decision_log(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[DecisionLogResponse]:
-    return success(DecisionLogService(db).create_decision_log(current_user.id, data))
+    return success(DecisionLogService(db).create_decision(current_user.id, data))
 
 
 @router.get(
@@ -81,7 +83,7 @@ def get_decision_log_stats(
 
 @router.get(
     "/{decision_log_id}",
-    response_model=ApiResponse[DecisionLogResponse],
+    response_model=ApiResponse[DecisionLogDetailResponse],
     summary="Get decision log",
     description="Return one decision log owned by the authenticated user.",
 )
@@ -89,9 +91,9 @@ def get_decision_log(
     decision_log_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> ApiResponse[DecisionLogResponse]:
+) -> ApiResponse[DecisionLogDetailResponse]:
     return success(
-        DecisionLogService(db).get_decision_log(decision_log_id, current_user.id),
+        DecisionLogService(db).get_decision(decision_log_id, current_user.id),
     )
 
 
@@ -108,9 +110,30 @@ def update_decision_log(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[DecisionLogResponse]:
     return success(
-        DecisionLogService(db).update_decision_log(
+        DecisionLogService(db).update_draft(
             decision_log_id,
             current_user.id,
             data,
         ),
+    )
+
+
+@router.post(
+    "/{decision_log_id}/activate",
+    response_model=ApiResponse[DecisionLogResponse],
+    summary="Activate decision log",
+    description="Activate a draft decision log and preserve supplied snapshots.",
+)
+def activate_decision_log(
+    decision_log_id: int,
+    data: DecisionActivateRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[DecisionLogResponse]:
+    return success(
+        DecisionLogService(db).activate(
+            decision_log_id,
+            current_user.id,
+            data or DecisionActivateRequest(),
+        )
     )
