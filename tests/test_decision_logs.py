@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
 from app.domains.decision_logs.model import DecisionLog, DecisionReviewTrigger
 from app.domains.decision_logs.service import DecisionLogService
@@ -11,6 +12,7 @@ from tests.conftest import (
     api_data,
     api_error,
     api_meta,
+    engine,
     set_current_user,
 )
 
@@ -239,9 +241,284 @@ def test_list_uses_offset_pagination(client: TestClient) -> None:
         params={"page": 2, "size": 1, "sort": "-created_at"},
     )
     assert list_response.status_code == 200
-    assert api_data(list_response) == [first]
+    assert [item["id"] for item in api_data(list_response)] == [first["id"]]
     assert second["target_id"] == "MSFT"
     assert api_meta(list_response) == {"page": 2, "size": 1, "total": 2}
+
+
+def test_list_returns_lightweight_projection_and_truncates_summary(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    created = create_decision_log(
+        client,
+        rationale="x" * 201,
+        evidence=[{"type": "RESEARCH", "title": "Heavy nested evidence"}],
+        risks=[
+            {"type": "VALUATION", "severity": "HIGH"},
+            {"type": "FOMO", "severity": "LOW"},
+        ],
+        review_triggers=[
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-03T00:00:00Z",
+            },
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-01T00:00:00Z",
+            },
+        ],
+    )
+
+    response = client.get("/api/v1/decision-logs")
+
+    assert response.status_code == 200
+    item = api_data(response)[0]
+    assert set(item) == {
+        "id",
+        "target",
+        "decision_type",
+        "summary",
+        "risks",
+        "confidence_level",
+        "status",
+        "review_at",
+        "created_at",
+    }
+    assert item["id"] == created["id"]
+    assert item["target"] == {"type": "SYMBOL", "id": "AAPL", "label": None}
+    assert item["summary"] == "x" * 200
+    assert item["risks"] == ["VALUATION", "FOMO"]
+    assert item["review_at"] == "2026-08-01T00:00:00Z"
+    assert "evidence" not in item
+    assert "review_triggers" not in item
+
+
+def test_list_filters_are_individually_and_jointly_applied(client: TestClient) -> None:
+    set_current_user(1)
+    apple = create_decision_log(
+        client,
+        target={"type": "SYMBOL", "id": "AAPL"},
+        decision_type="BUY_REVIEW",
+        risks=[{"type": "VALUATION", "severity": "HIGH"}],
+        review_triggers=[
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-02T00:00:00Z",
+            }
+        ],
+    )
+    microsoft = create_decision_log(
+        client,
+        target={"type": "SYMBOL", "id": "MSFT"},
+        decision_type="WATCH",
+        risks=[{"type": "LIQUIDITY", "severity": "LOW"}],
+        review_triggers=[
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-10T00:00:00Z",
+            }
+        ],
+    )
+    topic = create_decision_log(
+        client,
+        target={"type": "TOPIC", "id": "ai-capex"},
+        decision_type="BUY_REVIEW",
+        risks=[{"type": "VALUATION", "severity": "MEDIUM"}],
+    )
+    with TestingSessionLocal() as db:
+        for decision_id in (apple["id"], topic["id"]):
+            decision_log = db.get(DecisionLog, decision_id)
+            assert decision_log is not None
+            decision_log.status = "ACTIVE"
+        db.commit()
+
+    set_current_user(2, "other@example.com")
+    create_decision_log(
+        client,
+        target={"type": "SYMBOL", "id": "AAPL"},
+        decision_type="BUY_REVIEW",
+        risks=[{"type": "VALUATION", "severity": "HIGH"}],
+        review_triggers=[
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-01T00:00:00Z",
+            }
+        ],
+    )
+    set_current_user(1)
+
+    cases = (
+        ({"target_type": "TOPIC"}, {topic["id"]}),
+        ({"symbol": "AAPL"}, {apple["id"]}),
+        ({"decision_type": "BUY_REVIEW"}, {apple["id"], topic["id"]}),
+        ({"status": "ACTIVE"}, {apple["id"], topic["id"]}),
+        ({"risk_type": "LIQUIDITY"}, {microsoft["id"]}),
+        ({"review_due_before": "2026-08-05T00:00:00Z"}, {apple["id"]}),
+        (
+            {
+                "target_type": "SYMBOL",
+                "symbol": "AAPL",
+                "decision_type": "BUY_REVIEW",
+                "status": "ACTIVE",
+                "risk_type": "VALUATION",
+                "review_due_before": "2026-08-05T00:00:00Z",
+            },
+            {apple["id"]},
+        ),
+    )
+    for params, expected_ids in cases:
+        response = client.get("/api/v1/decision-logs", params=params)
+        assert response.status_code == 200
+        assert {item["id"] for item in api_data(response)} == expected_ids
+        assert api_meta(response)["total"] == len(expected_ids)
+
+
+def test_list_rejects_invalid_enum_filters(client: TestClient) -> None:
+    set_current_user(1)
+
+    for params in (
+        {"target_type": "INVALID"},
+        {"decision_type": "INVALID"},
+        {"status": "INVALID"},
+    ):
+        response = client.get("/api/v1/decision-logs", params=params)
+        assert response.status_code == 422
+        assert api_error(response)["code"] == "VALIDATION_ERROR"
+
+
+def test_review_queue_returns_owned_due_dates_in_nearest_order(
+    client: TestClient,
+    monkeypatch: Any,
+) -> None:
+    now = datetime(2026, 8, 8, 12, tzinfo=UTC)
+    monkeypatch.setattr(DecisionLogService, "_now", staticmethod(lambda: now))
+    set_current_user(1)
+    older = create_decision_log(
+        client,
+        target={"type": "SYMBOL", "id": "AAPL"},
+        review_triggers=[
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-01T00:00:00Z",
+            },
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-02T00:00:00Z",
+            },
+        ],
+    )
+    nearer = create_decision_log(
+        client,
+        target={"type": "SYMBOL", "id": "MSFT"},
+        review_triggers=[
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-08T11:00:00Z",
+            }
+        ],
+    )
+    future = create_decision_log(
+        client,
+        target={"type": "SYMBOL", "id": "NVDA"},
+        review_triggers=[
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-09T00:00:00Z",
+            }
+        ],
+    )
+    event_only = create_decision_log(
+        client,
+        target={"type": "TOPIC", "id": "rates"},
+        review_triggers=[
+            {
+                "type": "EVENT",
+                "condition": {},
+                "scheduled_at": "2026-08-01T00:00:00Z",
+            }
+        ],
+    )
+    with TestingSessionLocal() as db:
+        db.add(
+            DecisionReviewTrigger(
+                decision_id=event_only["id"],
+                trigger_type="DATE",
+                condition={},
+                scheduled_at=now - timedelta(days=1),
+                status="TRIGGERED",
+            )
+        )
+        db.commit()
+
+    set_current_user(2, "other@example.com")
+    create_decision_log(
+        client,
+        review_triggers=[
+            {
+                "type": "DATE",
+                "condition": {},
+                "scheduled_at": "2026-08-08T10:00:00Z",
+            }
+        ],
+    )
+    set_current_user(1)
+
+    response = client.get("/api/v1/decision-logs/review-queue")
+
+    assert response.status_code == 200
+    items = api_data(response)
+    assert [item["id"] for item in items] == [older["id"], nearer["id"]]
+    assert [item["review_at"] for item in items] == [
+        "2026-08-01T00:00:00Z",
+        "2026-08-08T11:00:00Z",
+    ]
+    assert api_meta(response) == {"page": 1, "size": 20, "total": 2}
+    assert future["id"] not in {item["id"] for item in items}
+
+
+def test_list_projection_uses_constant_query_count(client: TestClient) -> None:
+    set_current_user(1)
+    for symbol in ("AAPL", "MSFT", "NVDA"):
+        create_decision_log(
+            client,
+            target={"type": "SYMBOL", "id": symbol},
+            risks=[{"type": "VALUATION", "severity": "MEDIUM"}],
+            review_triggers=[
+                {
+                    "type": "DATE",
+                    "condition": {},
+                    "scheduled_at": "2026-08-01T00:00:00Z",
+                }
+            ],
+        )
+
+    select_count = 0
+
+    def count_selects(*args: Any) -> None:
+        nonlocal select_count
+        statement = str(args[2]).lstrip().upper()
+        if statement.startswith("SELECT"):
+            select_count += 1
+
+    event.listen(engine, "before_cursor_execute", count_selects)
+    try:
+        response = client.get("/api/v1/decision-logs")
+    finally:
+        event.remove(engine, "before_cursor_execute", count_selects)
+
+    assert response.status_code == 200
+    assert len(api_data(response)) == 3
+    assert select_count == 4
 
 
 def test_list_rejects_invalid_sort(client: TestClient) -> None:

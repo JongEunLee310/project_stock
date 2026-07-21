@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 
 from sqlalchemy import Select, case, func, select
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.orm import Session
 
 from app.domains.decision_logs.model import (
@@ -18,7 +19,11 @@ from app.domains.decision_logs.schema import (
     DecisionLogUpdate,
     DecisionSnapshotInput,
 )
-from app.domains.decision_logs.types import DecisionStatus, ReviewTriggerStatus
+from app.domains.decision_logs.types import (
+    DecisionStatus,
+    ReviewTriggerStatus,
+    ReviewTriggerType,
+)
 
 
 @dataclass(frozen=True)
@@ -49,21 +54,131 @@ class DecisionLogRepository:
         user_id: int,
         offset: int = 0,
         limit: int | None = None,
-        sort: str = "-decided_at",
+        sort: str = "-created_at",
+        *,
+        target_type: str | None = None,
+        symbol: str | None = None,
+        decision_type: str | None = None,
+        status: str | None = None,
+        risk_type: str | None = None,
+        review_due_before: datetime | None = None,
     ) -> list[DecisionLog]:
-        stmt = select(DecisionLog).where(DecisionLog.user_id == user_id)
+        stmt = select(DecisionLog).where(
+            *self._filter_conditions(
+                user_id,
+                target_type=target_type,
+                symbol=symbol,
+                decision_type=decision_type,
+                status=status,
+                risk_type=risk_type,
+                review_due_before=review_due_before,
+            )
+        )
         stmt = self._apply_sort(stmt, sort).offset(offset)
         if limit is not None:
             stmt = stmt.limit(limit)
         return list(self.db.scalars(stmt).all())
 
-    def count_by_user(self, user_id: int) -> int:
+    def count_by_user(
+        self,
+        user_id: int,
+        *,
+        target_type: str | None = None,
+        symbol: str | None = None,
+        decision_type: str | None = None,
+        status: str | None = None,
+        risk_type: str | None = None,
+        review_due_before: datetime | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(DecisionLog).where(
+            *self._filter_conditions(
+                user_id,
+                target_type=target_type,
+                symbol=symbol,
+                decision_type=decision_type,
+                status=status,
+                risk_type=risk_type,
+                review_due_before=review_due_before,
+            )
+        )
+        return int(self.db.scalar(stmt) or 0)
+
+    def list_review_due(
+        self,
+        user_id: int,
+        now: datetime,
+        *,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[DecisionLog]:
+        review_at = self._pending_date_review_at()
+        stmt = (
+            select(DecisionLog)
+            .where(
+                DecisionLog.user_id == user_id,
+                review_at <= now,
+            )
+            .order_by(review_at, DecisionLog.id)
+            .offset(offset)
+        )
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return list(self.db.scalars(stmt).all())
+
+    def count_review_due(self, user_id: int, now: datetime) -> int:
+        review_at = self._pending_date_review_at()
         stmt = (
             select(func.count())
             .select_from(DecisionLog)
-            .where(DecisionLog.user_id == user_id)
+            .where(
+                DecisionLog.user_id == user_id,
+                review_at <= now,
+            )
         )
         return int(self.db.scalar(stmt) or 0)
+
+    def list_risk_types_by_decision(
+        self,
+        decision_log_ids: list[int],
+    ) -> dict[int, list[str]]:
+        risks_by_decision: dict[int, list[str]] = {
+            decision_id: [] for decision_id in decision_log_ids
+        }
+        if not decision_log_ids:
+            return risks_by_decision
+        stmt = (
+            select(DecisionRisk.decision_id, DecisionRisk.risk_type)
+            .where(DecisionRisk.decision_id.in_(decision_log_ids))
+            .order_by(DecisionRisk.decision_id, DecisionRisk.id)
+        )
+        for decision_id, risk_type in self.db.execute(stmt):
+            risks_by_decision[int(decision_id)].append(str(risk_type))
+        return risks_by_decision
+
+    def list_review_at_by_decision(
+        self,
+        decision_log_ids: list[int],
+    ) -> dict[int, datetime]:
+        if not decision_log_ids:
+            return {}
+        stmt = (
+            select(
+                DecisionReviewTrigger.decision_id,
+                func.min(DecisionReviewTrigger.scheduled_at),
+            )
+            .where(
+                DecisionReviewTrigger.decision_id.in_(decision_log_ids),
+                DecisionReviewTrigger.trigger_type == ReviewTriggerType.DATE.value,
+                DecisionReviewTrigger.status == ReviewTriggerStatus.PENDING.value,
+                DecisionReviewTrigger.scheduled_at.is_not(None),
+            )
+            .group_by(DecisionReviewTrigger.decision_id)
+        )
+        return {
+            int(decision_id): review_at
+            for decision_id, review_at in self.db.execute(stmt)
+            if review_at is not None
+        }
 
     def aggregate_overview(self, user_id: int, now: datetime) -> OverviewAgg:
         # A rolling seven-day window avoids week-boundary and timezone ambiguity.
@@ -292,3 +407,51 @@ class DecisionLogRepository:
         if sort == "decided_at":
             return stmt.order_by(DecisionLog.decided_at, DecisionLog.id)
         return stmt.order_by(DecisionLog.decided_at.desc(), DecisionLog.id.desc())
+
+    @staticmethod
+    def _pending_date_review_at() -> ColumnElement[datetime | None]:
+        return (
+            select(func.min(DecisionReviewTrigger.scheduled_at))
+            .where(
+                DecisionReviewTrigger.decision_id == DecisionLog.id,
+                DecisionReviewTrigger.trigger_type == ReviewTriggerType.DATE.value,
+                DecisionReviewTrigger.status == ReviewTriggerStatus.PENDING.value,
+                DecisionReviewTrigger.scheduled_at.is_not(None),
+            )
+            .correlate(DecisionLog)
+            .scalar_subquery()
+        )
+
+    @classmethod
+    def _filter_conditions(
+        cls,
+        user_id: int,
+        *,
+        target_type: str | None,
+        symbol: str | None,
+        decision_type: str | None,
+        status: str | None,
+        risk_type: str | None,
+        review_due_before: datetime | None,
+    ) -> list[ColumnElement[bool]]:
+        conditions: list[ColumnElement[bool]] = [DecisionLog.user_id == user_id]
+        if target_type is not None:
+            conditions.append(DecisionLog.target_type == target_type)
+        if symbol is not None:
+            conditions.append(DecisionLog.symbol == symbol)
+        if decision_type is not None:
+            conditions.append(DecisionLog.decision_type == decision_type)
+        if status is not None:
+            conditions.append(DecisionLog.status == status)
+        if risk_type is not None:
+            conditions.append(
+                select(DecisionRisk.id)
+                .where(
+                    DecisionRisk.decision_id == DecisionLog.id,
+                    DecisionRisk.risk_type == risk_type,
+                )
+                .exists()
+            )
+        if review_due_before is not None:
+            conditions.append(cls._pending_date_review_at() <= review_due_before)
+        return conditions

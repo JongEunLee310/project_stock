@@ -6,6 +6,7 @@ from app.core.schema import UtcDatetime
 from app.domains.decision_logs.types import (
     ConfidenceLevel,
     CreatedBy,
+    DecisionStatus,
     DecisionType,
     EvidenceRelationship,
     ReviewTriggerType,
@@ -137,6 +138,18 @@ class DecisionLogResponse(BaseModel):
 
 class DecisionLogDetailResponse(DecisionLogResponse):
     snapshots: list[DecisionSnapshotResponse]
+
+
+class DecisionLogListItem(BaseModel):
+    id: int
+    target: DecisionTarget
+    decision_type: DecisionType
+    summary: str | None = None
+    risks: list[str]
+    confidence_level: ConfidenceLevel | None = None
+    status: DecisionStatus
+    review_at: UtcDatetime | None = None
+    created_at: UtcDatetime
 
 
 class DecisionTypeDistributionItem(BaseModel):

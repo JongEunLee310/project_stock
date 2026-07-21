@@ -12,19 +12,26 @@ from app.domains.decision_logs.schema import (
     DecisionEvidenceResponse,
     DecisionLogCreate,
     DecisionLogDetailResponse,
+    DecisionLogListItem,
     DecisionOverviewResponse,
     DecisionLogResponse,
     DecisionLogUpdate,
+    DecisionTarget,
     DecisionReviewTriggerResponse,
     DecisionRiskResponse,
     DecisionSnapshotResponse,
     DecisionTypeDistributionItem,
 )
 from app.domains.decision_logs.types import (
+    ConfidenceLevel,
     DecisionStatus,
     DecisionType,
     EvidenceRelationship,
+    TargetType,
 )
+
+SUMMARY_MAX_LENGTH = 200
+
 
 class DecisionLogService:
     def __init__(self, db: Session) -> None:
@@ -54,20 +61,59 @@ class DecisionLogService:
         user_id: int,
         offset: int = 0,
         limit: int | None = None,
-        sort: str = "-decided_at",
-    ) -> list[DecisionLogResponse]:
-        return [
-            self._to_response(decision_log)
-            for decision_log in self.repo.list_by_user(
-                user_id,
-                offset=offset,
-                limit=limit,
-                sort=sort,
-            )
-        ]
+        sort: str = "-created_at",
+        *,
+        target_type: TargetType | None = None,
+        symbol: str | None = None,
+        decision_type: DecisionType | None = None,
+        status: DecisionStatus | None = None,
+        risk_type: str | None = None,
+        review_due_before: datetime | None = None,
+    ) -> tuple[list[DecisionLogListItem], int]:
+        target_type_value = target_type.value if target_type is not None else None
+        decision_type_value = (
+            decision_type.value if decision_type is not None else None
+        )
+        status_value = status.value if status is not None else None
+        decision_logs = self.repo.list_by_user(
+            user_id,
+            offset=offset,
+            limit=limit,
+            sort=sort,
+            target_type=target_type_value,
+            symbol=symbol,
+            decision_type=decision_type_value,
+            status=status_value,
+            risk_type=risk_type,
+            review_due_before=review_due_before,
+        )
+        total = self.repo.count_by_user(
+            user_id,
+            target_type=target_type_value,
+            symbol=symbol,
+            decision_type=decision_type_value,
+            status=status_value,
+            risk_type=risk_type,
+            review_due_before=review_due_before,
+        )
+        return self._to_list_items(decision_logs), total
 
-    def count_decision_logs(self, user_id: int) -> int:
-        return self.repo.count_by_user(user_id)
+    def get_review_queue(
+        self,
+        user_id: int,
+        *,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> tuple[list[DecisionLogListItem], int]:
+        now = self._now()
+        decision_logs = self.repo.list_review_due(
+            user_id,
+            now,
+            offset=offset,
+            limit=limit,
+        )
+        total = self.repo.count_review_due(user_id, now)
+        return self._to_list_items(decision_logs), total
 
     def get_overview(self, user_id: int) -> DecisionOverviewResponse:
         now = self._now()
@@ -221,6 +267,39 @@ class DecisionLogService:
                 for item in self.repo.list_review_triggers(decision_log.id)
             ],
         )
+
+    def _to_list_items(
+        self,
+        decision_logs: list[DecisionLog],
+    ) -> list[DecisionLogListItem]:
+        decision_log_ids = [decision_log.id for decision_log in decision_logs]
+        risks_by_decision = self.repo.list_risk_types_by_decision(decision_log_ids)
+        review_at_by_decision = self.repo.list_review_at_by_decision(decision_log_ids)
+        return [
+            DecisionLogListItem(
+                id=decision_log.id,
+                target=DecisionTarget(
+                    type=TargetType(decision_log.target_type),
+                    id=decision_log.target_id,
+                ),
+                decision_type=DecisionType(decision_log.decision_type),
+                summary=(
+                    decision_log.rationale[:SUMMARY_MAX_LENGTH]
+                    if decision_log.rationale is not None
+                    else None
+                ),
+                risks=risks_by_decision[decision_log.id],
+                confidence_level=(
+                    ConfidenceLevel(decision_log.confidence_level)
+                    if decision_log.confidence_level is not None
+                    else None
+                ),
+                status=DecisionStatus(decision_log.status),
+                review_at=review_at_by_decision.get(decision_log.id),
+                created_at=decision_log.created_at,
+            )
+            for decision_log in decision_logs
+        ]
 
     @staticmethod
     def _text_evidence(

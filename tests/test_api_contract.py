@@ -614,6 +614,18 @@ DECISION_LOG_CONTRACT: Contract = {
     "review_triggers": list,
 }
 
+DECISION_LOG_LIST_ITEM_CONTRACT: Contract = {
+    "id": int,
+    "target": dict,
+    "decision_type": str,
+    "summary": (str, type(None)),
+    "risks": list,
+    "confidence_level": (str, type(None)),
+    "status": str,
+    "review_at": (str, type(None)),
+    "created_at": str,
+}
+
 LOGIN_TOKEN_CONTRACT: Contract = {
     "access_token": str,
     "token_type": str,
@@ -1303,7 +1315,7 @@ def test_decision_log_response_contract(client: TestClient) -> None:
     assert list_response.status_code == 200
     assert_envelope(list_response.json(), has_meta=True)
     decision_logs = cast(list[dict[str, Any]], api_data(list_response))
-    assert_contract(decision_logs[0], DECISION_LOG_CONTRACT)
+    assert_contract(decision_logs[0], DECISION_LOG_LIST_ITEM_CONTRACT)
     assert api_meta(list_response) == {"page": 1, "size": 20, "total": 1}
 
     assert get_response.status_code == 200
