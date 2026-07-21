@@ -5,16 +5,22 @@ from fastapi.testclient import TestClient
 
 from app.domains.news_insights.briefing import validate_evidence_event_ids
 from app.domains.news_insights.model import (
+    EventEvidence,
     ExtractedEvent,
     KeywordRelation,
+    SourceDocument,
     TopicCluster,
+    TopicInsight,
     TopicKeyword,
 )
 from app.domains.news_insights.seed import seed_mock_news_insights
 from app.domains.news_insights.types import (
+    DocumentType,
+    EvidenceRole,
     EventStatus,
     EventType,
     LifecycleStatus,
+    ProcessingStatus,
     SentimentDirection,
     TopicCategory,
 )
@@ -341,3 +347,176 @@ def test_topic_map_applies_window_and_topic_limit(client: TestClient) -> None:
 
 def test_briefing_evidence_validation_excludes_unknown_ids() -> None:
     assert validate_evidence_event_ids([3, 999, 2, 3], {1, 2, 3}) == [3, 2]
+
+
+def test_topic_detail_returns_latest_insight_and_required_fields(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        topic = session.query(TopicCluster).one()
+        event = session.query(ExtractedEvent).one()
+        session.add(
+            TopicInsight(
+                topic_id=topic.id,
+                version=2,
+                executive_summary="최신 장기 수요 인사이트",
+                why_it_matters="공급 가시성이 재평가될 수 있다.",
+                key_evidence=[{"event_id": event.id}],
+                risk_points=["계약 지연"],
+                counter_arguments=["단기 실적 영향은 제한적이다."],
+                impact_score=0.91,
+                confidence_score=0.93,
+                model_name="mock-news-intelligence",
+                prompt_version="v2",
+                created_at=SEEDED_AT,
+            )
+        )
+        topic_id = topic.id
+        session.commit()
+
+    response = client.get(f"/api/v1/news-insights/topics/{topic_id}")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert set(data) == {
+        "title",
+        "tags",
+        "lifecycle",
+        "scores",
+        "affected_symbols",
+        "insight",
+        "version",
+        "updated_at",
+    }
+    assert data["version"] == 2
+    assert data["insight"]["summary"] == "최신 장기 수요 인사이트"
+    assert data["insight"]["counter_arguments"] == [
+        "단기 실적 영향은 제한적이다."
+    ]
+    assert data["affected_symbols"][0]["symbol"] == "005930"
+    assert data["updated_at"].endswith("Z")
+
+
+def test_topic_trend_returns_aggregated_points_markers_and_sources(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        topic_id = session.query(TopicCluster.id).scalar()
+
+    response = client.get(
+        f"/api/v1/news-insights/topics/{topic_id}/trend",
+        params={"window": "7d", "interval": "1d"},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert set(data) == {"points", "markers", "source_distribution"}
+    assert data["points"]
+    assert set(data["points"][0]) == {
+        "timestamp",
+        "mention_count",
+        "sentiment_score",
+        "impact_score",
+    }
+    assert data["markers"]
+    assert set(data["markers"][0]) == {"timestamp", "label", "event_id"}
+    assert data["source_distribution"] == [
+        {"source_type": "DISCLOSURE", "count": 1, "share": 1.0}
+    ]
+
+
+def test_topic_evidence_uses_cursor_pagination_and_filters(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        topic = session.query(TopicCluster).one()
+        event = session.query(ExtractedEvent).one()
+        second_document = SourceDocument(
+            document_type=DocumentType.NEWS.value,
+            source_name="연합뉴스",
+            source_url="https://example.com/second",
+            external_id=None,
+            title="반도체 공급계약 후속 보도",
+            raw_content="후속 보도",
+            normalized_content="후속 보도",
+            language="ko",
+            published_at=SEEDED_AT - timedelta(hours=1),
+            collected_at=SEEDED_AT - timedelta(minutes=55),
+            content_hash="mock-news-insight-document-00000000000000000000000000000002",
+            source_reliability=0.8,
+            processing_status=ProcessingStatus.EXTRACTED.value,
+        )
+        session.add(second_document)
+        session.flush()
+        session.add(
+            EventEvidence(
+                event_id=event.id,
+                document_id=second_document.id,
+                relevance_score=0.8,
+                evidence_role=EvidenceRole.SUPPORTING.value,
+                extracted_quote="후속 보도",
+            )
+        )
+        topic_id = topic.id
+        session.commit()
+
+    first_response = client.get(
+        f"/api/v1/news-insights/topics/{topic_id}/evidence",
+        params={"limit": 1, "direction": "POSITIVE"},
+    )
+
+    assert first_response.status_code == 200
+    first_page = cast(list[dict[str, Any]], api_data(first_response))
+    assert len(first_page) == 1
+    assert set(first_page[0]) == {
+        "event_id",
+        "document_id",
+        "evidence_role",
+        "document_type",
+        "symbol",
+        "title",
+        "summary",
+        "direction",
+        "relevance_score",
+        "source",
+        "published_at",
+    }
+    first_meta = first_response.json()["meta"]
+    assert first_meta["has_more"] is True
+    assert isinstance(first_meta["next_cursor"], str)
+
+    second_response = client.get(
+        f"/api/v1/news-insights/topics/{topic_id}/evidence",
+        params={"limit": 1, "cursor": first_meta["next_cursor"]},
+    )
+
+    assert second_response.status_code == 200
+    second_page = cast(list[dict[str, Any]], api_data(second_response))
+    assert len(second_page) == 1
+    assert second_page[0]["document_id"] != first_page[0]["document_id"]
+    assert second_response.json()["meta"]["has_more"] is False
+
+    filtered_response = client.get(
+        f"/api/v1/news-insights/topics/{topic_id}/evidence",
+        params={"types": "DISCLOSURE"},
+    )
+    filtered_page = cast(list[dict[str, Any]], api_data(filtered_response))
+    assert filtered_response.status_code == 200
+    assert [item["document_type"] for item in filtered_page] == ["DISCLOSURE"]
+
+
+def test_topic_detail_routes_return_404_for_unknown_topic(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+
+    for suffix in ("", "/trend", "/evidence"):
+        response = client.get(f"/api/v1/news-insights/topics/999{suffix}")
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "NEWS_INSIGHT_TOPIC_NOT_FOUND"

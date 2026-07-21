@@ -12,11 +12,17 @@ from app.domains.news_insights.schema import (
     EventsQuery,
     OverviewQuery,
     OverviewResponse,
+    TopicDetailResponse,
+    TopicEvidenceItem,
+    TopicEvidenceQuery,
     TopicMapQuery,
     TopicMapResponse,
+    TopicTrendQuery,
+    TopicTrendResponse,
 )
 from app.domains.news_insights.service import NewsInsightsService
 from app.domains.news_insights.types import (
+    DocumentType,
     EventType,
     ImportanceLevel,
     SentimentDirection,
@@ -101,3 +107,64 @@ def get_news_insight_topic_map(
 ) -> ApiResponse[TopicMapResponse]:
     query = TopicMapQuery(window=window, market=market, limit=limit)
     return success(NewsInsightsService(db).get_topic_map(query))
+
+
+@router.get(
+    "/topics/{topic_id}",
+    response_model=ApiResponse[TopicDetailResponse],
+    summary="Get news insight topic detail",
+    description="Return a topic with its latest versioned insight.",
+)
+def get_news_insight_topic_detail(
+    topic_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[TopicDetailResponse]:
+    return success(NewsInsightsService(db).get_topic_detail(topic_id))
+
+
+@router.get(
+    "/topics/{topic_id}/trend",
+    response_model=ApiResponse[TopicTrendResponse],
+    summary="Get news insight topic trend",
+    description="Return interval aggregates, event markers, and source distribution.",
+)
+def get_news_insight_topic_trend(
+    topic_id: int,
+    window: Annotated[str, Query(pattern=r"^[1-9]\d*[hd]$")] = "7d",
+    interval: Annotated[str, Query(pattern=r"^[1-9]\d*[hd]$")] = "1d",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[TopicTrendResponse]:
+    query = TopicTrendQuery(window=window, interval=interval)
+    return success(NewsInsightsService(db).get_topic_trend(topic_id, query))
+
+
+@router.get(
+    "/topics/{topic_id}/evidence",
+    response_model=ApiResponse[list[TopicEvidenceItem]],
+    summary="List news insight topic evidence",
+    description="Return topic evidence using opaque cursor pagination.",
+)
+def list_news_insight_topic_evidence(
+    topic_id: int,
+    types: Annotated[list[DocumentType] | None, Query()] = None,
+    direction: SentimentDirection | None = None,
+    cursor: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[list[TopicEvidenceItem]]:
+    query = TopicEvidenceQuery(
+        types=types or [],
+        direction=direction,
+        cursor=cursor,
+        limit=limit,
+    )
+    result = NewsInsightsService(db).list_topic_evidence(topic_id, query)
+    return cursor_paginated(
+        result.items,
+        limit=limit,
+        has_more=result.has_more,
+        next_cursor=result.next_cursor,
+    )

@@ -1,14 +1,17 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.schema import UtcDatetime
 from app.domains.news_insights.types import (
     DocumentType,
+    EvidenceRole,
     EventType,
     ImportanceLevel,
+    LifecycleStatus,
     SentimentDirection,
+    SymbolRelationship,
     TopicCategory,
 )
 
@@ -40,6 +43,18 @@ class EventsQuery(BaseModel):
 class TopicMapQuery(BaseModel):
     window: str = Field(default="7d", pattern=r"^[1-9]\d*[hd]$")
     market: str | None = None
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class TopicTrendQuery(BaseModel):
+    window: str = Field(default="7d", pattern=r"^[1-9]\d*[hd]$")
+    interval: str = Field(default="1d", pattern=r"^[1-9]\d*[hd]$")
+
+
+class TopicEvidenceQuery(BaseModel):
+    types: list[DocumentType] = Field(default_factory=list)
+    direction: SentimentDirection | None = None
+    cursor: str | None = None
     limit: int = Field(default=20, ge=1, le=100)
 
 
@@ -124,3 +139,75 @@ class TopicMapEdge(BaseModel):
 class TopicMapResponse(BaseModel):
     nodes: list[TopicMapNode]
     edges: list[TopicMapEdge]
+
+
+class TopicScores(BaseModel):
+    impact: float = Field(ge=0.0, le=1.0)
+    sentiment: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(ge=0.0, le=1.0)
+    momentum: float = Field(ge=0.0, le=1.0)
+
+
+class AffectedSymbol(BaseModel):
+    symbol: str
+    exposure_score: float = Field(ge=0.0, le=1.0)
+    impact_direction: SentimentDirection
+    relationship: SymbolRelationship
+
+
+class TopicInsightResponse(BaseModel):
+    summary: str
+    why_it_matters: str
+    key_evidence: list[dict[str, Any]]
+    risk_points: list[str]
+    counter_arguments: list[str]
+
+
+class TopicDetailResponse(BaseModel):
+    title: str
+    tags: list[str]
+    lifecycle: LifecycleStatus
+    scores: TopicScores
+    affected_symbols: list[AffectedSymbol]
+    insight: TopicInsightResponse
+    version: int = Field(ge=1)
+    updated_at: UtcDatetime
+
+
+class TopicTrendPoint(BaseModel):
+    timestamp: UtcDatetime
+    mention_count: int = Field(ge=0)
+    sentiment_score: float = Field(ge=0.0, le=1.0)
+    impact_score: float = Field(ge=0.0, le=1.0)
+
+
+class TopicTrendMarker(BaseModel):
+    timestamp: UtcDatetime
+    label: str
+    event_id: int
+
+
+class TopicSourceDistribution(BaseModel):
+    source_type: DocumentType
+    count: int = Field(ge=0)
+    share: float = Field(ge=0.0, le=1.0)
+
+
+class TopicTrendResponse(BaseModel):
+    points: list[TopicTrendPoint]
+    markers: list[TopicTrendMarker]
+    source_distribution: list[TopicSourceDistribution]
+
+
+class TopicEvidenceItem(BaseModel):
+    event_id: int
+    document_id: int
+    evidence_role: EvidenceRole
+    document_type: DocumentType
+    symbol: str | None
+    title: str
+    summary: str
+    direction: SentimentDirection
+    relevance_score: float = Field(ge=0.0, le=1.0)
+    source: str
+    published_at: UtcDatetime

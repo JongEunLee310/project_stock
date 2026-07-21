@@ -16,7 +16,7 @@ from app.domains.news_insights.model import (
     TopicInsight,
     TopicKeyword,
 )
-from app.domains.news_insights.schema import EventsQuery
+from app.domains.news_insights.schema import EventsQuery, TopicEvidenceQuery
 from app.domains.news_insights.types import (
     EventStatus,
     EvidenceRole,
@@ -57,6 +57,39 @@ class TopicMapRecords:
     topics: tuple[TopicCluster, ...]
     keywords: tuple[TopicKeyword, ...]
     relations: tuple[KeywordRelation, ...]
+
+
+@dataclass(frozen=True)
+class AffectedEventRecord:
+    event: ExtractedEvent
+    exposure_score: float
+
+
+@dataclass(frozen=True)
+class TopicDetailRecords:
+    topic: TopicCluster
+    insight: TopicInsight
+    keywords: tuple[TopicKeyword, ...]
+    affected_events: tuple[AffectedEventRecord, ...]
+
+
+@dataclass(frozen=True)
+class EvidenceRecord:
+    evidence: EventEvidence
+    event: ExtractedEvent
+    document: SourceDocument
+
+
+@dataclass(frozen=True)
+class EvidencePage:
+    records: tuple[EvidenceRecord, ...]
+    has_more: bool
+
+
+@dataclass(frozen=True)
+class TopicTrendRecords:
+    events: tuple[ExtractedEvent, ...]
+    evidence: tuple[EvidenceRecord, ...]
 
 
 class NewsInsightsRepository:
@@ -215,6 +248,129 @@ class NewsInsightsRepository:
             relations=relations,
         )
 
+    def topic_exists(self, topic_id: int) -> bool:
+        return self.db.get(TopicCluster, topic_id) is not None
+
+    def topic_detail_records(self, topic_id: int) -> TopicDetailRecords | None:
+        topic = self.db.get(TopicCluster, topic_id)
+        if topic is None:
+            return None
+        insight = self.db.scalars(
+            select(TopicInsight)
+            .where(TopicInsight.topic_id == topic_id)
+            .order_by(TopicInsight.version.desc(), TopicInsight.id.desc())
+            .limit(1)
+        ).first()
+        if insight is None:
+            return None
+        keywords = tuple(
+            self.db.scalars(
+                select(TopicKeyword)
+                .where(TopicKeyword.topic_id == topic_id)
+                .order_by(TopicKeyword.weight.desc(), TopicKeyword.id)
+            ).all()
+        )
+        event_ids = self._insight_event_ids(insight)
+        events = tuple(
+            self.db.scalars(
+                select(ExtractedEvent)
+                .where(
+                    ExtractedEvent.id.in_(event_ids),
+                    ExtractedEvent.status == EventStatus.ACTIVE.value,
+                    ExtractedEvent.primary_symbol.is_not(None),
+                )
+                .order_by(ExtractedEvent.importance_score.desc(), ExtractedEvent.id)
+            ).all()
+        )
+        relevance_by_event = self._max_relevance_by_event(event_ids)
+        return TopicDetailRecords(
+            topic=topic,
+            insight=insight,
+            keywords=keywords,
+            affected_events=tuple(
+                AffectedEventRecord(
+                    event=event,
+                    exposure_score=relevance_by_event.get(
+                        event.id, event.importance_score
+                    ),
+                )
+                for event in events
+            ),
+        )
+
+    def topic_trend_records(
+        self,
+        topic_id: int,
+        *,
+        start: datetime,
+        end: datetime,
+    ) -> TopicTrendRecords:
+        event_ids = self._topic_event_ids(topic_id)
+        if not event_ids:
+            return TopicTrendRecords(events=(), evidence=())
+        events = tuple(
+            self.db.scalars(
+                select(ExtractedEvent)
+                .where(
+                    ExtractedEvent.id.in_(event_ids),
+                    ExtractedEvent.status == EventStatus.ACTIVE.value,
+                    ExtractedEvent.detected_at >= start,
+                    ExtractedEvent.detected_at <= end,
+                )
+                .order_by(ExtractedEvent.detected_at, ExtractedEvent.id)
+            ).all()
+        )
+        records = self._evidence_records([event.id for event in events])
+        return TopicTrendRecords(events=events, evidence=records)
+
+    def list_topic_evidence(
+        self,
+        topic_id: int,
+        query: TopicEvidenceQuery,
+        cursor: DateTimeCursor | None,
+    ) -> EvidencePage:
+        event_ids = self._topic_event_ids(topic_id)
+        if not event_ids:
+            return EvidencePage(records=(), has_more=False)
+        conditions: list[Any] = [
+            EventEvidence.event_id.in_(event_ids),
+            ExtractedEvent.status == EventStatus.ACTIVE.value,
+        ]
+        if query.types:
+            conditions.append(
+                SourceDocument.document_type.in_([item.value for item in query.types])
+            )
+        if query.direction is not None:
+            conditions.append(
+                ExtractedEvent.sentiment_direction == query.direction.value
+            )
+        if cursor is not None:
+            conditions.append(
+                or_(
+                    SourceDocument.published_at < cursor.timestamp,
+                    and_(
+                        SourceDocument.published_at == cursor.timestamp,
+                        EventEvidence.id < cursor.row_id,
+                    ),
+                )
+            )
+        rows = self.db.execute(
+            select(EventEvidence, ExtractedEvent, SourceDocument)
+            .join(ExtractedEvent, ExtractedEvent.id == EventEvidence.event_id)
+            .join(SourceDocument, SourceDocument.id == EventEvidence.document_id)
+            .where(*conditions)
+            .order_by(SourceDocument.published_at.desc(), EventEvidence.id.desc())
+            .limit(query.limit + 1)
+        ).all()
+        has_more = len(rows) > query.limit
+        return EvidencePage(
+            records=tuple(
+                EvidenceRecord(evidence=evidence, event=event, document=document)
+                for evidence, event, document in rows[: query.limit]
+            ),
+            has_more=has_more,
+        )
+
     def briefing_candidates(self) -> list[BriefingCandidate]:
         rows = self.db.execute(
             select(TopicInsight, TopicCluster)
@@ -251,6 +407,58 @@ class NewsInsightsRepository:
             return None
         event_id = item.get("event_id")
         return event_id if isinstance(event_id, int) else None
+
+    @classmethod
+    def _insight_event_ids(cls, insight: TopicInsight) -> list[int]:
+        return list(
+            dict.fromkeys(
+                event_id
+                for item in insight.key_evidence
+                if (event_id := cls._evidence_event_id(item)) is not None
+            )
+        )
+
+    def _topic_event_ids(self, topic_id: int) -> list[int]:
+        event_ids: list[int] = []
+        seen: set[int] = set()
+        insights = self.db.scalars(
+            select(TopicInsight)
+            .where(TopicInsight.topic_id == topic_id)
+            .order_by(TopicInsight.version, TopicInsight.id)
+        ).all()
+        for insight in insights:
+            for event_id in self._insight_event_ids(insight):
+                if event_id not in seen:
+                    seen.add(event_id)
+                    event_ids.append(event_id)
+        return event_ids
+
+    def _max_relevance_by_event(self, event_ids: list[int]) -> dict[int, float]:
+        if not event_ids:
+            return {}
+        return {
+            event_id: float(relevance)
+            for event_id, relevance in self.db.execute(
+                select(EventEvidence.event_id, func.max(EventEvidence.relevance_score))
+                .where(EventEvidence.event_id.in_(event_ids))
+                .group_by(EventEvidence.event_id)
+            ).all()
+        }
+
+    def _evidence_records(self, event_ids: list[int]) -> tuple[EvidenceRecord, ...]:
+        if not event_ids:
+            return ()
+        rows = self.db.execute(
+            select(EventEvidence, ExtractedEvent, SourceDocument)
+            .join(ExtractedEvent, ExtractedEvent.id == EventEvidence.event_id)
+            .join(SourceDocument, SourceDocument.id == EventEvidence.document_id)
+            .where(EventEvidence.event_id.in_(event_ids))
+            .order_by(SourceDocument.published_at, EventEvidence.id)
+        ).all()
+        return tuple(
+            EvidenceRecord(evidence=evidence, event=event, document=document)
+            for evidence, event, document in rows
+        )
 
     @staticmethod
     def _event_conditions(

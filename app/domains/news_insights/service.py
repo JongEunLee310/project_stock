@@ -1,19 +1,26 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import NoReturn
 
 from sqlalchemy.orm import Session
 
+from app.core.error_codes import ErrorCode
+from app.core.exceptions import AppException
 from app.core.pagination import decode_datetime_cursor, encode_datetime_cursor
 from app.domains.news_insights.briefing import build_briefing
 from app.domains.news_insights.repository import (
     HIGH_IMPORTANCE_MIN,
     MEDIUM_IMPORTANCE_MIN,
     EventRecord,
+    EvidenceRecord,
     NewsInsightsRepository,
     SummaryCounts,
+    TopicDetailRecords,
     TopicMapRecords,
+    TopicTrendRecords,
 )
 from app.domains.news_insights.schema import (
+    AffectedSymbol,
     EventImportance,
     EventListItem,
     EventSentiment,
@@ -23,16 +30,29 @@ from app.domains.news_insights.schema import (
     OverviewResponse,
     OverviewSummary,
     SummaryMetric,
+    TopicDetailResponse,
+    TopicEvidenceItem,
+    TopicEvidenceQuery,
+    TopicInsightResponse,
     TopicMapEdge,
     TopicMapNode,
     TopicMapQuery,
     TopicMapResponse,
+    TopicScores,
+    TopicSourceDistribution,
+    TopicTrendMarker,
+    TopicTrendPoint,
+    TopicTrendQuery,
+    TopicTrendResponse,
 )
 from app.domains.news_insights.types import (
     DocumentType,
+    EvidenceRole,
     EventType,
     ImportanceLevel,
+    LifecycleStatus,
     SentimentDirection,
+    SymbolRelationship,
     TopicCategory,
 )
 
@@ -42,6 +62,21 @@ class EventsResult:
     items: list[EventListItem]
     has_more: bool
     next_cursor: str | None
+
+
+@dataclass(frozen=True)
+class TopicEvidenceResult:
+    items: list[TopicEvidenceItem]
+    has_more: bool
+    next_cursor: str | None
+
+
+@dataclass
+class TrendBucket:
+    mention_count: int = 0
+    sentiment_total: float = 0.0
+    impact_total: float = 0.0
+    event_count: int = 0
 
 
 class NewsInsightsService:
@@ -102,10 +137,78 @@ class NewsInsightsService:
         )
         return self._topic_map_response(records)
 
+    def get_topic_detail(self, topic_id: int) -> TopicDetailResponse:
+        records = self.repository.topic_detail_records(topic_id)
+        if records is None:
+            self._raise_topic_not_found()
+        return self._topic_detail_response(records)
+
+    def get_topic_trend(
+        self,
+        topic_id: int,
+        query: TopicTrendQuery,
+        *,
+        as_of: datetime | None = None,
+    ) -> TopicTrendResponse:
+        if not self.repository.topic_exists(topic_id):
+            self._raise_topic_not_found()
+        end = as_of or datetime.now(UTC)
+        window = self._parse_window(query.window)
+        interval = self._parse_window(query.interval)
+        records = self.repository.topic_trend_records(
+            topic_id,
+            start=end - window,
+            end=end,
+        )
+        return self._topic_trend_response(
+            records,
+            start=end - window,
+            interval=interval,
+        )
+
+    def list_topic_evidence(
+        self,
+        topic_id: int,
+        query: TopicEvidenceQuery,
+    ) -> TopicEvidenceResult:
+        if not self.repository.topic_exists(topic_id):
+            self._raise_topic_not_found()
+        cursor = (
+            decode_datetime_cursor(query.cursor) if query.cursor is not None else None
+        )
+        page = self.repository.list_topic_evidence(topic_id, query, cursor)
+        items = [self._topic_evidence_item(record) for record in page.records]
+        next_cursor = None
+        if page.has_more and page.records:
+            last = page.records[-1]
+            next_cursor = encode_datetime_cursor(
+                last.document.published_at,
+                last.evidence.id,
+            )
+        return TopicEvidenceResult(
+            items=items,
+            has_more=page.has_more,
+            next_cursor=next_cursor,
+        )
+
     @staticmethod
     def _parse_window(window: str) -> timedelta:
         value = int(window[:-1])
         return timedelta(hours=value) if window.endswith("h") else timedelta(days=value)
+
+    @staticmethod
+    def _raise_topic_not_found() -> NoReturn:
+        raise AppException(
+            status_code=404,
+            detail="뉴스 인사이트 토픽을 찾을 수 없습니다.",
+            error_code=ErrorCode.NEWS_INSIGHT_TOPIC_NOT_FOUND,
+        )
+
+    @staticmethod
+    def _as_utc(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     @staticmethod
     def _metric(current: int, previous: int) -> SummaryMetric:
@@ -238,3 +341,127 @@ class NewsInsightsService:
             and (relation.topic_id, relation.target_keyword) in keyword_ids
         ]
         return TopicMapResponse(nodes=[*topic_nodes, *keyword_nodes], edges=edges)
+
+    @classmethod
+    def _topic_detail_response(
+        cls,
+        records: TopicDetailRecords,
+    ) -> TopicDetailResponse:
+        topic = records.topic
+        insight = records.insight
+        affected_by_symbol: dict[str, AffectedSymbol] = {}
+        for record in records.affected_events:
+            symbol = record.event.primary_symbol
+            if symbol is None:
+                continue
+            candidate = AffectedSymbol(
+                symbol=symbol,
+                exposure_score=record.exposure_score,
+                impact_direction=SentimentDirection(
+                    record.event.sentiment_direction
+                ),
+                relationship=SymbolRelationship.DIRECT,
+            )
+            existing = affected_by_symbol.get(symbol)
+            if existing is None or candidate.exposure_score > existing.exposure_score:
+                affected_by_symbol[symbol] = candidate
+        return TopicDetailResponse(
+            title=topic.title,
+            tags=[keyword.keyword for keyword in records.keywords],
+            lifecycle=LifecycleStatus(topic.lifecycle_status),
+            scores=TopicScores(
+                impact=topic.impact_score,
+                sentiment=topic.sentiment_score,
+                confidence=topic.confidence_score,
+                momentum=topic.momentum_score,
+            ),
+            affected_symbols=sorted(
+                affected_by_symbol.values(),
+                key=lambda item: (-item.exposure_score, item.symbol),
+            ),
+            insight=TopicInsightResponse(
+                summary=insight.executive_summary,
+                why_it_matters=insight.why_it_matters,
+                key_evidence=insight.key_evidence,
+                risk_points=insight.risk_points,
+                counter_arguments=insight.counter_arguments,
+            ),
+            version=insight.version,
+            updated_at=cls._as_utc(insight.created_at),
+        )
+
+    @classmethod
+    def _topic_trend_response(
+        cls,
+        records: TopicTrendRecords,
+        *,
+        start: datetime,
+        interval: timedelta,
+    ) -> TopicTrendResponse:
+        evidence_counts: dict[int, int] = {}
+        source_counts: dict[DocumentType, int] = {}
+        for record in records.evidence:
+            event_id = record.event.id
+            evidence_counts[event_id] = evidence_counts.get(event_id, 0) + 1
+            source_type = DocumentType(record.document.document_type)
+            source_counts[source_type] = source_counts.get(source_type, 0) + 1
+
+        buckets: dict[int, TrendBucket] = {}
+        for event in records.events:
+            elapsed = cls._as_utc(event.detected_at) - cls._as_utc(start)
+            index = int(elapsed.total_seconds() // interval.total_seconds())
+            bucket = buckets.setdefault(index, TrendBucket())
+            bucket.mention_count += max(evidence_counts.get(event.id, 0), 1)
+            bucket.sentiment_total += event.sentiment_score
+            bucket.impact_total += event.importance_score
+            bucket.event_count += 1
+
+        points = [
+            TopicTrendPoint(
+                timestamp=cls._as_utc(start) + interval * index,
+                mention_count=bucket.mention_count,
+                sentiment_score=bucket.sentiment_total / bucket.event_count,
+                impact_score=bucket.impact_total / bucket.event_count,
+            )
+            for index, bucket in sorted(buckets.items())
+        ]
+        markers = [
+            TopicTrendMarker(
+                timestamp=cls._as_utc(event.detected_at),
+                label=event.title,
+                event_id=event.id,
+            )
+            for event in records.events
+        ]
+        total_sources = sum(source_counts.values())
+        distribution = [
+            TopicSourceDistribution(
+                source_type=source_type,
+                count=count,
+                share=count / total_sources,
+            )
+            for source_type, count in sorted(
+                source_counts.items(), key=lambda item: item[0].value
+            )
+        ]
+        return TopicTrendResponse(
+            points=points,
+            markers=markers,
+            source_distribution=distribution,
+        )
+
+    @classmethod
+    def _topic_evidence_item(cls, record: EvidenceRecord) -> TopicEvidenceItem:
+        return TopicEvidenceItem(
+            event_id=record.event.id,
+            document_id=record.document.id,
+            evidence_role=EvidenceRole(record.evidence.evidence_role),
+            document_type=DocumentType(record.document.document_type),
+            symbol=record.event.primary_symbol,
+            title=record.document.title,
+            summary=record.event.summary,
+            direction=SentimentDirection(record.event.sentiment_direction),
+            relevance_score=record.evidence.relevance_score,
+            source=record.document.source_name,
+            published_at=cls._as_utc(record.document.published_at),
+        )
