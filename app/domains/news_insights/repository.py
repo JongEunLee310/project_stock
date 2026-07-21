@@ -10,9 +10,11 @@ from app.domains.news_insights.briefing import BriefingCandidate
 from app.domains.news_insights.model import (
     EventEvidence,
     ExtractedEvent,
+    KeywordRelation,
     SourceDocument,
     TopicCluster,
     TopicInsight,
+    TopicKeyword,
 )
 from app.domains.news_insights.schema import EventsQuery
 from app.domains.news_insights.types import (
@@ -48,6 +50,13 @@ class SummaryCounts:
     sentiment_shifts: int
     active_topic_clusters: int
     fund_flow_signals: int = 0
+
+
+@dataclass(frozen=True)
+class TopicMapRecords:
+    topics: tuple[TopicCluster, ...]
+    keywords: tuple[TopicKeyword, ...]
+    relations: tuple[KeywordRelation, ...]
 
 
 class NewsInsightsRepository:
@@ -156,6 +165,54 @@ class NewsInsightsRepository:
                     ExtractedEvent.status == EventStatus.ACTIVE.value
                 )
             ).all()
+        )
+
+    def topic_map_records(
+        self,
+        *,
+        start: datetime,
+        limit: int,
+    ) -> TopicMapRecords:
+        topics = tuple(
+            self.db.scalars(
+                select(TopicCluster)
+                .where(
+                    TopicCluster.last_activity_at >= start,
+                    TopicCluster.lifecycle_status != LifecycleStatus.ARCHIVED.value,
+                )
+                .order_by(
+                    TopicCluster.momentum_score.desc(),
+                    TopicCluster.mention_count.desc(),
+                    TopicCluster.id,
+                )
+                .limit(limit)
+            ).all()
+        )
+        topic_ids = [topic.id for topic in topics]
+        if not topic_ids:
+            return TopicMapRecords(topics=(), keywords=(), relations=())
+        keywords = tuple(
+            self.db.scalars(
+                select(TopicKeyword)
+                .where(TopicKeyword.topic_id.in_(topic_ids))
+                .order_by(
+                    TopicKeyword.topic_id,
+                    TopicKeyword.weight.desc(),
+                    TopicKeyword.id,
+                )
+            ).all()
+        )
+        relations = tuple(
+            self.db.scalars(
+                select(KeywordRelation)
+                .where(KeywordRelation.topic_id.in_(topic_ids))
+                .order_by(KeywordRelation.topic_id, KeywordRelation.id)
+            ).all()
+        )
+        return TopicMapRecords(
+            topics=topics,
+            keywords=keywords,
+            relations=relations,
         )
 
     def briefing_candidates(self) -> list[BriefingCandidate]:

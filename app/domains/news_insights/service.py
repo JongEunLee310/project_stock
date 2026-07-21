@@ -11,6 +11,7 @@ from app.domains.news_insights.repository import (
     EventRecord,
     NewsInsightsRepository,
     SummaryCounts,
+    TopicMapRecords,
 )
 from app.domains.news_insights.schema import (
     EventImportance,
@@ -22,12 +23,17 @@ from app.domains.news_insights.schema import (
     OverviewResponse,
     OverviewSummary,
     SummaryMetric,
+    TopicMapEdge,
+    TopicMapNode,
+    TopicMapQuery,
+    TopicMapResponse,
 )
 from app.domains.news_insights.types import (
     DocumentType,
     EventType,
     ImportanceLevel,
     SentimentDirection,
+    TopicCategory,
 )
 
 
@@ -82,6 +88,19 @@ class NewsInsightsService:
             has_more=page.has_more,
             next_cursor=next_cursor,
         )
+
+    def get_topic_map(
+        self,
+        query: TopicMapQuery,
+        *,
+        as_of: datetime | None = None,
+    ) -> TopicMapResponse:
+        generated_at = as_of or datetime.now(UTC)
+        records = self.repository.topic_map_records(
+            start=generated_at - self._parse_window(query.window),
+            limit=query.limit,
+        )
+        return self._topic_map_response(records)
 
     @staticmethod
     def _parse_window(window: str) -> timedelta:
@@ -162,3 +181,60 @@ class NewsInsightsService:
             evidence_count=record.evidence_count,
             topic_ids=list(record.topic_ids),
         )
+
+    @staticmethod
+    def _topic_node_id(topic_id: int) -> str:
+        return f"topic:{topic_id}"
+
+    @staticmethod
+    def _keyword_node_id(keyword_id: int) -> str:
+        return f"keyword:{keyword_id}"
+
+    @classmethod
+    def _topic_map_response(cls, records: TopicMapRecords) -> TopicMapResponse:
+        topic_nodes = [
+            TopicMapNode(
+                id=cls._topic_node_id(topic.id),
+                label=topic.title,
+                type="TOPIC",
+                mention_count=topic.mention_count,
+                momentum_score=topic.momentum_score,
+                sentiment_score=topic.sentiment_score,
+                category=(
+                    TopicCategory(topic.category) if topic.category is not None else None
+                ),
+            )
+            for topic in records.topics
+        ]
+        keyword_nodes = [
+            TopicMapNode(
+                id=cls._keyword_node_id(keyword.id),
+                label=keyword.keyword,
+                type="KEYWORD",
+                mention_count=keyword.mention_count,
+                momentum_score=keyword.weight,
+                sentiment_score=keyword.sentiment_score,
+                category=(
+                    TopicCategory(keyword.category)
+                    if keyword.category is not None
+                    else None
+                ),
+            )
+            for keyword in records.keywords
+        ]
+        keyword_ids = {
+            (keyword.topic_id, keyword.keyword): cls._keyword_node_id(keyword.id)
+            for keyword in records.keywords
+        }
+        edges = [
+            TopicMapEdge(
+                source=keyword_ids[(relation.topic_id, relation.source_keyword)],
+                target=keyword_ids[(relation.topic_id, relation.target_keyword)],
+                strength=relation.strength,
+                cooccurrence_count=relation.cooccurrence_count,
+            )
+            for relation in records.relations
+            if (relation.topic_id, relation.source_keyword) in keyword_ids
+            and (relation.topic_id, relation.target_keyword) in keyword_ids
+        ]
+        return TopicMapResponse(nodes=[*topic_nodes, *keyword_nodes], edges=edges)

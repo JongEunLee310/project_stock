@@ -12,6 +12,8 @@ from app.domains.news_insights.schema import (
     EventsQuery,
     OverviewQuery,
     OverviewResponse,
+    TopicMapQuery,
+    TopicMapResponse,
 )
 from app.domains.news_insights.service import NewsInsightsService
 from app.domains.news_insights.types import (
@@ -82,3 +84,20 @@ def list_news_insight_events(
         has_more=result.has_more,
         next_cursor=result.next_cursor,
     )
+
+
+@router.get(
+    "/topics/map",
+    response_model=ApiResponse[TopicMapResponse],
+    summary="Get news insight topic map",
+    description="Return precomputed topic and keyword nodes with relation edges.",
+)
+def get_news_insight_topic_map(
+    window: Annotated[str, Query(pattern=r"^[1-9]\d*[hd]$")] = "7d",
+    market: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[TopicMapResponse]:
+    query = TopicMapQuery(window=window, market=market, limit=limit)
+    return success(NewsInsightsService(db).get_topic_map(query))

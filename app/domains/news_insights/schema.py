@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -8,6 +9,7 @@ from app.domains.news_insights.types import (
     EventType,
     ImportanceLevel,
     SentimentDirection,
+    TopicCategory,
 )
 
 
@@ -33,6 +35,12 @@ class EventsQuery(BaseModel):
         if self.from_ is not None and self.to is not None and self.from_ > self.to:
             raise ValueError("from must be earlier than or equal to to")
         return self
+
+
+class TopicMapQuery(BaseModel):
+    window: str = Field(default="7d", pattern=r"^[1-9]\d*[hd]$")
+    market: str | None = None
+    limit: int = Field(default=20, ge=1, le=100)
 
 
 class SummaryMetric(BaseModel):
@@ -94,3 +102,25 @@ class EventListItem(BaseModel):
     published_at: UtcDatetime
     evidence_count: int = Field(ge=0)
     topic_ids: list[int]
+
+
+class TopicMapNode(BaseModel):
+    id: str
+    label: str
+    type: Literal["TOPIC", "KEYWORD"]
+    mention_count: int = Field(ge=0)
+    momentum_score: float = Field(ge=0.0, le=1.0)
+    sentiment_score: float = Field(ge=0.0, le=1.0)
+    category: TopicCategory | None
+
+
+class TopicMapEdge(BaseModel):
+    source: str
+    target: str
+    strength: float = Field(ge=0.0, le=1.0)
+    cooccurrence_count: int = Field(ge=0)
+
+
+class TopicMapResponse(BaseModel):
+    nodes: list[TopicMapNode]
+    edges: list[TopicMapEdge]
