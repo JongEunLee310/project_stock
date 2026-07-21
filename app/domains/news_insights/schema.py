@@ -1,7 +1,8 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 from app.core.schema import UtcDatetime
 from app.domains.news_insights.types import (
@@ -9,6 +10,8 @@ from app.domains.news_insights.types import (
     EvidenceRole,
     EventType,
     ImportanceLevel,
+    FlowDirection,
+    InvestorType,
     LifecycleStatus,
     SentimentDirection,
     SymbolRelationship,
@@ -58,6 +61,17 @@ class TopicEvidenceQuery(BaseModel):
     limit: int = Field(default=20, ge=1, le=100)
 
 
+class InvestorFlowsQuery(BaseModel):
+    market: str = Field(min_length=1)
+    window: str = Field(pattern=r"^[1-9]\d*[hd]$")
+    topic_id: int | None = Field(default=None, ge=1)
+
+    @field_validator("market")
+    @classmethod
+    def normalize_market(cls, value: str) -> str:
+        return value.strip().upper()
+
+
 class SummaryMetric(BaseModel):
     count: int = Field(ge=0)
     change: int
@@ -87,6 +101,34 @@ class OverviewResponse(BaseModel):
     as_of: UtcDatetime
     summary: OverviewSummary
     briefing: BriefingResponse
+
+
+class InvestorFlowItem(BaseModel):
+    investor_type: InvestorType
+    net_value: Decimal
+    direction: FlowDirection
+    change: float
+
+    @field_serializer("net_value", when_used="json")
+    def serialize_decimal(self, value: Decimal) -> str:
+        return format(value, "f")
+
+
+class NarrativeAlignment(BaseModel):
+    aligned: bool
+    note: str
+
+
+class InvestorFlowAvailability(BaseModel):
+    available: bool
+    fallback: str | None
+
+
+class InvestorFlowsResponse(BaseModel):
+    as_of: UtcDatetime
+    by_investor_type: list[InvestorFlowItem]
+    narrative_alignment: NarrativeAlignment
+    availability: InvestorFlowAvailability
 
 
 class EventImportance(BaseModel):

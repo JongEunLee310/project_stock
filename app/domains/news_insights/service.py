@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import NoReturn
 
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.domains.news_insights.repository import (
     EventDetailRecords,
     EventRecord,
     EvidenceRecord,
+    InvestorFlowRecords,
     NewsInsightsRepository,
     SummaryCounts,
     TopicDetailRecords,
@@ -32,6 +34,11 @@ from app.domains.news_insights.schema import (
     EventSentiment,
     EventSource,
     EventsQuery,
+    InvestorFlowAvailability,
+    InvestorFlowItem,
+    InvestorFlowsQuery,
+    InvestorFlowsResponse,
+    NarrativeAlignment,
     OverviewQuery,
     OverviewResponse,
     OverviewSummary,
@@ -55,7 +62,9 @@ from app.domains.news_insights.types import (
     DocumentType,
     EvidenceRole,
     EventType,
+    FlowDirection,
     ImportanceLevel,
+    InvestorType,
     LifecycleStatus,
     SentimentDirection,
     SymbolRelationship,
@@ -135,6 +144,37 @@ class NewsInsightsService:
         if records is None:
             self._raise_event_not_found()
         return self._event_detail_response(records)
+
+    def get_investor_flows(
+        self,
+        query: InvestorFlowsQuery,
+        *,
+        as_of: datetime | None = None,
+    ) -> InvestorFlowsResponse:
+        records = self.repository.investor_flow_records(query)
+        response_as_of = records.as_of or as_of or datetime.now(UTC)
+        items = [
+            InvestorFlowItem(
+                investor_type=InvestorType(item.investor_type),
+                net_value=item.net_value,
+                direction=self._flow_direction(item.net_value),
+                change=self._flow_change(
+                    item.net_value,
+                    item.previous_net_value,
+                ),
+            )
+            for item in records.aggregates
+        ]
+        available = bool(items)
+        return InvestorFlowsResponse(
+            as_of=response_as_of,
+            by_investor_type=items,
+            narrative_alignment=self._narrative_alignment(records),
+            availability=InvestorFlowAvailability(
+                available=available,
+                fallback=(None if available else self._flow_fallback(records)),
+            ),
+        )
 
     def get_topic_map(
         self,
@@ -266,6 +306,70 @@ class NewsInsightsService:
         if score >= MEDIUM_IMPORTANCE_MIN:
             return ImportanceLevel.MEDIUM
         return ImportanceLevel.LOW
+
+    @staticmethod
+    def _flow_direction(net_value: Decimal) -> FlowDirection:
+        if net_value > 0:
+            return FlowDirection.BUY
+        if net_value < 0:
+            return FlowDirection.SELL
+        return FlowDirection.NEUTRAL
+
+    @staticmethod
+    def _flow_change(current: Decimal, previous: Decimal | None) -> float:
+        if previous is None or previous == 0:
+            return 0.0
+        return float((current - previous) / abs(previous) * Decimal("100"))
+
+    @classmethod
+    def _narrative_alignment(
+        cls,
+        records: InvestorFlowRecords,
+    ) -> NarrativeAlignment:
+        if not records.aggregates:
+            return NarrativeAlignment(
+                aligned=False,
+                note="투자자 유형별 수급 데이터가 없어 뉴스 내러티브와 비교할 수 없습니다.",
+            )
+        if records.narrative_sentiment_score is None:
+            return NarrativeAlignment(
+                aligned=False,
+                note="연결된 뉴스 내러티브가 없어 수급 방향 정렬 여부를 판단할 수 없습니다.",
+            )
+        flow_direction = cls._flow_direction(
+            sum(
+                (item.net_value for item in records.aggregates),
+                start=Decimal("0"),
+            )
+        )
+        sentiment_score = records.narrative_sentiment_score
+        narrative_direction = (
+            FlowDirection.BUY
+            if sentiment_score > 0.5
+            else FlowDirection.SELL
+            if sentiment_score < 0.5
+            else FlowDirection.NEUTRAL
+        )
+        aligned = flow_direction == narrative_direction
+        relation = "일치" if aligned else "불일치"
+        return NarrativeAlignment(
+            aligned=aligned,
+            note=f"뉴스 감성과 투자자 순수급 방향이 {relation}합니다.",
+        )
+
+    @staticmethod
+    def _flow_fallback(records: InvestorFlowRecords) -> str:
+        if records.fallback_source_kinds:
+            source_labels = {
+                "ETF_FLOW": "ETF 수급",
+                "VOLUME_PROXY": "거래량",
+            }
+            labels = [
+                source_labels.get(source_kind, source_kind)
+                for source_kind in records.fallback_source_kinds
+            ]
+            return f"투자자 유형별 데이터 대신 {'·'.join(labels)} 지표를 확인하세요."
+        return "투자자 유형별 데이터가 없어 ETF 수급·거래량 대체 지표를 확인하세요."
 
     @classmethod
     def _event_item(cls, record: EventRecord) -> EventListItem:
