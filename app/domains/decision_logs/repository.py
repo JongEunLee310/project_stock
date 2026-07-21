@@ -1,3 +1,4 @@
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -22,6 +23,7 @@ from app.domains.decision_logs.schema import (
     DecisionSnapshotInput,
 )
 from app.domains.decision_logs.types import (
+    CreatedBy,
     DecisionStatus,
     ReviewTriggerStatus,
     ReviewTriggerType,
@@ -362,6 +364,64 @@ class DecisionLogRepository:
         self.db.commit()
         self.db.refresh(decision_log)
         return decision_log
+
+    def revise(self, source: DecisionLog) -> DecisionLog:
+        evidence = self.list_evidence(source.id)
+        risks = self.list_risks(source.id)
+        review_triggers = self.list_review_triggers(source.id)
+        revised = DecisionLog(
+            user_id=source.user_id,
+            target_type=source.target_type,
+            target_id=source.target_id,
+            symbol=source.symbol,
+            decision_type=source.decision_type,
+            status=DecisionStatus.DRAFT.value,
+            thesis=source.thesis,
+            rationale=source.rationale,
+            confidence_level=source.confidence_level,
+            created_by=CreatedBy.USER.value,
+        )
+        self.db.add(revised)
+        self.db.flush()
+        self.db.add_all(
+            [
+                DecisionEvidence(
+                    decision_id=revised.id,
+                    evidence_type=item.evidence_type,
+                    evidence_id=item.evidence_id,
+                    evidence_version=item.evidence_version,
+                    title=item.title,
+                    summary=item.summary,
+                    snapshot=deepcopy(item.snapshot),
+                    relationship=item.relationship,
+                )
+                for item in evidence
+            ]
+            + [
+                DecisionRisk(
+                    decision_id=revised.id,
+                    risk_type=item.risk_type,
+                    description=item.description,
+                    severity=item.severity,
+                )
+                for item in risks
+            ]
+            + [
+                DecisionReviewTrigger(
+                    decision_id=revised.id,
+                    trigger_type=item.trigger_type,
+                    condition=deepcopy(item.condition),
+                    scheduled_at=item.scheduled_at,
+                    status=item.status,
+                    triggered_at=item.triggered_at,
+                )
+                for item in review_triggers
+            ]
+        )
+        source.superseded_by_id = revised.id
+        self.db.commit()
+        self.db.refresh(revised)
+        return revised
 
     def add_snapshots(
         self,

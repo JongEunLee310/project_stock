@@ -149,19 +149,7 @@ class DecisionLogService:
         user_id: int,
     ) -> DecisionLogDetailResponse:
         decision_log = self._get_owned_decision_log(decision_log_id, user_id)
-        response = self._to_response(decision_log)
-        return DecisionLogDetailResponse(
-            **response.model_dump(),
-            snapshots=[
-                DecisionSnapshotResponse(
-                    id=item.id,
-                    snapshot_type=item.snapshot_type,
-                    data=item.data,
-                    captured_at=item.captured_at,
-                )
-                for item in self.repo.list_snapshots(decision_log.id)
-            ],
-        )
+        return self._to_detail_response(decision_log)
 
     def update_draft(
         self,
@@ -188,6 +176,24 @@ class DecisionLogService:
             snapshots=data.snapshots,
         )
         return self._to_response(activated)
+
+    def revise(
+        self,
+        decision_log_id: int,
+        user_id: int,
+    ) -> DecisionLogDetailResponse:
+        source = self._get_owned_decision_log(decision_log_id, user_id)
+        if source.status in {
+            DecisionStatus.DRAFT.value,
+            DecisionStatus.CANCELLED.value,
+        } or source.superseded_by_id is not None:
+            raise AppException(
+                status_code=409,
+                detail="대체 가능한 의사결정 기록 상태가 아닙니다.",
+                error_code=ErrorCode.DECISION_LOG_INVALID_STATE,
+            )
+        revised = self.repo.revise(source)
+        return self._to_detail_response(revised)
 
     def create_review(
         self,
@@ -309,6 +315,24 @@ class DecisionLogService:
                     created_at=item.created_at,
                 )
                 for item in self.repo.list_review_triggers(decision_log.id)
+            ],
+        )
+
+    def _to_detail_response(
+        self,
+        decision_log: DecisionLog,
+    ) -> DecisionLogDetailResponse:
+        response = self._to_response(decision_log)
+        return DecisionLogDetailResponse(
+            **response.model_dump(),
+            snapshots=[
+                DecisionSnapshotResponse(
+                    id=item.id,
+                    snapshot_type=item.snapshot_type,
+                    data=item.data,
+                    captured_at=item.captured_at,
+                )
+                for item in self.repo.list_snapshots(decision_log.id)
             ],
         )
 

@@ -237,3 +237,19 @@ def activate_decision_log(
             data or DecisionActivateRequest(),
         )
     )
+
+
+@router.post(
+    "/{decision_log_id}/revise",
+    response_model=ApiResponse[DecisionLogDetailResponse],
+    summary="Revise decision log",
+    description="Create a new draft that supersedes an owned decision log.",
+)
+def revise_decision_log(
+    decision_log_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[DecisionLogDetailResponse]:
+    return success(
+        DecisionLogService(db).revise(decision_log_id, current_user.id)
+    )
