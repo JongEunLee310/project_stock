@@ -342,3 +342,107 @@ class AgentRunStage(Base):
     stage: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     delayed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+
+class FundFlowOutlook(Base):
+    __tablename__ = "fund_flow_outlooks"
+    __table_args__ = (
+        _score_constraint("fund_flow_outlooks", "confidence"),
+        Index(
+            "ix_fund_flow_outlooks_analysis_version_sector",
+            "analysis_version",
+            "sector",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sector: Mapped[str] = mapped_column(String(100), nullable=False)
+    direction: Mapped[str] = mapped_column(String(20), nullable=False)
+    likelihood: Mapped[str] = mapped_column(String(20), nullable=False)
+    estimated_range: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    horizon: Mapped[str] = mapped_column(String(100), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    key_assumptions: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    risk_factors: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    analysis_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class FundFlowScenario(Base):
+    __tablename__ = "fund_flow_scenarios"
+    __table_args__ = (
+        _score_constraint("fund_flow_scenarios", "weight"),
+        UniqueConstraint(
+            "topic_id",
+            "analysis_version",
+            "scenario_kind",
+            name="uq_fund_flow_scenarios_topic_version_kind",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    topic_id: Mapped[int] = mapped_column(
+        ForeignKey("topic_clusters.id"), nullable=False
+    )
+    scenario_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    weight: Mapped[float] = mapped_column(Float, nullable=False)
+    expected_flow_direction: Mapped[str] = mapped_column(String(20), nullable=False)
+    key_assumptions: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    benefiting_sectors: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    risk_sectors: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    related_symbols: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    invalidation_conditions: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    analysis_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class TopicExplanation(Base):
+    __tablename__ = "topic_explanations"
+    __table_args__ = (
+        _score_constraint("topic_explanations", "data_coverage"),
+        _score_constraint("topic_explanations", "confidence"),
+        UniqueConstraint(
+            "topic_id",
+            "analysis_version",
+            name="uq_topic_explanations_topic_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    topic_id: Mapped[int] = mapped_column(
+        ForeignKey("topic_clusters.id"), nullable=False
+    )
+    analysis_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    data_coverage: Mapped[float] = mapped_column(Float, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    missing_data: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    limitations: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    already_priced_in: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    already_priced_in_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_updated: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ExplanationFactor(Base):
+    __tablename__ = "explanation_factors"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    topic_explanation_id: Mapped[int] = mapped_column(
+        ForeignKey("topic_explanations.id"), nullable=False
+    )
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    contribution_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        _score_constraint("explanation_factors", "contribution_ratio"),
+    )

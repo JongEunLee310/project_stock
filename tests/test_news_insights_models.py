@@ -13,13 +13,17 @@ from app.domains.news_insights.model import (
     AgentRun,
     AgentRunStage,
     EventEvidence,
+    ExplanationFactor,
     ExtractedEvent,
+    FundFlowOutlook,
+    FundFlowScenario,
     InvestorFlow,
     KeywordRelation,
     MarketEvent,
     MarketEventTopic,
     SourceDocument,
     TopicCluster,
+    TopicExplanation,
     TopicInsight,
     TopicKeyword,
     TopicSymbolSensitivity,
@@ -32,12 +36,15 @@ from app.domains.news_insights.types import (
     EventStatus,
     EventType,
     EvidenceRole,
+    FlowLikelihood,
+    FundFlowDirection,
     FlowDirection,
     ImportanceLevel,
     InvestorType,
     LifecycleStatus,
     MarketEventKind,
     ProcessingStatus,
+    ScenarioKind,
     SentimentDirection,
     SymbolRelationship,
     TopicCategory,
@@ -66,6 +73,12 @@ PHASE2_TABLE_NAMES = {
     "market_event_topics",
     "agent_runs",
     "agent_run_stages",
+}
+PHASE3_TABLE_NAMES = {
+    "fund_flow_outlooks",
+    "fund_flow_scenarios",
+    "topic_explanations",
+    "explanation_factors",
 }
 
 
@@ -129,6 +142,9 @@ def test_news_insight_enums_match_frozen_contract() -> None:
         ],
         AgentRunStatus: ["RUNNING", "COMPLETED", "DELAYED", "FAILED"],
         FlowDirection: ["BUY", "SELL", "NEUTRAL"],
+        ScenarioKind: ["OPTIMISTIC", "BASE", "CONSERVATIVE"],
+        FundFlowDirection: ["INFLOW", "OUTFLOW", "NEUTRAL"],
+        FlowLikelihood: ["LOW", "MEDIUM", "HIGH"],
     }
 
     for enum_type, values in expected.items():
@@ -257,6 +273,75 @@ def test_seed_mock_news_insights_inserts_phase2_samples(db: Session) -> None:
     assert db.scalar(select(InvestorFlow)) is seeded.investor_flows[0]
 
 
+def test_phase3_models_define_foreign_keys_and_constraints() -> None:
+    assert {
+        FundFlowOutlook.__tablename__,
+        FundFlowScenario.__tablename__,
+        TopicExplanation.__tablename__,
+        ExplanationFactor.__tablename__,
+    } == PHASE3_TABLE_NAMES
+
+    foreign_keys = {
+        FundFlowScenario: {"topic_id": "topic_clusters.id"},
+        TopicExplanation: {"topic_id": "topic_clusters.id"},
+        ExplanationFactor: {"topic_explanation_id": "topic_explanations.id"},
+    }
+    for model, expected in foreign_keys.items():
+        mapper = cast(Mapper[Any], inspect(model))
+        for column_name, target in expected.items():
+            column = mapper.columns[column_name]
+            assert {key.target_fullname for key in column.foreign_keys} == {target}
+
+    outlook_table = cast(Table, FundFlowOutlook.__table__)
+    assert any(
+        [column.name for column in index.columns] == ["analysis_version", "sector"]
+        for index in outlook_table.indexes
+    )
+    scenario_table = cast(Table, FundFlowScenario.__table__)
+    assert any(
+        constraint.name == "uq_fund_flow_scenarios_topic_version_kind"
+        for constraint in scenario_table.constraints
+    )
+    explanation_table = cast(Table, TopicExplanation.__table__)
+    assert any(
+        constraint.name == "uq_topic_explanations_topic_version"
+        for constraint in explanation_table.constraints
+    )
+
+
+def test_seed_mock_news_insights_inserts_phase3_connected_samples(
+    db: Session,
+) -> None:
+    seeded = seed_mock_news_insights(
+        db,
+        now=datetime(2026, 7, 21, 12, tzinfo=UTC),
+    )
+    db.commit()
+
+    assert len(seeded.fund_flow_outlooks) >= 1
+    assert {item.scenario_kind for item in seeded.fund_flow_scenarios} == {
+        ScenarioKind.OPTIMISTIC.value,
+        ScenarioKind.BASE.value,
+        ScenarioKind.CONSERVATIVE.value,
+    }
+    assert all(
+        item.topic_id == seeded.topics[0].id
+        for item in seeded.fund_flow_scenarios
+    )
+    assert seeded.topic_explanations[0].topic_id == seeded.topics[0].id
+    assert all(
+        factor.topic_explanation_id == seeded.topic_explanations[0].id
+        for factor in seeded.explanation_factors
+    )
+    assert sum(
+        factor.contribution_ratio for factor in seeded.explanation_factors
+    ) == 1.0
+    assert any(
+        item.evidence_role == EvidenceRole.CONTRADICTING.value
+        for item in seeded.evidence
+    )
+
+
 def test_news_insight_migration_upgrade_and_downgrade() -> None:
     migration_path = (
         REPO_ROOT
@@ -346,3 +431,54 @@ def test_news_insight_phase2_migration_upgrade_and_downgrade() -> None:
         finally:
             cast(Any, phase1).op = original_phase1_op
             cast(Any, phase2).op = original_phase2_op
+
+
+def test_news_insight_phase3_migration_upgrade_and_downgrade() -> None:
+    migration_paths = [
+        REPO_ROOT
+        / "alembic"
+        / "versions"
+        / f"c3d4e5f6006{suffix}_create_news_insights{phase}.py"
+        for suffix, phase in (
+            ("b", "_models"),
+            ("c", "_phase2_models"),
+            ("d", "_phase3_models"),
+        )
+    ]
+
+    def load_migration(path: Path) -> Any:
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        assert spec is not None
+        assert spec.loader is not None
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        return migration
+
+    migrations = [load_migration(path) for path in migration_paths]
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        operations = Operations(MigrationContext.configure(connection))
+        original_ops = [cast(Any, migration).op for migration in migrations]
+        for migration in migrations:
+            cast(Any, migration).op = operations
+        try:
+            for migration in migrations:
+                cast(Any, migration).upgrade()
+            inspector = inspect(connection)
+            assert PHASE3_TABLE_NAMES <= set(inspector.get_table_names())
+            assert any(
+                constraint["name"]
+                == "uq_fund_flow_scenarios_topic_version_kind"
+                for constraint in inspector.get_unique_constraints(
+                    "fund_flow_scenarios"
+                )
+            )
+
+            cast(Any, migrations[-1]).downgrade()
+            assert PHASE3_TABLE_NAMES.isdisjoint(
+                inspect(connection).get_table_names()
+            )
+            assert PHASE2_TABLE_NAMES <= set(inspect(connection).get_table_names())
+        finally:
+            for migration, original_op in zip(migrations, original_ops, strict=True):
+                cast(Any, migration).op = original_op

@@ -17,12 +17,15 @@ from app.domains.news_insights.repository import (
     EventDetailRecords,
     EventRecord,
     EvidenceRecord,
+    FundFlowOutlookRecords,
     InvestorFlowRecords,
     NewsInsightsRepository,
     SummaryCounts,
     TopicDetailRecords,
+    TopicExplanationRecords,
     TopicGraphRecords,
     TopicMapRecords,
+    TopicScenarioRecords,
     TopicTrendRecords,
 )
 from app.domains.news_insights.schema import (
@@ -41,6 +44,15 @@ from app.domains.news_insights.schema import (
     EventSentiment,
     EventSource,
     EventsQuery,
+    AlreadyPricedIn,
+    ContradictingEvidenceItem,
+    CounterView,
+    ExplanationFactorItem,
+    ExplanationMeta,
+    FundFlowOutlookItem,
+    FundFlowOutlookResponse,
+    FundFlowScenarioItem,
+    FundFlowScenariosResponse,
     InvestorFlowAvailability,
     InvestorFlowItem,
     InvestorFlowsQuery,
@@ -53,6 +65,7 @@ from app.domains.news_insights.schema import (
     TopicDetailResponse,
     TopicEvidenceItem,
     TopicEvidenceQuery,
+    TopicExplanationResponse,
     TopicInsightResponse,
     TopicGraphEdge,
     TopicGraphNode,
@@ -75,11 +88,14 @@ from app.domains.news_insights.types import (
     DocumentType,
     EvidenceRole,
     EventType,
+    FlowLikelihood,
     FlowDirection,
+    FundFlowDirection,
     ImportanceLevel,
     InvestorType,
     LifecycleStatus,
     MarketEventKind,
+    ScenarioKind,
     SentimentDirection,
     SymbolRelationship,
     TopicCategory,
@@ -212,6 +228,39 @@ class NewsInsightsService:
                 fallback=(None if available else self._flow_fallback(records)),
             ),
         )
+
+    def get_fund_flow_outlook(self) -> FundFlowOutlookResponse:
+        records = self.repository.latest_fund_flow_outlooks()
+        if records is None:
+            return FundFlowOutlookResponse(
+                as_of=datetime.now(UTC),
+                analysis_version="unavailable",
+                items=[],
+            )
+        return self._fund_flow_outlook_response(records)
+
+    def get_topic_scenarios(self, topic_id: int) -> FundFlowScenariosResponse:
+        if not self.repository.topic_exists(topic_id):
+            self._raise_topic_not_found()
+        records = self.repository.latest_topic_scenarios(topic_id)
+        if records is None:
+            raise RuntimeError("No fund flow scenarios are available for the topic")
+        expected_kinds = set(ScenarioKind)
+        actual_kinds = {
+            ScenarioKind(scenario.scenario_kind)
+            for scenario in records.scenarios
+        }
+        if len(records.scenarios) != 3 or actual_kinds != expected_kinds:
+            raise RuntimeError("A topic scenario set must contain all three kinds")
+        return self._topic_scenarios_response(topic_id, records)
+
+    def get_topic_explanation(self, topic_id: int) -> TopicExplanationResponse:
+        if not self.repository.topic_exists(topic_id):
+            self._raise_topic_not_found()
+        records = self.repository.latest_topic_explanation(topic_id)
+        if records is None:
+            raise RuntimeError("No explanation is available for the topic")
+        return self._topic_explanation_response(records)
 
     def get_topic_map(
         self,
@@ -434,6 +483,104 @@ class NewsInsightsService:
             ]
             return f"투자자 유형별 데이터 대신 {'·'.join(labels)} 지표를 확인하세요."
         return "투자자 유형별 데이터가 없어 ETF 수급·거래량 대체 지표를 확인하세요."
+
+    @classmethod
+    def _fund_flow_outlook_response(
+        cls,
+        records: FundFlowOutlookRecords,
+    ) -> FundFlowOutlookResponse:
+        return FundFlowOutlookResponse(
+            as_of=cls._as_utc(records.as_of),
+            analysis_version=records.analysis_version,
+            items=[
+                FundFlowOutlookItem(
+                    sector=item.sector,
+                    direction=FundFlowDirection(item.direction),
+                    likelihood=FlowLikelihood(item.likelihood),
+                    estimated_range=item.estimated_range,
+                    horizon=item.horizon,
+                    confidence=item.confidence,
+                    key_assumptions=item.key_assumptions,
+                    risk_factors=item.risk_factors,
+                )
+                for item in records.items
+            ],
+        )
+
+    @classmethod
+    def _topic_scenarios_response(
+        cls,
+        topic_id: int,
+        records: TopicScenarioRecords,
+    ) -> FundFlowScenariosResponse:
+        order = {kind: index for index, kind in enumerate(ScenarioKind)}
+        scenarios = sorted(
+            records.scenarios,
+            key=lambda item: order[ScenarioKind(item.scenario_kind)],
+        )
+        return FundFlowScenariosResponse(
+            topic_id=topic_id,
+            analysis_version=records.analysis_version,
+            as_of=cls._as_utc(records.as_of),
+            scenarios=[
+                FundFlowScenarioItem(
+                    scenario_kind=ScenarioKind(item.scenario_kind),
+                    weight=item.weight,
+                    expected_flow_direction=FundFlowDirection(
+                        item.expected_flow_direction
+                    ),
+                    key_assumptions=item.key_assumptions,
+                    benefiting_sectors=item.benefiting_sectors,
+                    risk_sectors=item.risk_sectors,
+                    related_symbols=item.related_symbols,
+                    invalidation_conditions=item.invalidation_conditions,
+                )
+                for item in scenarios
+            ],
+        )
+
+    @classmethod
+    def _topic_explanation_response(
+        cls,
+        records: TopicExplanationRecords,
+    ) -> TopicExplanationResponse:
+        explanation = records.explanation
+        return TopicExplanationResponse(
+            factors=[
+                ExplanationFactorItem(
+                    label=factor.label,
+                    contribution_ratio=factor.contribution_ratio,
+                )
+                for factor in records.factors
+            ],
+            meta=ExplanationMeta(
+                analysis_version=explanation.analysis_version,
+                data_coverage=explanation.data_coverage,
+                last_updated=cls._as_utc(explanation.last_updated),
+                missing_data=explanation.missing_data,
+                counter_argument_count=len(records.counter_arguments),
+                confidence=explanation.confidence,
+                limitations=explanation.limitations,
+            ),
+            counter_view=CounterView(
+                counter_arguments=list(records.counter_arguments),
+                invalidation_conditions=list(records.invalidation_conditions),
+                already_priced_in=AlreadyPricedIn(
+                    likely=explanation.already_priced_in,
+                    note=explanation.already_priced_in_note,
+                ),
+                contradicting_evidence=[
+                    ContradictingEvidenceItem(
+                        event_id=record.event.id,
+                        document_id=record.document.id,
+                        title=record.document.title,
+                        source=record.document.source_name,
+                        published_at=cls._as_utc(record.document.published_at),
+                    )
+                    for record in records.contradicting_evidence
+                ],
+            ),
+        )
 
     @classmethod
     def _event_item(cls, record: EventRecord) -> EventListItem:

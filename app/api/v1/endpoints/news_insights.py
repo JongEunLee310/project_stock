@@ -14,6 +14,8 @@ from app.domains.news_insights.schema import (
     EventDetailResponse,
     EventListItem,
     EventsQuery,
+    FundFlowOutlookResponse,
+    FundFlowScenariosResponse,
     InvestorFlowsQuery,
     InvestorFlowsResponse,
     OverviewQuery,
@@ -21,6 +23,7 @@ from app.domains.news_insights.schema import (
     TopicDetailResponse,
     TopicEvidenceItem,
     TopicEvidenceQuery,
+    TopicExplanationResponse,
     TopicGraphResponse,
     TopicMapQuery,
     TopicMapResponse,
@@ -80,6 +83,19 @@ def get_news_insight_investor_flows(
         topic_id=topic_id,
     )
     return success(NewsInsightsService(db).get_investor_flows(query))
+
+
+@router.get(
+    "/fund-flow-outlook",
+    response_model=ApiResponse[FundFlowOutlookResponse],
+    summary="Get fund flow outlook",
+    description="Return labeled sector fund-flow ranges, assumptions, and risks.",
+)
+def get_news_insight_fund_flow_outlook(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[FundFlowOutlookResponse]:
+    return success(NewsInsightsService(db).get_fund_flow_outlook())
 
 
 @router.get(
@@ -194,6 +210,34 @@ def get_news_insight_topic_detail(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[TopicDetailResponse]:
     return success(NewsInsightsService(db).get_topic_detail(topic_id))
+
+
+@router.get(
+    "/topics/{topic_id}/scenarios",
+    response_model=ApiResponse[FundFlowScenariosResponse],
+    summary="Get topic fund flow scenarios",
+    description="Return optimistic, base, and conservative weighted scenarios.",
+)
+def get_news_insight_topic_scenarios(
+    topic_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[FundFlowScenariosResponse]:
+    return success(NewsInsightsService(db).get_topic_scenarios(topic_id))
+
+
+@router.get(
+    "/topics/{topic_id}/explanation",
+    response_model=ApiResponse[TopicExplanationResponse],
+    summary="Get topic insight explanation",
+    description="Return contribution factors and a required counter view.",
+)
+def get_news_insight_topic_explanation(
+    topic_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[TopicExplanationResponse]:
+    return success(NewsInsightsService(db).get_topic_explanation(topic_id))
 
 
 @router.get(

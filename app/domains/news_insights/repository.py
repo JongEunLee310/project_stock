@@ -12,13 +12,17 @@ from app.domains.news_insights.model import (
     AgentRun,
     AgentRunStage,
     EventEvidence,
+    ExplanationFactor,
     ExtractedEvent,
+    FundFlowOutlook,
+    FundFlowScenario,
     InvestorFlow,
     KeywordRelation,
     MarketEvent,
     MarketEventTopic,
     SourceDocument,
     TopicCluster,
+    TopicExplanation,
     TopicInsight,
     TopicKeyword,
     TopicSymbolSensitivity,
@@ -144,6 +148,29 @@ class CalendarRecord:
 class AgentRunRecords:
     run: AgentRun
     stages: tuple[AgentRunStage, ...]
+
+
+@dataclass(frozen=True)
+class FundFlowOutlookRecords:
+    analysis_version: str
+    as_of: datetime
+    items: tuple[FundFlowOutlook, ...]
+
+
+@dataclass(frozen=True)
+class TopicScenarioRecords:
+    analysis_version: str
+    as_of: datetime
+    scenarios: tuple[FundFlowScenario, ...]
+
+
+@dataclass(frozen=True)
+class TopicExplanationRecords:
+    explanation: TopicExplanation
+    factors: tuple[ExplanationFactor, ...]
+    counter_arguments: tuple[str, ...]
+    invalidation_conditions: tuple[str, ...]
+    contradicting_evidence: tuple[EvidenceRecord, ...]
 
 
 class NewsInsightsRepository:
@@ -389,6 +416,117 @@ class NewsInsightsRepository:
 
     def topic_exists(self, topic_id: int) -> bool:
         return self.db.get(TopicCluster, topic_id) is not None
+
+    def latest_fund_flow_outlooks(self) -> FundFlowOutlookRecords | None:
+        latest = self.db.scalars(
+            select(FundFlowOutlook)
+            .order_by(FundFlowOutlook.as_of.desc(), FundFlowOutlook.id.desc())
+            .limit(1)
+        ).first()
+        if latest is None:
+            return None
+        items = tuple(
+            self.db.scalars(
+                select(FundFlowOutlook)
+                .where(
+                    FundFlowOutlook.analysis_version == latest.analysis_version
+                )
+                .order_by(FundFlowOutlook.sector, FundFlowOutlook.id)
+            ).all()
+        )
+        return FundFlowOutlookRecords(
+            analysis_version=latest.analysis_version,
+            as_of=max(item.as_of for item in items),
+            items=items,
+        )
+
+    def latest_topic_scenarios(self, topic_id: int) -> TopicScenarioRecords | None:
+        latest = self.db.scalars(
+            select(FundFlowScenario)
+            .where(FundFlowScenario.topic_id == topic_id)
+            .order_by(FundFlowScenario.created_at.desc(), FundFlowScenario.id.desc())
+            .limit(1)
+        ).first()
+        if latest is None:
+            return None
+        scenarios = tuple(
+            self.db.scalars(
+                select(FundFlowScenario)
+                .where(
+                    FundFlowScenario.topic_id == topic_id,
+                    FundFlowScenario.analysis_version == latest.analysis_version,
+                )
+                .order_by(FundFlowScenario.id)
+            ).all()
+        )
+        return TopicScenarioRecords(
+            analysis_version=latest.analysis_version,
+            as_of=max(item.created_at for item in scenarios),
+            scenarios=scenarios,
+        )
+
+    def latest_topic_explanation(
+        self,
+        topic_id: int,
+    ) -> TopicExplanationRecords | None:
+        explanation = self.db.scalars(
+            select(TopicExplanation)
+            .where(TopicExplanation.topic_id == topic_id)
+            .order_by(
+                TopicExplanation.last_updated.desc(),
+                TopicExplanation.id.desc(),
+            )
+            .limit(1)
+        ).first()
+        if explanation is None:
+            return None
+        factors = tuple(
+            self.db.scalars(
+                select(ExplanationFactor)
+                .where(
+                    ExplanationFactor.topic_explanation_id == explanation.id
+                )
+                .order_by(
+                    ExplanationFactor.display_order,
+                    ExplanationFactor.id,
+                )
+            ).all()
+        )
+        insight = self.db.scalars(
+            select(TopicInsight)
+            .where(TopicInsight.topic_id == topic_id)
+            .order_by(TopicInsight.version.desc(), TopicInsight.id.desc())
+            .limit(1)
+        ).first()
+        counter_arguments = tuple(insight.counter_arguments) if insight else ()
+        event_ids = self._topic_event_ids(topic_id)
+        contradicting_evidence = tuple(
+            record
+            for record in self._evidence_records(event_ids)
+            if record.evidence.evidence_role == EvidenceRole.CONTRADICTING.value
+        )
+        scenario_conditions = self.db.scalars(
+            select(FundFlowScenario.invalidation_conditions)
+            .where(
+                FundFlowScenario.topic_id == topic_id,
+                FundFlowScenario.analysis_version == explanation.analysis_version,
+            )
+            .order_by(FundFlowScenario.id)
+        ).all()
+        invalidation_conditions = tuple(
+            dict.fromkeys(
+                condition
+                for conditions in scenario_conditions
+                for condition in conditions
+            )
+        )
+        return TopicExplanationRecords(
+            explanation=explanation,
+            factors=factors,
+            counter_arguments=counter_arguments,
+            invalidation_conditions=invalidation_conditions,
+            contradicting_evidence=contradicting_evidence,
+        )
 
     def list_topic_symbol_sensitivities(
         self,

@@ -125,3 +125,21 @@ class FlowDirection(str, Enum):
     BUY = "BUY"
     SELL = "SELL"
     NEUTRAL = "NEUTRAL"
+
+
+class ScenarioKind(str, Enum):
+    OPTIMISTIC = "OPTIMISTIC"
+    BASE = "BASE"
+    CONSERVATIVE = "CONSERVATIVE"
+
+
+class FundFlowDirection(str, Enum):
+    INFLOW = "INFLOW"
+    OUTFLOW = "OUTFLOW"
+    NEUTRAL = "NEUTRAL"
+
+
+class FlowLikelihood(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
