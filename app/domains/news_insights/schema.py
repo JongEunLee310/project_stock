@@ -11,11 +11,14 @@ from app.domains.news_insights.types import (
     DocumentType,
     EvidenceRole,
     EventType,
+    FlowLikelihood,
+    FundFlowDirection,
     ImportanceLevel,
     FlowDirection,
     InvestorType,
     LifecycleStatus,
     MarketEventKind,
+    ScenarioKind,
     SentimentDirection,
     SymbolRelationship,
     TopicCategory,
@@ -363,3 +366,79 @@ class TopicEvidenceItem(BaseModel):
     relevance_score: float = Field(ge=0.0, le=1.0)
     source: str
     published_at: UtcDatetime
+
+
+class FundFlowOutlookItem(BaseModel):
+    sector: str
+    direction: FundFlowDirection
+    likelihood: FlowLikelihood
+    estimated_range: str | None
+    horizon: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    key_assumptions: list[str]
+    risk_factors: list[str]
+
+
+class FundFlowOutlookResponse(BaseModel):
+    as_of: UtcDatetime
+    analysis_version: str
+    items: list[FundFlowOutlookItem]
+
+
+class FundFlowScenarioItem(BaseModel):
+    scenario_kind: ScenarioKind
+    weight: float = Field(ge=0.0, le=1.0)
+    expected_flow_direction: FundFlowDirection
+    key_assumptions: list[str]
+    benefiting_sectors: list[str]
+    risk_sectors: list[str]
+    related_symbols: list[str]
+    invalidation_conditions: list[str]
+
+
+class FundFlowScenariosResponse(BaseModel):
+    topic_id: int
+    analysis_version: str
+    as_of: UtcDatetime
+    scenarios: list[FundFlowScenarioItem]
+
+
+class ExplanationFactorItem(BaseModel):
+    label: str
+    contribution_ratio: float = Field(ge=0.0, le=1.0)
+
+
+class ExplanationMeta(BaseModel):
+    analysis_version: str
+    data_coverage: float = Field(ge=0.0, le=1.0)
+    last_updated: UtcDatetime
+    missing_data: list[str]
+    counter_argument_count: int = Field(ge=0)
+    confidence: float = Field(ge=0.0, le=1.0)
+    limitations: list[str]
+
+
+class AlreadyPricedIn(BaseModel):
+    likely: bool
+    note: str | None
+
+
+class ContradictingEvidenceItem(BaseModel):
+    event_id: int
+    document_id: int
+    title: str
+    source: str
+    published_at: UtcDatetime
+
+
+class CounterView(BaseModel):
+    counter_arguments: list[str]
+    invalidation_conditions: list[str]
+    already_priced_in: AlreadyPricedIn
+    contradicting_evidence: list[ContradictingEvidenceItem]
+
+
+class TopicExplanationResponse(BaseModel):
+    factors: list[ExplanationFactorItem]
+    meta: ExplanationMeta
+    counter_view: CounterView

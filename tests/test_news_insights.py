@@ -165,7 +165,7 @@ def test_events_returns_event_projection_and_opaque_cursor_pages(
     assert len(second_page) == 1
     assert second_page[0]["id"] not in {newest_id, middle_id}
     assert second_page[0]["document_type"] == "DISCLOSURE"
-    assert second_page[0]["evidence_count"] == 1
+    assert second_page[0]["evidence_count"] == 2
     assert second_response.json()["meta"] == {
         "limit": 2,
         "has_more": False,
@@ -249,7 +249,7 @@ def test_event_detail_returns_evidence_and_related_topics(
             "reason": "신규 장기 계약으로 반도체 공급 가시성이 높아졌다.",
         }
     ]
-    assert len(data["evidence"]) == 1
+    assert len(data["evidence"]) == 2
     assert set(data["evidence"][0]) == {
         "document_id",
         "document_type",
@@ -788,7 +788,8 @@ def test_topic_trend_returns_aggregated_points_markers_and_sources(
     assert data["markers"]
     assert set(data["markers"][0]) == {"timestamp", "label", "event_id"}
     assert data["source_distribution"] == [
-        {"source_type": "DISCLOSURE", "count": 1, "share": 1.0}
+        {"source_type": "ANALYST_REPORT", "count": 1, "share": 0.5},
+        {"source_type": "DISCLOSURE", "count": 1, "share": 0.5},
     ]
 
 
@@ -863,7 +864,21 @@ def test_topic_evidence_uses_cursor_pagination_and_filters(
     second_page = cast(list[dict[str, Any]], api_data(second_response))
     assert len(second_page) == 1
     assert second_page[0]["document_id"] != first_page[0]["document_id"]
-    assert second_response.json()["meta"]["has_more"] is False
+    second_meta = second_response.json()["meta"]
+    assert second_meta["has_more"] is True
+
+    third_response = client.get(
+        f"/api/v1/news-insights/topics/{topic_id}/evidence",
+        params={"limit": 1, "cursor": second_meta["next_cursor"]},
+    )
+    assert third_response.status_code == 200
+    third_page = cast(list[dict[str, Any]], api_data(third_response))
+    assert len(third_page) == 1
+    assert third_page[0]["document_id"] not in {
+        first_page[0]["document_id"],
+        second_page[0]["document_id"],
+    }
+    assert third_response.json()["meta"]["has_more"] is False
 
     filtered_response = client.get(
         f"/api/v1/news-insights/topics/{topic_id}/evidence",
@@ -880,6 +895,113 @@ def test_topic_detail_routes_return_404_for_unknown_topic(
     set_current_user(1)
 
     for suffix in ("", "/trend", "/evidence", "/symbols", "/graph"):
+        response = client.get(f"/api/v1/news-insights/topics/999{suffix}")
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "NEWS_INSIGHT_TOPIC_NOT_FOUND"
+
+
+def test_fund_flow_outlook_returns_latest_labeled_projection(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+
+    response = client.get(
+        "/api/v1/news-insights/fund-flow-outlook",
+        params={"market": "KR"},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert set(data) == {"as_of", "analysis_version", "items"}
+    assert data["as_of"].endswith("Z")
+    assert data["analysis_version"] == "mock-news-intelligence-v3"
+    assert data["items"]
+    item = data["items"][0]
+    assert set(item) == {
+        "sector",
+        "direction",
+        "likelihood",
+        "estimated_range",
+        "horizon",
+        "confidence",
+        "key_assumptions",
+        "risk_factors",
+    }
+    assert item["direction"] in {"INFLOW", "OUTFLOW", "NEUTRAL"}
+    assert item["likelihood"] in {"LOW", "MEDIUM", "HIGH"}
+    assert isinstance(item["estimated_range"], str)
+    assert item["key_assumptions"]
+    assert item["risk_factors"]
+
+
+def test_topic_scenarios_returns_all_three_kinds(client: TestClient) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        topic_id = session.query(TopicCluster.id).scalar()
+
+    response = client.get(
+        f"/api/v1/news-insights/topics/{topic_id}/scenarios"
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert set(data) == {"topic_id", "analysis_version", "as_of", "scenarios"}
+    assert data["topic_id"] == topic_id
+    assert data["analysis_version"] == "mock-news-intelligence-v3"
+    assert data["as_of"].endswith("Z")
+    assert {item["scenario_kind"] for item in data["scenarios"]} == {
+        "OPTIMISTIC",
+        "BASE",
+        "CONSERVATIVE",
+    }
+    assert len(data["scenarios"]) == 3
+    assert abs(sum(item["weight"] for item in data["scenarios"]) - 1.0) < 1e-9
+    assert all(item["invalidation_conditions"] for item in data["scenarios"])
+
+
+def test_topic_explanation_returns_factors_and_required_counter_view(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        topic_id = session.query(TopicCluster.id).scalar()
+
+    response = client.get(
+        f"/api/v1/news-insights/topics/{topic_id}/explanation"
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert set(data) == {"factors", "meta", "counter_view"}
+    assert abs(
+        sum(item["contribution_ratio"] for item in data["factors"]) - 1.0
+    ) < 1e-9
+    assert data["meta"]["analysis_version"] == "mock-news-intelligence-v3"
+    assert data["meta"]["counter_argument_count"] >= 1
+    assert data["counter_view"]["counter_arguments"]
+    assert data["counter_view"]["invalidation_conditions"]
+    assert set(data["counter_view"]["already_priced_in"]) == {"likely", "note"}
+    contradicting = data["counter_view"]["contradicting_evidence"]
+    assert contradicting
+    assert set(contradicting[0]) == {
+        "event_id",
+        "document_id",
+        "title",
+        "source",
+        "published_at",
+    }
+    assert contradicting[0]["published_at"].endswith("Z")
+
+
+def test_phase3_topic_routes_return_404_for_unknown_topic(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+
+    for suffix in ("/scenarios", "/explanation"):
         response = client.get(f"/api/v1/news-insights/topics/999{suffix}")
         assert response.status_code == 404
         assert response.json()["error"]["code"] == "NEWS_INSIGHT_TOPIC_NOT_FOUND"
