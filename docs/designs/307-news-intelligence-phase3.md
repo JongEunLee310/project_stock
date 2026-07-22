@@ -74,7 +74,8 @@ unique: `(topic_id, analysis_version, scenario_kind)`. **버전 누적** — ana
 
 ### 3.1 `GET /fund-flow-outlook` — 예상 자금 흐름 (#371)
 
-- query: `market`(optional).
+- query: 없음(3차 골격은 최신 analysis_version 전체 반환. `fund_flow_outlooks`에 market 컬럼이
+  없어 시장 필터는 두지 않는다 — 필요 시 컬럼과 파라미터를 함께 추가).
 - 응답: `as_of`, `analysis_version`, `items`[{`sector`·`direction`·`likelihood`·
   `estimated_range`·`horizon`·`confidence`·`key_assumptions`[]·`risk_factors`[]}].
 - **확정 예측 표현 금지** — "자금 유입 가능성 증가" 수준으로 표기(스펙 §3.6). 자금 숫자는 정량

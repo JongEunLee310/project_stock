@@ -92,7 +92,6 @@ def get_news_insight_investor_flows(
     description="Return labeled sector fund-flow ranges, assumptions, and risks.",
 )
 def get_news_insight_fund_flow_outlook(
-    market: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[FundFlowOutlookResponse]:
