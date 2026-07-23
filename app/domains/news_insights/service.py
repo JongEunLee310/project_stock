@@ -9,6 +9,7 @@ from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.core.pagination import decode_datetime_cursor, encode_datetime_cursor
 from app.domains.news_insights.briefing import build_briefing
+from app.domains.news_insights.clock import utcnow
 from app.domains.news_insights.repository import (
     AgentRunRecords,
     CalendarRecord,
@@ -135,7 +136,7 @@ class NewsInsightsService:
         *,
         as_of: datetime | None = None,
     ) -> OverviewResponse:
-        generated_at = as_of or datetime.now(UTC)
+        generated_at = as_of or utcnow()
         current, previous = self.repository.aggregate_summary_with_change(
             as_of=generated_at,
             window=self._parse_window(query.window),
@@ -176,7 +177,7 @@ class NewsInsightsService:
         *,
         as_of: datetime | None = None,
     ) -> list[CalendarItem]:
-        start = as_of or datetime.now(UTC)
+        start = as_of or utcnow()
         return [
             self._calendar_item(record)
             for record in self.repository.list_calendar_events(
@@ -205,7 +206,7 @@ class NewsInsightsService:
         as_of: datetime | None = None,
     ) -> InvestorFlowsResponse:
         records = self.repository.investor_flow_records(query)
-        response_as_of = records.as_of or as_of or datetime.now(UTC)
+        response_as_of = records.as_of or as_of or utcnow()
         items = [
             InvestorFlowItem(
                 investor_type=InvestorType(item.investor_type),
@@ -233,7 +234,7 @@ class NewsInsightsService:
         records = self.repository.latest_fund_flow_outlooks()
         if records is None:
             return FundFlowOutlookResponse(
-                as_of=datetime.now(UTC),
+                as_of=utcnow(),
                 analysis_version="unavailable",
                 items=[],
             )
@@ -268,7 +269,7 @@ class NewsInsightsService:
         *,
         as_of: datetime | None = None,
     ) -> TopicMapResponse:
-        generated_at = as_of or datetime.now(UTC)
+        generated_at = as_of or utcnow()
         records = self.repository.topic_map_records(
             start=generated_at - self._parse_window(query.window),
             limit=query.limit,
@@ -317,7 +318,7 @@ class NewsInsightsService:
     ) -> TopicTrendResponse:
         if not self.repository.topic_exists(topic_id):
             self._raise_topic_not_found()
-        end = as_of or datetime.now(UTC)
+        end = as_of or utcnow()
         window = self._parse_window(query.window)
         interval = self._parse_window(query.interval)
         records = self.repository.topic_trend_records(
