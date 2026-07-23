@@ -24,7 +24,7 @@
 
 | 설계 라벨 | 판정 | 근거 |
 |---|---|---|
-| 수집 소스 | 산출 가능 | `source_documents.source_name`·`collected_at` 보유 |
+| 수집 소스 | 산출 가능 | `source_documents.source_name` 보유 |
 | 오늘 처리 건수 | 기존 필드 | `processed_documents` |
 | 이벤트 추출 | 기존 필드 | `extracted_events` |
 | 평균 처리 지연 | **부분** 산출 가능 | `agent_runs.started_at`·`finished_at` 보유. 아래 §3 참조 |
@@ -35,13 +35,24 @@
 ## 2. `collected_sources` — 수집 소스
 
 - 타입: `int`(`ge=0`).
-- 정의: 최근 run의 처리 구간에 수집된 문서의 **고유 출처 수**.
-- 구간: `agent_runs.started_at` 이상, `finished_at`(없으면 조회 시각) 이하의 `collected_at`.
-- 대상: `source_documents`. `source_name` 기준 distinct 개수.
+- 정의: `source_documents`의 **고유 `source_name` 개수**. 시간 구간으로 자르지 않는다.
+- 의미: 시스템이 실제로 문서를 받아 온 출처의 수. run 단위 지표가 아니라 수집 범위 지표다.
 
-`source_documents`에는 `agent_run_id`가 없어 run과 문서를 직접 잇지 못한다. 시간 구간으로 잇는
-것이 현재 모델에서 가능한 유일한 방법이며, 이 근사는 설계 문서에 남긴다. 실제 파이프라인이
-생기면(#391) run–문서 연결을 명시적으로 두는 편이 정확하다.
+### run 구간으로 자르지 않는 이유
+
+초안은 최근 run의 `started_at` ~ `finished_at` 사이에 `collected_at`이 들어오는 문서로 한정했다.
+**이 정의는 틀렸다.** run은 자기가 도는 동안 들어온 문서가 아니라 **그 전에 쌓인 문서를 처리**한다.
+run 구간으로 자르면 처리 대상과 무관한 집합을 세게 된다.
+
+시드 데이터가 이 오류를 그대로 드러냈다. 문서는 기준 시각 1시간 55분·1시간 25분 전에 수집되고
+run은 15분 전에 시작해 2분 전에 끝난다. 겹치는 구간이 없어 값이 `0`이 된다. 화면에는
+`수집 소스 0`이 뜨는데, 이는 출처가 없다는 **거짓 진술**이다. 값을 모른다는 `—`보다 나쁘다.
+
+`source_documents`에는 `agent_run_id`가 없어 run과 문서를 직접 이을 방법이 없다. 없는 연결을
+시간으로 흉내 내는 대신, 연결이 필요 없는 정의를 쓴다. 설계 이미지의 `수집 소스 1,248`도 run
+하나가 처리한 수가 아니라 수집 대상 출처의 규모로 읽힌다.
+
+run 단위 출처 수가 필요해지면 `source_documents`에 `agent_run_id`를 두는 것이 선행이다(#391).
 
 ## 3. `average_run_duration_seconds` — 평균 처리 시간
 
@@ -88,6 +99,7 @@ stages[], analysis_version, has_delay
 - 화면 라벨 `평균 처리 지연`은 실제로 처리 **소요 시간**이다. 라벨 정정은 프론트엔드 표현
   변경이므로 이번 범위 밖이며, 프론트엔드 세부 수정 라운드에서 함께 다룬다.
 - run–문서 연결(`agent_run_id`)과 정확도 정의는 실제 수집·추출 파이프라인(#391) 이후가 적기다.
+  연결이 생기면 `collected_sources`를 run 단위로 좁힐지 다시 판단한다.
 
 ## 7. ADR·실패 기록 판단
 

@@ -606,7 +606,7 @@ def test_agent_runs_returns_latest_verifiable_stage_summary(
         "processed_documents": 42,
         "extracted_events": 7,
         "active_topics": 3,
-        "collected_sources": 2,
+        "collected_sources": 4,
         "average_run_duration_seconds": 690,
         "stages": [
             {"name": "COLLECT", "status": "COMPLETED", "delayed": False},
@@ -648,7 +648,7 @@ def test_agent_runs_returns_null_average_without_completed_runs(
     assert data["average_run_duration_seconds"] is None
 
 
-def test_agent_runs_returns_seeded_metrics_and_zero_sources_without_documents(
+def test_agent_runs_returns_seeded_metrics_and_distinct_sources(
     client: TestClient,
 ) -> None:
     set_current_user(1)
@@ -658,8 +658,63 @@ def test_agent_runs_returns_seeded_metrics_and_zero_sources_without_documents(
 
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
-    assert data["collected_sources"] == 0
+    assert data["collected_sources"] == 2
     assert data["average_run_duration_seconds"] == 780
+
+
+def test_agent_runs_returns_zero_sources_without_documents(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    with TestingSessionLocal() as session:
+        session.add(
+            AgentRun(
+                started_at=SEEDED_AT - timedelta(minutes=15),
+                finished_at=SEEDED_AT - timedelta(minutes=2),
+                status=AgentRunStatus.COMPLETED.value,
+                processed_documents=0,
+                extracted_events=0,
+                active_topics=0,
+                analysis_version="news-intelligence-empty",
+            )
+        )
+        session.commit()
+
+    response = client.get("/api/v1/news-insights/agent-runs")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["collected_sources"] == 0
+
+
+def test_agent_runs_counts_sources_collected_outside_latest_run(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    with TestingSessionLocal() as session:
+        session.add(
+            AgentRun(
+                started_at=SEEDED_AT - timedelta(minutes=15),
+                finished_at=SEEDED_AT - timedelta(minutes=2),
+                status=AgentRunStatus.COMPLETED.value,
+                processed_documents=1,
+                extracted_events=0,
+                active_topics=0,
+                analysis_version="news-intelligence-outside-run",
+            )
+        )
+        session.commit()
+    add_source_document(
+        collected_at=SEEDED_AT - timedelta(hours=1),
+        source_name="실행 구간 밖 소스",
+        content_hash="agent-run-outside-source",
+    )
+
+    response = client.get("/api/v1/news-insights/agent-runs")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["collected_sources"] == 1
 
 
 def test_agent_runs_average_uses_only_latest_twenty_completed_runs(

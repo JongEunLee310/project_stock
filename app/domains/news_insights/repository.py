@@ -261,7 +261,7 @@ class NewsInsightsRepository:
             for event in events
         )
 
-    def latest_agent_run_records(self, *, as_of: datetime) -> AgentRunRecords | None:
+    def latest_agent_run_records(self) -> AgentRunRecords | None:
         run = self.db.scalars(
             select(AgentRun)
             .order_by(AgentRun.started_at.desc(), AgentRun.id.desc())
@@ -276,13 +276,9 @@ class NewsInsightsRepository:
                 .order_by(AgentRunStage.id)
             ).all()
         )
-        interval_end = run.finished_at or as_of
         collected_sources = int(
             self.db.scalar(
-                select(func.count(func.distinct(SourceDocument.source_name))).where(
-                    SourceDocument.collected_at >= run.started_at,
-                    SourceDocument.collected_at <= interval_end,
-                )
+                select(func.count(func.distinct(SourceDocument.source_name)))
             )
             or 0
         )

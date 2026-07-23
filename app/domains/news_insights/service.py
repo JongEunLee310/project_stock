@@ -189,9 +189,7 @@ class NewsInsightsService:
         ]
 
     def get_agent_runs(self) -> AgentRunsResponse:
-        records = self.repository.latest_agent_run_records(
-            as_of=self._as_utc(utcnow()),
-        )
+        records = self.repository.latest_agent_run_records()
         if records is None:
             raise RuntimeError("No agent run is available")
         return self._agent_runs_response(records)
