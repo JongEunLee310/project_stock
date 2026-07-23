@@ -87,9 +87,14 @@ AI 추론 분리, 근거 연결, 정량 숫자는 집계·LLM은 해석, 감성�
 
 ### 3.2 `GET /investor-flows` — 투자자 동향·반응 (#368)
 
-- query: `market`·`window`·`topic_id`(optional).
+- query: `market`·`window`·`topic_id`(optional). `window`는 저장된 집계 구간 라벨과
+  일치시키는 값이 아니라, 서비스 기준 시각에서 과거로 조회할 기간이다. 조회 조건은
+  `as_of >= 기준 시각 - window`다.
 - 응답: `as_of`, `by_investor_type`[{investor_type·net_value(문자열)·direction·change}],
-  `narrative_alignment`{aligned(bool)·note}(뉴스 감성 vs 수급 방향 일치/불일치). (스펙 §3.5·§5.7)
+  `aggregation_windows`(실제 반환 행의 저장 집계 구간 라벨 목록, 데이터가 없으면 `null`),
+  `narrative_alignment`{aligned(bool)·note}(뉴스 감성 vs 수급 방향 일치/불일치). 여러 집계
+  구간의 행이 함께 반환되면 `aggregation_windows`는 중복을 제거하고 정렬해 모두 밝힌다.
+  (스펙 §3.5·§5.7)
 - 데이터 미제공 시장은 빈 값 추정 금지 — `availability`{available(bool)·fallback(ETF·거래량)}
   로 명시. 수급 숫자는 집계, LLM은 정렬 여부 해석만.
 

@@ -335,6 +335,7 @@ def test_investor_flows_returns_aggregates_alignment_and_decimal_strings(
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
     assert data["as_of"].endswith("Z")
+    assert data["aggregation_windows"] == ["5d"]
     assert data["availability"] == {"available": True, "fallback": None}
     assert data["narrative_alignment"]["aligned"] is True
     assert data["narrative_alignment"]["note"]
@@ -358,6 +359,74 @@ def test_investor_flows_returns_aggregates_alignment_and_decimal_strings(
     )
 
 
+def test_investor_flows_uses_requested_window_as_time_range(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        topic_id = session.query(TopicCluster.id).scalar()
+        session.add(
+            InvestorFlow(
+                market="KR",
+                topic_id=topic_id,
+                investor_type=InvestorType.INSTITUTION.value,
+                net_value=Decimal("-1000000000.0000"),
+                direction=FlowDirection.SELL.value,
+                window="1d",
+                as_of=SEEDED_AT,
+                source_kind="INVESTOR_TYPE",
+            )
+        )
+        session.commit()
+
+    response = client.get(
+        "/api/v1/news-insights/investor-flows",
+        params={"market": "KR", "window": "7d"},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["by_investor_type"] == [
+        {
+            "investor_type": "FOREIGN",
+            "net_value": "12500000000.0000",
+            "direction": "BUY",
+            "change": 0.0,
+        },
+        {
+            "investor_type": "INSTITUTION",
+            "net_value": "-1000000000.0000",
+            "direction": "SELL",
+            "change": 0.0,
+        },
+    ]
+    assert data["aggregation_windows"] == ["1d", "5d"]
+    assert data["availability"] == {"available": True, "fallback": None}
+
+
+def test_investor_flows_excludes_rows_outside_requested_window(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        flow = session.query(InvestorFlow).one()
+        flow.as_of = SEEDED_AT - timedelta(days=2)
+        session.commit()
+
+    response = client.get(
+        "/api/v1/news-insights/investor-flows",
+        params={"market": "KR", "window": "1d"},
+    )
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["by_investor_type"] == []
+    assert data["aggregation_windows"] is None
+    assert data["availability"]["available"] is False
+
+
 def test_investor_flows_reports_unavailable_market_without_estimation(
     client: TestClient,
 ) -> None:
@@ -372,6 +441,7 @@ def test_investor_flows_reports_unavailable_market_without_estimation(
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
     assert data["by_investor_type"] == []
+    assert data["aggregation_windows"] is None
     assert data["availability"]["available"] is False
     assert "ETF" in data["availability"]["fallback"]
     assert "거래량" in data["availability"]["fallback"]
