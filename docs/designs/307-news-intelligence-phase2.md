@@ -121,7 +121,9 @@ AI 추론 분리, 근거 연결, 정량 숫자는 집계·LLM은 해석, 감성�
 ### 3.6 `GET /agent-runs` — 에이전트 처리 현황 (#370)
 
 - 최근 run 요약: `last_processed_at`·`processed_documents`·`extracted_events`·`active_topics`·
-  `stages`[{name·status·delayed}]·`analysis_version`·`has_delay`(bool). (스펙 §3.8)
+  `collected_sources`·`average_run_duration_seconds`(nullable)·
+  `stages`[{name·status·delayed}]·`analysis_version`·`has_delay`(bool). 산출 정의는
+  `docs/designs/394-agent-pipeline-metrics.md`를 따른다. (스펙 §3.8)
 - **검증 가능한 처리 단계·집계 수치만** 반환. 비공개 추론 과정 노출 금지. `agent_runs`·
   `agent_run_stages` 기반.
 

@@ -81,6 +81,33 @@ def add_event(*, detected_at: datetime, symbol: str, fingerprint: str) -> int:
         return event.id
 
 
+def add_source_document(
+    *,
+    collected_at: datetime,
+    source_name: str,
+    content_hash: str,
+) -> int:
+    with TestingSessionLocal() as session:
+        document = SourceDocument(
+            document_type=DocumentType.NEWS.value,
+            source_name=source_name,
+            source_url=f"https://example.com/{content_hash}",
+            external_id=None,
+            title=f"{source_name} 테스트 문서",
+            raw_content="에이전트 파이프라인 집계 테스트 문서다.",
+            normalized_content=None,
+            language="ko",
+            published_at=collected_at - timedelta(minutes=1),
+            collected_at=collected_at,
+            content_hash=content_hash,
+            source_reliability=0.9,
+            processing_status=ProcessingStatus.PENDING.value,
+        )
+        session.add(document)
+        session.commit()
+        return document.id
+
+
 def test_overview_returns_four_summary_metrics_and_grounded_briefing(
     client: TestClient,
 ) -> None:
@@ -543,6 +570,21 @@ def test_agent_runs_returns_latest_verifiable_stage_summary(
             ]
         )
         session.commit()
+    add_source_document(
+        collected_at=SEEDED_AT + timedelta(minutes=12),
+        source_name="파이프라인 소스 A",
+        content_hash="agent-run-latest-source-a-1",
+    )
+    add_source_document(
+        collected_at=SEEDED_AT + timedelta(minutes=13),
+        source_name="파이프라인 소스 A",
+        content_hash="agent-run-latest-source-a-2",
+    )
+    add_source_document(
+        collected_at=SEEDED_AT + timedelta(minutes=14),
+        source_name="파이프라인 소스 B",
+        content_hash="agent-run-latest-source-b",
+    )
 
     response = client.get("/api/v1/news-insights/agent-runs")
 
@@ -553,6 +595,8 @@ def test_agent_runs_returns_latest_verifiable_stage_summary(
         "processed_documents",
         "extracted_events",
         "active_topics",
+        "collected_sources",
+        "average_run_duration_seconds",
         "stages",
         "analysis_version",
         "has_delay",
@@ -562,6 +606,8 @@ def test_agent_runs_returns_latest_verifiable_stage_summary(
         "processed_documents": 42,
         "extracted_events": 7,
         "active_topics": 3,
+        "collected_sources": 2,
+        "average_run_duration_seconds": 690,
         "stages": [
             {"name": "COLLECT", "status": "COMPLETED", "delayed": False},
             {"name": "EXTRACT", "status": "DELAYED", "delayed": True},
@@ -569,6 +615,81 @@ def test_agent_runs_returns_latest_verifiable_stage_summary(
         "analysis_version": "news-intelligence-v3",
         "has_delay": True,
     }
+
+
+def test_agent_runs_returns_null_average_without_completed_runs(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    with TestingSessionLocal() as session:
+        session.add(
+            AgentRun(
+                started_at=SEEDED_AT - timedelta(minutes=5),
+                finished_at=None,
+                status=AgentRunStatus.RUNNING.value,
+                processed_documents=1,
+                extracted_events=0,
+                active_topics=0,
+                analysis_version="news-intelligence-running",
+            )
+        )
+        session.commit()
+    add_source_document(
+        collected_at=SEEDED_AT - timedelta(minutes=2),
+        source_name="진행중 테스트 소스",
+        content_hash="agent-run-running-source",
+    )
+
+    response = client.get("/api/v1/news-insights/agent-runs")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["collected_sources"] == 1
+    assert data["average_run_duration_seconds"] is None
+
+
+def test_agent_runs_returns_seeded_metrics_and_zero_sources_without_documents(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+
+    response = client.get("/api/v1/news-insights/agent-runs")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["collected_sources"] == 0
+    assert data["average_run_duration_seconds"] == 780
+
+
+def test_agent_runs_average_uses_only_latest_twenty_completed_runs(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    with TestingSessionLocal() as session:
+        runs = []
+        for index in range(21):
+            started_at = SEEDED_AT - timedelta(hours=2) + timedelta(minutes=index)
+            duration = timedelta(hours=1) if index == 0 else timedelta(minutes=1)
+            runs.append(
+                AgentRun(
+                    started_at=started_at,
+                    finished_at=started_at + duration,
+                    status=AgentRunStatus.COMPLETED.value,
+                    processed_documents=index,
+                    extracted_events=0,
+                    active_topics=0,
+                    analysis_version=f"news-intelligence-{index}",
+                )
+            )
+        session.add_all(runs)
+        session.commit()
+
+    response = client.get("/api/v1/news-insights/agent-runs")
+
+    assert response.status_code == 200
+    data = cast(dict[str, Any], api_data(response))
+    assert data["average_run_duration_seconds"] == 60
 
 
 def test_topic_map_returns_typed_nodes_and_keyword_relation_edges(

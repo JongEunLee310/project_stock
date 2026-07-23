@@ -189,7 +189,9 @@ class NewsInsightsService:
         ]
 
     def get_agent_runs(self) -> AgentRunsResponse:
-        records = self.repository.latest_agent_run_records()
+        records = self.repository.latest_agent_run_records(
+            as_of=self._as_utc(utcnow()),
+        )
         if records is None:
             raise RuntimeError("No agent run is available")
         return self._agent_runs_response(records)
@@ -679,6 +681,8 @@ class NewsInsightsService:
             processed_documents=run.processed_documents,
             extracted_events=run.extracted_events,
             active_topics=run.active_topics,
+            collected_sources=records.collected_sources,
+            average_run_duration_seconds=records.average_run_duration_seconds,
             stages=stages,
             analysis_version=run.analysis_version,
             has_delay=(
