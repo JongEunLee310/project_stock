@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.domains.news_insights.briefing import validate_evidence_event_ids
@@ -39,6 +40,14 @@ from tests.conftest import TestingSessionLocal, api_data, set_current_user
 
 
 SEEDED_AT = datetime(2026, 7, 21, 10, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def freeze_news_insights_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.domains.news_insights.service.utcnow",
+        lambda: SEEDED_AT,
+    )
 
 
 def seed_news_insights() -> None:
@@ -82,7 +91,7 @@ def test_overview_returns_four_summary_metrics_and_grounded_briefing(
 
     assert response.status_code == 200
     data = cast(dict[str, Any], api_data(response))
-    assert data["as_of"].endswith("Z")
+    assert data["as_of"] == "2026-07-21T10:00:00Z"
     assert set(data["summary"]) == {
         "high_importance_events",
         "sentiment_shifts",
@@ -374,7 +383,7 @@ def test_calendar_returns_upcoming_market_events_with_related_topics(
 ) -> None:
     set_current_user(1)
     seed_news_insights()
-    now = datetime.now(UTC)
+    now = SEEDED_AT
     with TestingSessionLocal() as session:
         topic_id = session.query(TopicCluster.id).scalar()
         included_at = now + timedelta(hours=1)
