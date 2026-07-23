@@ -679,6 +679,8 @@ class NewsInsightsService:
             processed_documents=run.processed_documents,
             extracted_events=run.extracted_events,
             active_topics=run.active_topics,
+            collected_sources=records.collected_sources,
+            average_run_duration_seconds=records.average_run_duration_seconds,
             stages=stages,
             analysis_version=run.analysis_version,
             has_delay=(

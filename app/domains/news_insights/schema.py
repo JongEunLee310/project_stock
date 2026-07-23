@@ -172,6 +172,8 @@ class AgentRunsResponse(BaseModel):
     processed_documents: int = Field(ge=0)
     extracted_events: int = Field(ge=0)
     active_topics: int = Field(ge=0)
+    collected_sources: int = Field(ge=0)
+    average_run_duration_seconds: int | None
     stages: list[AgentRunStageItem]
     analysis_version: str
     has_delay: bool

@@ -44,6 +44,7 @@ from app.domains.news_insights.types import (
 
 HIGH_IMPORTANCE_MIN = 0.8
 MEDIUM_IMPORTANCE_MIN = 0.5
+AGENT_RUN_DURATION_SAMPLE_LIMIT = 20
 
 
 @dataclass(frozen=True)
@@ -149,6 +150,8 @@ class CalendarRecord:
 class AgentRunRecords:
     run: AgentRun
     stages: tuple[AgentRunStage, ...]
+    collected_sources: int
+    average_run_duration_seconds: int | None
 
 
 @dataclass(frozen=True)
@@ -273,7 +276,41 @@ class NewsInsightsRepository:
                 .order_by(AgentRunStage.id)
             ).all()
         )
-        return AgentRunRecords(run=run, stages=stages)
+        collected_sources = int(
+            self.db.scalar(
+                select(func.count(func.distinct(SourceDocument.source_name)))
+            )
+            or 0
+        )
+        return AgentRunRecords(
+            run=run,
+            stages=stages,
+            collected_sources=collected_sources,
+            average_run_duration_seconds=self._average_run_duration_seconds(),
+        )
+
+    def _average_run_duration_seconds(self) -> int | None:
+        if self.db.get_bind().dialect.name == "sqlite":
+            duration_seconds = (
+                func.julianday(AgentRun.finished_at)
+                - func.julianday(AgentRun.started_at)
+            ) * 86400.0
+        else:
+            duration_seconds = func.extract(
+                "epoch",
+                AgentRun.finished_at - AgentRun.started_at,
+            )
+        recent_durations = (
+            select(duration_seconds.label("duration_seconds"))
+            .where(AgentRun.finished_at.is_not(None))
+            .order_by(AgentRun.started_at.desc(), AgentRun.id.desc())
+            .limit(AGENT_RUN_DURATION_SAMPLE_LIMIT)
+            .subquery()
+        )
+        average_duration = self.db.scalar(
+            select(func.round(func.avg(recent_durations.c.duration_seconds)))
+        )
+        return int(average_duration) if average_duration is not None else None
 
     def event_detail_records(self, event_id: int) -> EventDetailRecords | None:
         event = self.db.get(ExtractedEvent, event_id)
