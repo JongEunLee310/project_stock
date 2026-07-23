@@ -133,6 +133,7 @@ class InvestorFlowAggregate:
 @dataclass(frozen=True)
 class InvestorFlowRecords:
     as_of: datetime | None
+    aggregation_windows: tuple[str, ...]
     aggregates: tuple[InvestorFlowAggregate, ...]
     narrative_sentiment_score: float | None
     fallback_source_kinds: tuple[str, ...]
@@ -590,10 +591,14 @@ class NewsInsightsRepository:
     def investor_flow_records(
         self,
         query: InvestorFlowsQuery,
+        *,
+        as_of: datetime,
+        window: timedelta,
     ) -> InvestorFlowRecords:
+        start = as_of - window
         conditions = [
             InvestorFlow.market == query.market,
-            InvestorFlow.window == query.window,
+            InvestorFlow.as_of >= start,
         ]
         if query.topic_id is not None:
             conditions.append(InvestorFlow.topic_id == query.topic_id)
@@ -638,6 +643,17 @@ class NewsInsightsRepository:
             (values[0][0] for values in values_by_type.values()),
             default=None,
         )
+        aggregation_windows = tuple(
+            self.db.scalars(
+                select(InvestorFlow.window)
+                .where(
+                    *conditions,
+                    InvestorFlow.source_kind == "INVESTOR_TYPE",
+                )
+                .distinct()
+                .order_by(InvestorFlow.window)
+            ).all()
+        )
         sentiment_score = self.db.scalar(
             select(func.avg(TopicCluster.sentiment_score))
             .join(InvestorFlow, InvestorFlow.topic_id == TopicCluster.id)
@@ -648,6 +664,7 @@ class NewsInsightsRepository:
         )
         return InvestorFlowRecords(
             as_of=current_as_of,
+            aggregation_windows=aggregation_windows,
             aggregates=aggregates,
             narrative_sentiment_score=(
                 float(sentiment_score) if sentiment_score is not None else None

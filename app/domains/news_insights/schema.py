@@ -145,6 +145,7 @@ class InvestorFlowAvailability(BaseModel):
 
 class InvestorFlowsResponse(BaseModel):
     as_of: UtcDatetime
+    aggregation_windows: list[str] | None
     by_investor_type: list[InvestorFlowItem]
     narrative_alignment: NarrativeAlignment
     availability: InvestorFlowAvailability

@@ -205,8 +205,13 @@ class NewsInsightsService:
         *,
         as_of: datetime | None = None,
     ) -> InvestorFlowsResponse:
-        records = self.repository.investor_flow_records(query)
-        response_as_of = records.as_of or as_of or utcnow()
+        reference_time = as_of or utcnow()
+        records = self.repository.investor_flow_records(
+            query,
+            as_of=reference_time,
+            window=self._parse_window(query.window),
+        )
+        response_as_of = records.as_of or reference_time
         items = [
             InvestorFlowItem(
                 investor_type=InvestorType(item.investor_type),
@@ -222,6 +227,9 @@ class NewsInsightsService:
         available = bool(items)
         return InvestorFlowsResponse(
             as_of=response_as_of,
+            aggregation_windows=(
+                list(records.aggregation_windows) if items else None
+            ),
             by_investor_type=items,
             narrative_alignment=self._narrative_alignment(records),
             availability=InvestorFlowAvailability(
