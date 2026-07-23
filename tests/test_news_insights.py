@@ -4,6 +4,7 @@ from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.domains.news_insights.briefing import validate_evidence_event_ids
 from app.domains.news_insights.model import (
@@ -11,6 +12,7 @@ from app.domains.news_insights.model import (
     AgentRunStage,
     EventEvidence,
     ExtractedEvent,
+    FundFlowOutlook,
     InvestorFlow,
     KeywordRelation,
     MarketEvent,
@@ -20,6 +22,7 @@ from app.domains.news_insights.model import (
     TopicInsight,
     TopicKeyword,
 )
+from app.domains.news_insights.schema import FundFlowRange
 from app.domains.news_insights.seed import seed_mock_news_insights
 from app.domains.news_insights.types import (
     AgentRunStatus,
@@ -979,7 +982,7 @@ def test_topic_detail_routes_return_404_for_unknown_topic(
         assert response.json()["error"]["code"] == "NEWS_INSIGHT_TOPIC_NOT_FOUND"
 
 
-def test_fund_flow_outlook_returns_latest_labeled_projection(
+def test_fund_flow_outlook_returns_latest_quantitative_range(
     client: TestClient,
 ) -> None:
     set_current_user(1)
@@ -996,12 +999,12 @@ def test_fund_flow_outlook_returns_latest_labeled_projection(
     assert data["as_of"].endswith("Z")
     assert data["analysis_version"] == "mock-news-intelligence-v3"
     assert data["items"]
-    item = data["items"][0]
+    item = next(item for item in data["items"] if item["sector"] == "반도체")
     assert set(item) == {
         "sector",
         "direction",
         "likelihood",
-        "estimated_range",
+        "estimated_flow",
         "horizon",
         "confidence",
         "key_assumptions",
@@ -1009,7 +1012,13 @@ def test_fund_flow_outlook_returns_latest_labeled_projection(
     }
     assert item["direction"] in {"INFLOW", "OUTFLOW", "NEUTRAL"}
     assert item["likelihood"] in {"LOW", "MEDIUM", "HIGH"}
-    assert isinstance(item["estimated_range"], str)
+    assert item["estimated_flow"] == {
+        "low": "800000000000.0000",
+        "high": "1800000000000.0000",
+        "currency": "KRW",
+    }
+    assert isinstance(item["estimated_flow"]["low"], str)
+    assert isinstance(item["estimated_flow"]["high"], str)
     assert item["key_assumptions"]
     assert item["risk_factors"]
 
@@ -1038,6 +1047,59 @@ def test_topic_scenarios_returns_all_three_kinds(client: TestClient) -> None:
     assert len(data["scenarios"]) == 3
     assert abs(sum(item["weight"] for item in data["scenarios"]) - 1.0) < 1e-9
     assert all(item["invalidation_conditions"] for item in data["scenarios"])
+    scenarios = {
+        item["scenario_kind"]: item["expected_net_flow"]
+        for item in data["scenarios"]
+    }
+    assert scenarios["OPTIMISTIC"] == {
+        "low": "1800000000000.0000",
+        "high": "3000000000000.0000",
+        "currency": "KRW",
+    }
+    assert scenarios["BASE"] == {
+        "low": "800000000000.0000",
+        "high": "1800000000000.0000",
+        "currency": "KRW",
+    }
+    assert scenarios["CONSERVATIVE"] is None
+
+
+def test_fund_flow_range_distinguishes_zero_from_unavailable(
+    client: TestClient,
+) -> None:
+    set_current_user(1)
+    seed_news_insights()
+    with TestingSessionLocal() as session:
+        outlooks = session.query(FundFlowOutlook).order_by(FundFlowOutlook.id).all()
+        outlooks[0].estimated_flow_low = Decimal("0")
+        outlooks[0].estimated_flow_high = Decimal("0")
+        outlooks[0].estimated_flow_currency = "KRW"
+        outlooks[1].estimated_flow_low = Decimal("0")
+        outlooks[1].estimated_flow_high = None
+        outlooks[1].estimated_flow_currency = "KRW"
+        session.commit()
+
+    response = client.get("/api/v1/news-insights/fund-flow-outlook")
+
+    items = {
+        item["sector"]: item["estimated_flow"]
+        for item in cast(dict[str, Any], api_data(response))["items"]
+    }
+    assert items["반도체"] == {
+        "low": "0.0000",
+        "high": "0.0000",
+        "currency": "KRW",
+    }
+    assert items["2차전지"] is None
+
+
+def test_fund_flow_range_rejects_low_greater_than_high() -> None:
+    with pytest.raises(ValidationError, match="low must be less than or equal to high"):
+        FundFlowRange(
+            low=Decimal("1"),
+            high=Decimal("0"),
+            currency="KRW",
+        )
 
 
 def test_topic_explanation_returns_factors_and_required_counter_view(

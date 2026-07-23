@@ -359,7 +359,15 @@ class FundFlowOutlook(Base):
     sector: Mapped[str] = mapped_column(String(100), nullable=False)
     direction: Mapped[str] = mapped_column(String(20), nullable=False)
     likelihood: Mapped[str] = mapped_column(String(20), nullable=False)
-    estimated_range: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    estimated_flow_low: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 4), nullable=True
+    )
+    estimated_flow_high: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 4), nullable=True
+    )
+    estimated_flow_currency: Mapped[str | None] = mapped_column(
+        String(10), nullable=True
+    )
     horizon: Mapped[str] = mapped_column(String(100), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     key_assumptions: Mapped[list[str]] = mapped_column(JSON, nullable=False)
@@ -390,6 +398,15 @@ class FundFlowScenario(Base):
     scenario_kind: Mapped[str] = mapped_column(String(20), nullable=False)
     weight: Mapped[float] = mapped_column(Float, nullable=False)
     expected_flow_direction: Mapped[str] = mapped_column(String(20), nullable=False)
+    expected_net_flow_low: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 4), nullable=True
+    )
+    expected_net_flow_high: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 4), nullable=True
+    )
+    expected_net_flow_currency: Mapped[str | None] = mapped_column(
+        String(10), nullable=True
+    )
     key_assumptions: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     benefiting_sectors: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     risk_sectors: Mapped[list[str]] = mapped_column(JSON, nullable=False)

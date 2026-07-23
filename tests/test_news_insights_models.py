@@ -1,5 +1,6 @@
 import importlib.util
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 from typing import Any, cast
@@ -293,11 +294,23 @@ def test_phase3_models_define_foreign_keys_and_constraints() -> None:
             assert {key.target_fullname for key in column.foreign_keys} == {target}
 
     outlook_table = cast(Table, FundFlowOutlook.__table__)
+    for column_name in ("estimated_flow_low", "estimated_flow_high"):
+        column_type = outlook_table.c[column_name].type
+        assert isinstance(column_type, Numeric)
+        assert column_type.precision == 20
+        assert column_type.scale == 4
+    assert outlook_table.c.estimated_flow_currency.nullable
     assert any(
         [column.name for column in index.columns] == ["analysis_version", "sector"]
         for index in outlook_table.indexes
     )
     scenario_table = cast(Table, FundFlowScenario.__table__)
+    for column_name in ("expected_net_flow_low", "expected_net_flow_high"):
+        column_type = scenario_table.c[column_name].type
+        assert isinstance(column_type, Numeric)
+        assert column_type.precision == 20
+        assert column_type.scale == 4
+    assert scenario_table.c.expected_net_flow_currency.nullable
     assert any(
         constraint.name == "uq_fund_flow_scenarios_topic_version_kind"
         for constraint in scenario_table.constraints
@@ -319,6 +332,13 @@ def test_seed_mock_news_insights_inserts_phase3_connected_samples(
     db.commit()
 
     assert len(seeded.fund_flow_outlooks) >= 1
+    outlooks = {item.sector: item for item in seeded.fund_flow_outlooks}
+    assert outlooks["반도체"].estimated_flow_low == Decimal("800000000000.0000")
+    assert outlooks["반도체"].estimated_flow_high == Decimal("1800000000000.0000")
+    assert outlooks["반도체"].estimated_flow_currency == "KRW"
+    assert outlooks["2차전지"].estimated_flow_low == Decimal("-300000000000.0000")
+    assert outlooks["2차전지"].estimated_flow_high == Decimal("300000000000.0000")
+    assert outlooks["2차전지"].estimated_flow_currency == "KRW"
     assert {item.scenario_kind for item in seeded.fund_flow_scenarios} == {
         ScenarioKind.OPTIMISTIC.value,
         ScenarioKind.BASE.value,
@@ -328,6 +348,12 @@ def test_seed_mock_news_insights_inserts_phase3_connected_samples(
         item.topic_id == seeded.topics[0].id
         for item in seeded.fund_flow_scenarios
     )
+    assert sum(
+        item.expected_net_flow_low is None
+        and item.expected_net_flow_high is None
+        and item.expected_net_flow_currency is None
+        for item in seeded.fund_flow_scenarios
+    ) == 1
     assert seeded.topic_explanations[0].topic_id == seeded.topics[0].id
     assert all(
         factor.topic_explanation_id == seeded.topic_explanations[0].id
@@ -445,6 +471,12 @@ def test_news_insight_phase3_migration_upgrade_and_downgrade() -> None:
             ("d", "_phase3_models"),
         )
     ]
+    migration_paths.append(
+        REPO_ROOT
+        / "alembic"
+        / "versions"
+        / "c3d4e5f6006e_open_fund_flow_quantitative_ranges.py"
+    )
 
     def load_migration(path: Path) -> Any:
         spec = importlib.util.spec_from_file_location(path.stem, path)
@@ -473,8 +505,34 @@ def test_news_insight_phase3_migration_upgrade_and_downgrade() -> None:
                     "fund_flow_scenarios"
                 )
             )
+            outlook_columns = {
+                column["name"]
+                for column in inspector.get_columns("fund_flow_outlooks")
+            }
+            assert "estimated_range" not in outlook_columns
+            assert {
+                "estimated_flow_low",
+                "estimated_flow_high",
+                "estimated_flow_currency",
+            } <= outlook_columns
+            scenario_columns = {
+                column["name"]
+                for column in inspector.get_columns("fund_flow_scenarios")
+            }
+            assert {
+                "expected_net_flow_low",
+                "expected_net_flow_high",
+                "expected_net_flow_currency",
+            } <= scenario_columns
 
             cast(Any, migrations[-1]).downgrade()
+            downgraded_outlook_columns = {
+                column["name"]
+                for column in inspect(connection).get_columns("fund_flow_outlooks")
+            }
+            assert "estimated_range" in downgraded_outlook_columns
+            assert "estimated_flow_low" not in downgraded_outlook_columns
+            cast(Any, migrations[-2]).downgrade()
             assert PHASE3_TABLE_NAMES.isdisjoint(
                 inspect(connection).get_table_names()
             )
