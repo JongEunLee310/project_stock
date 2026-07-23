@@ -15,12 +15,19 @@
 설명하는 기여 요인·반대 관점을 추가한다. **근거 데이터가 약한 상태에서 화려한 숫자만 만들지 않도록
 3차로 미뤘으며**, `Document→Event→Topic→Evidence` 안정화 이후 착수한다. 원칙은 1·2차와 동일하다:
 사실과 AI 추론 분리, 근거 연결, **정량 숫자(자금 금액·기여 비율)는 정량 모델·규칙 기반 집계에서
-산출하고 LLM은 해석·서술만** 한다. 자금 흐름은 확정 예측이 아니라 방향·수준·범위·확률(가중치)로만
+산출하고 LLM은 해석·서술만** 한다. 자금 흐름은 점 예측이 아니라 방향·수준·구간·가중치로만
 표기한다. 하나의 토픽을 강화하는 근거만 모으는 편향을 막기 위해 반대 관점을 의무 포함한다.
 
 와이어 컨벤션은 1·2차와 동일하다: snake_case, `UtcDatetime`, 점수·비율 float(0~1),
-`ApiResponse`/`success`, 인증 `get_current_user`. 자금 금액·범위는 확정값을 만들지 않으므로 라벨
-문자열(예 "+1.8조원", "-8,500억원")로 표기하고 확정 예측으로 오인되지 않게 한다.
+`ApiResponse`/`success`, 인증 `get_current_user`. 자금 금액은 하한·상한을 갖는 구간으로 제공하며
+`Decimal`을 문자열로 직렬화한다(2차 `net_value` 선례). 단위는 통화의 기본 단위이고 억·조 같은
+표시 단위 변환은 화면이 맡는다.
+
+**금액 표현은 ADR-017로 갱신됐다.** 초기 3차 설계는 확정값을 만들지 않기 위해 금액을 라벨
+문자열(예 "+1.8조원")로 표기하기로 했으나, 그 형태로는 설계가 요구하는 크기 비교를 화면에서
+할 수 없었고 화면이 정성 필드 나열로 흘렀다. 금지 대상은 **점 예측**이지 **구간**이 아니라는
+구분을 세우고, 하한·상한을 함께 제시하는 수치 구간으로 바꿨다. 구간은 불확실성을 감추지 않고
+폭으로 드러낸다. 구간을 대표하는 단일 수치 필드는 두지 않는다.
 
 ## 1. Enum 추가 (types.py)
 
@@ -42,16 +49,20 @@
 
 ### 2.1 `fund_flow_outlooks` (#371 /fund-flow-outlook)
 
-`id`, `sector`, `direction`(FundFlowDirection), `likelihood`(FlowLikelihood), `estimated_range`
-(str 라벨, nullable), `horizon`(str 라벨 — 예 "2~4주"), `confidence`(float 0~1),
+`id`, `sector`, `direction`(FundFlowDirection), `likelihood`(FlowLikelihood),
+`estimated_flow_low`·`estimated_flow_high`(Decimal, nullable — 통화 기본 단위)·
+`estimated_flow_currency`(str, nullable), `horizon`(str 라벨 — 예 "2~4주"), `confidence`(float 0~1),
 `key_assumptions`(JSON list[str]), `risk_factors`(JSON list[str]), `analysis_version`(str),
-`as_of`, `created_at`. 인덱스: `(analysis_version, sector)`. **확정 예측 금지** — 방향·수준·범위·
-기간·신뢰도·가정·위험·분석 버전을 필수로 함께 제공(스펙 §3.6).
+`as_of`, `created_at`. 인덱스: `(analysis_version, sector)`. **점 예측 금지, 구간 허용**
+(ADR-017) — 방향·수준·구간·기간·신뢰도·가정·위험·분석 버전을 필수로 함께 제공(스펙 §3.6).
+금액은 하한·상한을 함께 갖거나 셋 다 비운다. 반열린 구간과 구간 대표 단일 수치는 두지 않는다.
 
 ### 2.2 `fund_flow_scenarios` (#371 /topics/{id}/scenarios)
 
 `id`, `topic_id`(FK topic_clusters), `scenario_kind`(ScenarioKind), `weight`(float 0~1 — 현재
-근거 기준 가중치), `expected_flow_direction`(FundFlowDirection), `key_assumptions`(JSON list[str]),
+근거 기준 가중치), `expected_flow_direction`(FundFlowDirection), `expected_net_flow_low`·
+`expected_net_flow_high`(Decimal, nullable)·`expected_net_flow_currency`(str, nullable),
+`key_assumptions`(JSON list[str]),
 `benefiting_sectors`(JSON list[str]), `risk_sectors`(JSON list[str]), `related_symbols`(JSON
 list[str]), `invalidation_conditions`(JSON list[str]), `analysis_version`(str), `created_at`.
 unique: `(topic_id, analysis_version, scenario_kind)`. **버전 누적** — analysis_version별로 3행
@@ -77,15 +88,18 @@ unique: `(topic_id, analysis_version, scenario_kind)`. **버전 누적** — ana
 - query: 없음(3차 골격은 최신 analysis_version 전체 반환. `fund_flow_outlooks`에 market 컬럼이
   없어 시장 필터는 두지 않는다 — 필요 시 컬럼과 파라미터를 함께 추가).
 - 응답: `as_of`, `analysis_version`, `items`[{`sector`·`direction`·`likelihood`·
-  `estimated_range`·`horizon`·`confidence`·`key_assumptions`[]·`risk_factors`[]}].
-- **확정 예측 표현 금지** — "자금 유입 가능성 증가" 수준으로 표기(스펙 §3.6). 자금 숫자는 정량
-  집계, LLM은 방향·가정 서술만. `fund_flow_outlooks` 기반.
+  `estimated_flow`{`low`·`high`(Decimal 문자열)·`currency`} 또는 `null`·`horizon`·`confidence`·
+  `key_assumptions`[]·`risk_factors`[]}].
+- **점 예측 금지, 구간 허용**(ADR-017) — 금액은 하한·상한을 함께 제시하고, 산출되지 않으면
+  `estimated_flow`를 `null`로 둔다. 구간을 대표하는 단일 수치 필드는 두지 않는다. 자금 숫자는
+  정량 집계, LLM은 방향·가정 서술만. `fund_flow_outlooks` 기반.
 
 ### 3.2 `GET /topics/{topic_id}/scenarios` — 자금 흐름 시나리오 (#371)
 
 - 단일 전망이 아니라 3개 시나리오(낙관/기준/보수)를 항상 함께 반환.
 - 응답: `topic_id`, `analysis_version`, `as_of`, `scenarios`[3]{`scenario_kind`·`weight`·
-  `expected_flow_direction`·`key_assumptions`[]·`benefiting_sectors`[]·`risk_sectors`[]·
+  `expected_flow_direction`·`expected_net_flow`{`low`·`high`·`currency`} 또는 `null`·
+  `key_assumptions`[]·`benefiting_sectors`[]·`risk_sectors`[]·
   `related_symbols`[]·`invalidation_conditions`[]}.
 - `weight`는 현재 근거 기준 가중치(합 100% 가능하나 통계적 확률로 과표현 금지). 존재하지 않는
   topic_id는 404. `fund_flow_scenarios` 기반.

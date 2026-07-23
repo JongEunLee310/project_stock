@@ -369,11 +369,27 @@ class TopicEvidenceItem(BaseModel):
     published_at: UtcDatetime
 
 
+class FundFlowRange(BaseModel):
+    low: Decimal
+    high: Decimal
+    currency: str
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> "FundFlowRange":
+        if self.low > self.high:
+            raise ValueError("low must be less than or equal to high")
+        return self
+
+    @field_serializer("low", "high", when_used="json")
+    def serialize_decimal(self, value: Decimal) -> str:
+        return format(value, "f")
+
+
 class FundFlowOutlookItem(BaseModel):
     sector: str
     direction: FundFlowDirection
     likelihood: FlowLikelihood
-    estimated_range: str | None
+    estimated_flow: FundFlowRange | None
     horizon: str
     confidence: float = Field(ge=0.0, le=1.0)
     key_assumptions: list[str]
@@ -390,6 +406,7 @@ class FundFlowScenarioItem(BaseModel):
     scenario_kind: ScenarioKind
     weight: float = Field(ge=0.0, le=1.0)
     expected_flow_direction: FundFlowDirection
+    expected_net_flow: FundFlowRange | None
     key_assumptions: list[str]
     benefiting_sectors: list[str]
     risk_sectors: list[str]

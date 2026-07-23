@@ -52,6 +52,7 @@ from app.domains.news_insights.schema import (
     ExplanationMeta,
     FundFlowOutlookItem,
     FundFlowOutlookResponse,
+    FundFlowRange,
     FundFlowScenarioItem,
     FundFlowScenariosResponse,
     InvestorFlowAvailability,
@@ -506,7 +507,11 @@ class NewsInsightsService:
                     sector=item.sector,
                     direction=FundFlowDirection(item.direction),
                     likelihood=FlowLikelihood(item.likelihood),
-                    estimated_range=item.estimated_range,
+                    estimated_flow=cls._fund_flow_range(
+                        item.estimated_flow_low,
+                        item.estimated_flow_high,
+                        item.estimated_flow_currency,
+                    ),
                     horizon=item.horizon,
                     confidence=item.confidence,
                     key_assumptions=item.key_assumptions,
@@ -538,6 +543,11 @@ class NewsInsightsService:
                     expected_flow_direction=FundFlowDirection(
                         item.expected_flow_direction
                     ),
+                    expected_net_flow=cls._fund_flow_range(
+                        item.expected_net_flow_low,
+                        item.expected_net_flow_high,
+                        item.expected_net_flow_currency,
+                    ),
                     key_assumptions=item.key_assumptions,
                     benefiting_sectors=item.benefiting_sectors,
                     risk_sectors=item.risk_sectors,
@@ -547,6 +557,16 @@ class NewsInsightsService:
                 for item in scenarios
             ],
         )
+
+    @staticmethod
+    def _fund_flow_range(
+        low: Decimal | None,
+        high: Decimal | None,
+        currency: str | None,
+    ) -> FundFlowRange | None:
+        if low is None or high is None or currency is None:
+            return None
+        return FundFlowRange(low=low, high=high, currency=currency)
 
     @classmethod
     def _topic_explanation_response(
