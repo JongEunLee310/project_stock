@@ -22,10 +22,15 @@ from app.domains.news_insights.extraction import (
     extract_events,
 )
 from app.domains.news_insights.ingestion import ingest_source_documents
+from app.domains.news_insights.interpretation import (
+    RuleBasedTopicInterpreter,
+    interpret_topics,
+)
 from app.domains.news_insights.model import (
     AgentRun,
     AgentRunStage,
     EventEvidence,
+    ExplanationFactor,
     ExtractedEvent,
     FundFlowOutlook,
     InvestorFlow,
@@ -34,6 +39,7 @@ from app.domains.news_insights.model import (
     MarketEventTopic,
     SourceDocument,
     TopicCluster,
+    TopicExplanation,
     TopicInsight,
     TopicKeyword,
 )
@@ -203,6 +209,35 @@ def add_clustering_event(
     db.commit()
     db.refresh(event)
     return event
+
+
+def add_interpretation_topic(
+    db: Session,
+    *,
+    slug: str,
+    title: str,
+    mention_count: int = 1,
+    impact_score: float = 0.5,
+    confidence_score: float = 0.5,
+) -> TopicCluster:
+    topic = TopicCluster(
+        slug=slug,
+        title=title,
+        summary=None,
+        category=TopicCategory.MARKET_EVENT.value,
+        mention_count=mention_count,
+        momentum_score=0.5,
+        sentiment_score=0.5,
+        impact_score=impact_score,
+        confidence_score=confidence_score,
+        lifecycle_status=LifecycleStatus.EMERGING.value,
+        first_seen_at=SEEDED_AT,
+        last_activity_at=SEEDED_AT,
+    )
+    db.add(topic)
+    db.commit()
+    db.refresh(topic)
+    return topic
 
 
 def test_extract_events_creates_rule_based_event_and_primary_evidence(
@@ -583,6 +618,173 @@ def test_cluster_topics_returns_zero_counts_without_events(db: Session) -> None:
     assert db.scalar(select(func.count()).select_from(TopicCluster)) == 0
     assert db.scalar(select(func.count()).select_from(TopicKeyword)) == 0
     assert db.scalar(select(func.count()).select_from(KeywordRelation)) == 0
+
+
+def test_interpret_topics_creates_skeleton_with_actual_evidence(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.domains.news_insights.interpretation.utcnow",
+        lambda: SEEDED_AT,
+    )
+    first_event = add_clustering_event(
+        db,
+        event_type=EventType.BUYBACK,
+        sentiment_score=0.7,
+        fingerprint="interpret-buyback-one",
+    )
+    second_event = add_clustering_event(
+        db,
+        event_type=EventType.BUYBACK,
+        sentiment_score=0.3,
+        fingerprint="interpret-buyback-two",
+    )
+    topic = add_interpretation_topic(
+        db,
+        slug="buyback",
+        title="Buyback",
+        mention_count=2,
+        impact_score=0.6,
+        confidence_score=0.7,
+    )
+
+    result = interpret_topics(db, RuleBasedTopicInterpreter())
+
+    insight = db.scalar(select(TopicInsight))
+    explanation = db.scalar(select(TopicExplanation))
+    assert result.created_insight_count == 1
+    assert result.updated_insight_count == 0
+    assert result.created_explanation_count == 1
+    assert result.updated_explanation_count == 0
+    assert result.created_factor_count == 0
+    assert result.skipped_topic_count == 0
+    assert insight is not None
+    assert insight.topic_id == topic.id
+    assert insight.version == 1
+    assert insight.executive_summary == (
+        "Buyback 토픽의 집계 언급 수는 2건입니다."
+    )
+    assert insight.why_it_matters == (
+        "Buyback 토픽의 집계 영향도는 0.60입니다."
+    )
+    assert insight.key_evidence == [
+        {"event_id": first_event.id},
+        {"event_id": second_event.id},
+    ]
+    assert insight.risk_points == [
+        "Buyback 토픽의 위험 요인은 골격 해석기에서 산출하지 않습니다."
+    ]
+    assert insight.counter_arguments == [
+        "Buyback 토픽의 반론은 골격 해석기에서 산출하지 않습니다."
+    ]
+    assert insight.impact_score == 0.6
+    assert insight.confidence_score == 0.7
+    assert insight.model_name == "rule-based-skeleton"
+    assert insight.prompt_version == "v0-skeleton"
+    assert explanation is not None
+    assert explanation.topic_id == topic.id
+    assert explanation.analysis_version == "v0-skeleton"
+    assert explanation.data_coverage == 0.5
+    assert explanation.confidence == 0.5
+    assert explanation.missing_data == ["실 해석기 미도입"]
+    assert explanation.limitations == [
+        "근거 연결이 event_type 기준 재조회"
+    ]
+    assert explanation.already_priced_in is False
+    assert explanation.already_priced_in_note is None
+    assert explanation.last_updated.replace(tzinfo=UTC) == SEEDED_AT
+    assert db.scalar(select(func.count()).select_from(ExplanationFactor)) == 0
+
+
+def test_interpret_topics_skips_topic_without_matching_evidence(
+    db: Session,
+) -> None:
+    add_clustering_event(
+        db,
+        event_type=EventType.BUYBACK,
+        sentiment_score=0.5,
+        fingerprint="interpret-unmatched-event",
+    )
+    add_interpretation_topic(
+        db,
+        slug="regulation",
+        title="Regulation",
+    )
+
+    result = interpret_topics(db, RuleBasedTopicInterpreter())
+
+    assert result.created_insight_count == 0
+    assert result.updated_insight_count == 0
+    assert result.created_explanation_count == 0
+    assert result.updated_explanation_count == 0
+    assert result.created_factor_count == 0
+    assert result.skipped_topic_count == 1
+    assert db.scalar(select(func.count()).select_from(TopicInsight)) == 0
+    assert db.scalar(select(func.count()).select_from(TopicExplanation)) == 0
+
+
+def test_interpret_topics_is_version_idempotent_and_clears_factors(
+    db: Session,
+) -> None:
+    event = add_clustering_event(
+        db,
+        event_type=EventType.REGULATION,
+        sentiment_score=0.5,
+        fingerprint="interpret-idempotent-event",
+    )
+    topic = add_interpretation_topic(
+        db,
+        slug="regulation",
+        title="Regulation",
+    )
+    first_result = interpret_topics(db, RuleBasedTopicInterpreter())
+    explanation = db.scalar(select(TopicExplanation))
+    assert explanation is not None
+    db.add(
+        ExplanationFactor(
+            topic_explanation_id=explanation.id,
+            label="삭제되어야 하는 과거 요인",
+            contribution_ratio=0.5,
+            display_order=1,
+        )
+    )
+    topic.title = "Updated Regulation"
+    db.commit()
+
+    second_result = interpret_topics(db, RuleBasedTopicInterpreter())
+
+    insight = db.scalar(select(TopicInsight))
+    assert first_result.created_insight_count == 1
+    assert first_result.created_explanation_count == 1
+    assert second_result.created_insight_count == 0
+    assert second_result.updated_insight_count == 1
+    assert second_result.created_explanation_count == 0
+    assert second_result.updated_explanation_count == 1
+    assert second_result.created_factor_count == 0
+    assert second_result.skipped_topic_count == 0
+    assert db.scalar(select(func.count()).select_from(TopicInsight)) == 1
+    assert db.scalar(select(func.count()).select_from(TopicExplanation)) == 1
+    assert db.scalar(select(func.count()).select_from(ExplanationFactor)) == 0
+    assert insight is not None
+    assert insight.version == 1
+    assert insight.executive_summary == (
+        "Updated Regulation 토픽의 집계 언급 수는 1건입니다."
+    )
+    assert insight.key_evidence == [{"event_id": event.id}]
+
+
+def test_interpret_topics_returns_zero_counts_without_topics(
+    db: Session,
+) -> None:
+    result = interpret_topics(db, RuleBasedTopicInterpreter())
+
+    assert result.created_insight_count == 0
+    assert result.updated_insight_count == 0
+    assert result.created_explanation_count == 0
+    assert result.updated_explanation_count == 0
+    assert result.created_factor_count == 0
+    assert result.skipped_topic_count == 0
 
 
 def test_source_document_ingestion_maps_all_fields_and_falls_back_published_at(
