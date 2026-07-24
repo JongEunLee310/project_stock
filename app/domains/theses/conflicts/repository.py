@@ -1,8 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.domains.theses.conflict_model import ThesisConflictAnalysis
-from app.domains.theses.conflict_schema import ThesisConflictResult
+from app.domains.theses.conflicts.model import ThesisConflictAnalysis
+from app.domains.theses.conflicts.schema import ThesisConflictResult
 
 
 class ThesisConflictRepository:
