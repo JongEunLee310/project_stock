@@ -7,8 +7,8 @@ from app.adapters.llm.privacy import ThesisConflictSnapshot
 from app.adapters.llm.prompts.thesis_conflict import build_thesis_conflict_system_prompt
 from app.adapters.llm.types import LLMTaskType
 from app.domains.news.model import NewsItem
-from app.domains.theses.conflict_repository import ThesisConflictRepository
-from app.domains.theses.conflict_schema import ThesisConflictResult
+from app.domains.theses.conflicts.repository import ThesisConflictRepository
+from app.domains.theses.conflicts.schema import ThesisConflictResult
 from app.domains.theses.model import InvestmentThesis
 
 

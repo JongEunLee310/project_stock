@@ -14,8 +14,8 @@ from app.adapters.llm.prompts.thesis_conflict import (
 )
 from app.domains.assets.model import Asset
 from app.domains.news.model import NewsItem
-from app.domains.theses.conflict_model import ThesisConflictAnalysis
-from app.domains.theses.conflict_service import ThesisAnalysisService
+from app.domains.theses.conflicts.model import ThesisConflictAnalysis
+from app.domains.theses.conflicts.service import ThesisAnalysisService
 from app.domains.theses.model import InvestmentThesis
 from app.domains.users.model import User
 

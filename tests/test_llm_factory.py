@@ -14,7 +14,7 @@ from app.adapters.llm.mock import MockLLMClient
 from app.adapters.llm.openai import OpenAIClient
 from app.core.config import settings
 from app.domains.news.schema import NewsSummaryResult
-from app.domains.theses.conflict_schema import ThesisConflictResult
+from app.domains.theses.conflicts.schema import ThesisConflictResult
 
 
 def test_get_llm_client_returns_seeded_mock_client() -> None:
