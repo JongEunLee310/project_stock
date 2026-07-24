@@ -4,6 +4,14 @@
     "mode": "local",
     "defaultOutput": "docs/reviews/pr-{number}.md"
   },
+  "skillOverrides": {
+    "fastapi-patterns": "on",
+    "python-testing": "on",
+    "api-design": "on",
+    "coding-standards": "off",
+    "autonomous-agent-harness": "off",
+    "autonomous-loops": "off"
+  },
   "hooks": {
     "PreToolUse": [
       {

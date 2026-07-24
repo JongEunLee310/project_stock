@@ -19,6 +19,16 @@ This template targets Python FastAPI projects managed with uv.
 - Run `uv run mypy .` for type checking.
 - Run `uv run pytest` for tests.
 
+## Skills
+
+Reference the installed backend skills for framework-specific patterns during implementation:
+
+- `.codex/skills/fastapi-patterns/SKILL.md` — project layout, Pydantic v2 schemas, dependency injection, async handlers, auth, transactional services, httpx/pytest testing.
+- `.codex/skills/python-testing/SKILL.md` — pytest strategy, fixtures, parametrization, mocking, coverage.
+- `.codex/skills/api-design/SKILL.md` — REST resource naming, status codes, pagination, filtering, error responses.
+
+These are references, not autonomous workflows. Apply them within the handoff scope only; they never relax the boundaries below. Other skills under `.codex/skills/` are inactive for this project (see `docs/agent/skill-policy.md`).
+
 ## Boundaries
 
 Codex must not:
