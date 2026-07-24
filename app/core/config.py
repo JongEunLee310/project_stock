@@ -91,5 +91,13 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_production_secret_key(self) -> "Settings":
+        if self.APP_ENV == "prod" and self.SECRET_KEY == "change-me-in-production":
+            raise ValueError(
+                "SECRET_KEY=change-me-in-production cannot be used with APP_ENV=prod"
+            )
+        return self
+
 
 settings = Settings()
