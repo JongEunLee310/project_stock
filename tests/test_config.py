@@ -6,9 +6,9 @@ import pytest
 from app.core.config import Settings
 
 
-def _settings_without_env_file() -> Settings:
+def _settings_without_env_file(**values: Any) -> Settings:
     settings_cls = cast(Any, Settings)
-    return cast(Settings, settings_cls(_env_file=None))
+    return cast(Settings, settings_cls(_env_file=None, **values))
 
 
 def _clear_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -174,6 +174,48 @@ def test_settings_reject_wildcard_origin_with_credentials(
 
     with pytest.raises(ValueError, match="CORS_ALLOW_CREDENTIALS"):
         _settings_without_env_file()
+
+
+def test_settings_reject_default_secret_key_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_settings_env(monkeypatch)
+
+    with pytest.raises(ValueError, match="SECRET_KEY"):
+        _settings_without_env_file(
+            APP_ENV="prod",
+            SECRET_KEY="change-me-in-production",
+        )
+
+
+def test_settings_accept_custom_secret_key_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_settings_env(monkeypatch)
+
+    settings = _settings_without_env_file(
+        APP_ENV="prod",
+        SECRET_KEY="production-secret",
+    )
+
+    assert settings.APP_ENV == "prod"
+    assert settings.SECRET_KEY == "production-secret"
+
+
+@pytest.mark.parametrize("app_env", ["dev", "test"])
+def test_settings_accept_default_secret_key_outside_production(
+    monkeypatch: pytest.MonkeyPatch,
+    app_env: str,
+) -> None:
+    _clear_settings_env(monkeypatch)
+
+    settings = _settings_without_env_file(
+        APP_ENV=app_env,
+        SECRET_KEY="change-me-in-production",
+    )
+
+    assert settings.APP_ENV == app_env
+    assert settings.SECRET_KEY == "change-me-in-production"
 
 
 def test_env_example_keys_match_settings_fields() -> None:

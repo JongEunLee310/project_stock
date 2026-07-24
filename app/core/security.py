@@ -19,6 +19,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def decode_token(token: str) -> dict[str, Any]:
+    """JWT의 서명과 만료를 검증하고 payload를 반환한다.
+
+    토큰의 `type`은 검증하지 않으므로 호출자가 용도에 맞는 `type`인지 확인해야 한다.
+    """
     payload: dict[str, Any] = jwt.decode(
         token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
     )
