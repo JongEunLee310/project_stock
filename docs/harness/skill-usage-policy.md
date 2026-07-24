@@ -4,9 +4,13 @@ External AI skills may be used when they match the task and have been installed 
 
 ## Strategy
 
-This repository does not vendor external skills. Skills from `everything-claude-code` or other external sources must be installed manually by each team using this template.
+The `must not exist` / `not committed` rule below applies to the **template repository** during template authoring — the template ships without vendored skills so each team installs what it needs.
 
-The `.claude/skills/` and `.codex/skills/` directories must not exist in this repository. Skills are not committed here.
+A **project derived from the template** may install and commit skills it intentionally uses. This project (`project_stock`) does so: `.claude/skills/` and `.codex/skills/` are committed, and the backend skills `fastapi-patterns`, `python-testing`, `api-design` are activated for implementation and review. Activation and per-skill status are recorded in `docs/agent/skill-policy.md`; the effect on the workflow is noted in `docs/knowledge/workflow.md`.
+
+### Template repository rule
+
+In the template repository, the `.claude/skills/` and `.codex/skills/` directories must not exist and skills are not committed. Skills from `everything-claude-code` or other external sources are installed manually by each team using the template.
 
 ## Rules
 
