@@ -10,6 +10,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domains.news_insights.briefing import validate_evidence_event_ids
+from app.domains.news_insights.clustering import (
+    EventTypeClusterer,
+    cluster_topics,
+)
 from app.domains.news_insights.extraction import (
     EventExtractor,
     ExtractedEventDraft,
@@ -171,6 +175,34 @@ def add_extraction_document(
     db.commit()
     db.refresh(document)
     return document
+
+
+def add_clustering_event(
+    db: Session,
+    *,
+    event_type: EventType,
+    sentiment_score: float,
+    fingerprint: str,
+) -> ExtractedEvent:
+    event = ExtractedEvent(
+        event_type=event_type.value,
+        title=f"{event_type.value} 테스트 이벤트",
+        summary="군집 집계 테스트 이벤트다.",
+        importance_score=0.5,
+        sentiment_direction=SentimentDirection.NEUTRAL.value,
+        sentiment_score=sentiment_score,
+        confidence_score=0.5,
+        occurred_at=None,
+        detected_at=SEEDED_AT,
+        primary_symbol=None,
+        sector_code=None,
+        event_fingerprint=fingerprint,
+        status=EventStatus.ACTIVE.value,
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
 
 
 def test_extract_events_creates_rule_based_event_and_primary_evidence(
@@ -379,6 +411,178 @@ def test_extract_events_rolls_back_document_and_marks_failed(
     assert document.processing_status == ProcessingStatus.FAILED.value
     assert db.scalar(select(func.count()).select_from(ExtractedEvent)) == 0
     assert db.scalar(select(func.count()).select_from(EventEvidence)) == 0
+
+
+def test_cluster_topics_groups_by_event_type_and_aggregates_measured_values(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.domains.news_insights.clustering.utcnow",
+        lambda: SEEDED_AT,
+    )
+    add_clustering_event(
+        db,
+        event_type=EventType.EARNINGS_GUIDANCE,
+        sentiment_score=0.2,
+        fingerprint="earnings-low",
+    )
+    add_clustering_event(
+        db,
+        event_type=EventType.EARNINGS_GUIDANCE,
+        sentiment_score=0.8,
+        fingerprint="earnings-high",
+    )
+    add_clustering_event(
+        db,
+        event_type=EventType.SUPPLY_CONTRACT,
+        sentiment_score=0.7,
+        fingerprint="supply-contract",
+    )
+
+    result = cluster_topics(db, EventTypeClusterer())
+
+    topics = {
+        topic.slug: topic
+        for topic in db.scalars(
+            select(TopicCluster).order_by(TopicCluster.slug)
+        ).all()
+    }
+    keywords = db.scalars(
+        select(TopicKeyword).order_by(TopicKeyword.topic_id)
+    ).all()
+    assert result.created_topic_count == 2
+    assert result.updated_topic_count == 0
+    assert result.created_keyword_count == 2
+    assert result.created_relation_count == 0
+    assert set(topics) == {"earnings-guidance", "supply-contract"}
+    earnings = topics["earnings-guidance"]
+    assert earnings.title == "Earnings Guidance"
+    assert earnings.summary is None
+    assert earnings.category == TopicCategory.EARNINGS.value
+    assert earnings.mention_count == 2
+    assert earnings.sentiment_score == pytest.approx(0.5)
+    assert earnings.momentum_score == 0.5
+    assert earnings.impact_score == 0.5
+    assert earnings.confidence_score == 0.5
+    assert earnings.lifecycle_status == LifecycleStatus.EMERGING.value
+    assert earnings.first_seen_at.replace(tzinfo=UTC) == SEEDED_AT
+    assert earnings.last_activity_at.replace(tzinfo=UTC) == SEEDED_AT
+    supply = topics["supply-contract"]
+    assert supply.category == TopicCategory.SUPPLY_CHAIN.value
+    assert supply.mention_count == 1
+    assert supply.sentiment_score == pytest.approx(0.7)
+    assert [keyword.keyword for keyword in keywords] == [
+        "earnings guidance",
+        "supply contract",
+    ]
+    assert [keyword.weight for keyword in keywords] == [1.0, 1.0]
+    assert [keyword.sentiment_score for keyword in keywords] == pytest.approx(
+        [0.5, 0.7]
+    )
+    assert [keyword.mention_count for keyword in keywords] == [2, 1]
+    assert db.scalar(select(func.count()).select_from(KeywordRelation)) == 0
+
+
+def test_cluster_topics_is_idempotent_and_replaces_topic_derivatives(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.domains.news_insights.clustering.utcnow",
+        lambda: SEEDED_AT,
+    )
+    add_clustering_event(
+        db,
+        event_type=EventType.BUYBACK,
+        sentiment_score=0.6,
+        fingerprint="buyback-one",
+    )
+    first_result = cluster_topics(db, EventTypeClusterer())
+    topic = db.scalar(select(TopicCluster))
+    assert topic is not None
+    db.add(
+        KeywordRelation(
+            topic_id=topic.id,
+            source_keyword="지어낸 출발 키워드",
+            target_keyword="지어낸 도착 키워드",
+            strength=0.5,
+            cooccurrence_count=1,
+        )
+    )
+    db.commit()
+
+    second_result = cluster_topics(db, EventTypeClusterer())
+
+    topic = db.scalar(select(TopicCluster))
+    keyword = db.scalar(select(TopicKeyword))
+    assert first_result.created_topic_count == 1
+    assert first_result.updated_topic_count == 0
+    assert second_result.created_topic_count == 0
+    assert second_result.updated_topic_count == 1
+    assert second_result.created_keyword_count == 1
+    assert second_result.created_relation_count == 0
+    assert db.scalar(select(func.count()).select_from(TopicCluster)) == 1
+    assert db.scalar(select(func.count()).select_from(TopicKeyword)) == 1
+    assert db.scalar(select(func.count()).select_from(KeywordRelation)) == 0
+    assert topic is not None
+    assert topic.mention_count == 1
+    assert topic.lifecycle_status == LifecycleStatus.ACTIVE.value
+    assert keyword is not None
+    assert keyword.keyword == "buyback"
+    assert keyword.mention_count == 1
+
+
+def test_cluster_topics_recalculates_existing_topic_after_new_event(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    processing_time = SEEDED_AT
+    monkeypatch.setattr(
+        "app.domains.news_insights.clustering.utcnow",
+        lambda: processing_time,
+    )
+    add_clustering_event(
+        db,
+        event_type=EventType.REGULATION,
+        sentiment_score=0.3,
+        fingerprint="regulation-one",
+    )
+    cluster_topics(db, EventTypeClusterer())
+    topic = db.scalar(select(TopicCluster))
+    assert topic is not None
+    first_seen_at = topic.first_seen_at
+    first_last_activity_at = topic.last_activity_at
+    add_clustering_event(
+        db,
+        event_type=EventType.REGULATION,
+        sentiment_score=0.9,
+        fingerprint="regulation-two",
+    )
+    processing_time = SEEDED_AT + timedelta(hours=1)
+
+    result = cluster_topics(db, EventTypeClusterer())
+
+    db.refresh(topic)
+    assert result.created_topic_count == 0
+    assert result.updated_topic_count == 1
+    assert topic.mention_count == 2
+    assert topic.sentiment_score == pytest.approx(0.6)
+    assert topic.first_seen_at == first_seen_at
+    assert topic.last_activity_at > first_last_activity_at
+    assert topic.last_activity_at.replace(tzinfo=UTC) == processing_time
+
+
+def test_cluster_topics_returns_zero_counts_without_events(db: Session) -> None:
+    result = cluster_topics(db, EventTypeClusterer())
+
+    assert result.created_topic_count == 0
+    assert result.updated_topic_count == 0
+    assert result.created_keyword_count == 0
+    assert result.created_relation_count == 0
+    assert db.scalar(select(func.count()).select_from(TopicCluster)) == 0
+    assert db.scalar(select(func.count()).select_from(TopicKeyword)) == 0
+    assert db.scalar(select(func.count()).select_from(KeywordRelation)) == 0
 
 
 def test_source_document_ingestion_maps_all_fields_and_falls_back_published_at(
