@@ -1,3 +1,4 @@
+import hashlib
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
@@ -5,8 +6,11 @@ from typing import Any, cast
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.domains.news_insights.briefing import validate_evidence_event_ids
+from app.domains.news_insights.ingestion import ingest_source_documents
 from app.domains.news_insights.model import (
     AgentRun,
     AgentRunStage,
@@ -39,6 +43,7 @@ from app.domains.news_insights.types import (
     SentimentDirection,
     TopicCategory,
 )
+from app.domains.raw_news.model import RawNewsEvent
 from tests.conftest import TestingSessionLocal, api_data, set_current_user
 
 
@@ -106,6 +111,129 @@ def add_source_document(
         session.add(document)
         session.commit()
         return document.id
+
+
+def add_raw_news_event(
+    db: Session,
+    *,
+    title: str = "수집 적재 테스트 뉴스",
+    url: str = "https://example.com/news/1",
+    body: str | None = "테스트 뉴스 본문",
+    source: str = "테스트 - Google 뉴스",
+    published_at: datetime | None = SEEDED_AT - timedelta(hours=1),
+    collected_at: datetime = SEEDED_AT,
+) -> RawNewsEvent:
+    event = RawNewsEvent(
+        title=title,
+        url=url,
+        body=body,
+        source=source,
+        published_at=published_at,
+        collected_at=collected_at,
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+def test_source_document_ingestion_maps_all_fields_and_falls_back_published_at(
+    db: Session,
+) -> None:
+    raw = add_raw_news_event(
+        db,
+        title="삼성전자 공급계약 체결",
+        url="https://EXAMPLE.com/news/contract/?utm_source=rss#summary",
+        body="삼성전자가 장기 공급계약을 체결했다.",
+        source="삼성전자 - Google 뉴스",
+        published_at=None,
+        collected_at=SEEDED_AT,
+    )
+
+    result = ingest_source_documents(db)
+
+    document = db.scalar(select(SourceDocument))
+    assert result.inserted_count == 1
+    assert result.skipped_count == 0
+    assert result.duplicate_count == 0
+    assert document is not None
+    assert document.document_type == DocumentType.NEWS.value
+    assert document.source_name == raw.source
+    assert document.source_url == raw.url
+    assert document.external_id == str(raw.id)
+    assert document.title == raw.title
+    assert document.raw_content == raw.body
+    assert document.normalized_content is None
+    assert document.language == "ko"
+    assert document.published_at == raw.collected_at
+    assert document.collected_at == raw.collected_at
+    assert document.content_hash == hashlib.sha256(
+        (
+            "https://example.com/news/contract?utm_source=rss"
+            "삼성전자 공급계약 체결"
+        ).encode()
+    ).hexdigest()
+    assert document.source_reliability == 0.5
+    assert document.processing_status == ProcessingStatus.PENDING.value
+
+
+def test_source_document_ingestion_skips_raw_event_without_body(
+    db: Session,
+) -> None:
+    add_raw_news_event(db, body=None)
+
+    result = ingest_source_documents(db)
+
+    assert result.inserted_count == 0
+    assert result.skipped_count == 1
+    assert result.duplicate_count == 0
+    assert db.scalar(select(func.count()).select_from(SourceDocument)) == 0
+
+
+def test_source_document_ingestion_is_idempotent(db: Session) -> None:
+    add_raw_news_event(db)
+
+    first_result = ingest_source_documents(db)
+    second_result = ingest_source_documents(db)
+
+    assert first_result.inserted_count == 1
+    assert first_result.skipped_count == 0
+    assert first_result.duplicate_count == 0
+    assert second_result.inserted_count == 0
+    assert second_result.skipped_count == 0
+    assert second_result.duplicate_count == 1
+    assert db.scalar(select(func.count()).select_from(SourceDocument)) == 1
+
+
+def test_source_document_ingestion_counts_normalized_url_hash_collision(
+    db: Session,
+) -> None:
+    add_raw_news_event(
+        db,
+        title="동일 뉴스",
+        url="https://EXAMPLE.com/news/same/#first",
+    )
+    add_raw_news_event(
+        db,
+        title="동일 뉴스",
+        url="https://example.com/news/same#second",
+    )
+
+    result = ingest_source_documents(db)
+
+    assert result.inserted_count == 1
+    assert result.skipped_count == 0
+    assert result.duplicate_count == 1
+    assert db.scalar(select(func.count()).select_from(SourceDocument)) == 1
+
+
+def test_source_document_ingestion_handles_empty_source(db: Session) -> None:
+    result = ingest_source_documents(db)
+
+    assert result.inserted_count == 0
+    assert result.skipped_count == 0
+    assert result.duplicate_count == 0
+    assert db.scalar(select(func.count()).select_from(SourceDocument)) == 0
 
 
 def test_overview_returns_four_summary_metrics_and_grounded_briefing(
