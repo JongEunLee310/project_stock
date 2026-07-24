@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.domains.news_insights.briefing import validate_evidence_event_ids
 from app.domains.news_insights.clustering import (
+    EventClusterer,
     EventTypeClusterer,
+    TopicClusterDraft,
     cluster_topics,
 )
 from app.domains.news_insights.extraction import (
@@ -43,6 +45,7 @@ from app.domains.news_insights.model import (
     TopicInsight,
     TopicKeyword,
 )
+from app.domains.news_insights.pipeline import run_pipeline
 from app.domains.news_insights.schema import FundFlowRange
 from app.domains.news_insights.seed import seed_mock_news_insights
 from app.domains.news_insights.types import (
@@ -884,6 +887,162 @@ def test_source_document_ingestion_handles_empty_source(db: Session) -> None:
     assert result.skipped_count == 0
     assert result.duplicate_count == 0
     assert db.scalar(select(func.count()).select_from(SourceDocument)) == 0
+
+
+def test_pipeline_records_measured_summary_and_actual_stages(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.domains.news_insights.pipeline.utcnow",
+        lambda: SEEDED_AT,
+    )
+    add_raw_news_event(
+        db,
+        title="반도체 장기 공급계약 체결",
+        body="회사는 장기 공급계약 체결로 매출 증가를 기대한다고 밝혔다.",
+    )
+    rising_topic = add_interpretation_topic(
+        db,
+        slug="rising-topic",
+        title="Rising Topic",
+    )
+    active_topic = add_interpretation_topic(
+        db,
+        slug="active-topic",
+        title="Active Topic",
+    )
+    cooling_topic = add_interpretation_topic(
+        db,
+        slug="cooling-topic",
+        title="Cooling Topic",
+    )
+    rising_topic.lifecycle_status = LifecycleStatus.RISING.value
+    active_topic.lifecycle_status = LifecycleStatus.ACTIVE.value
+    cooling_topic.lifecycle_status = LifecycleStatus.COOLING.value
+    db.commit()
+
+    result = run_pipeline(
+        db,
+        RuleBasedEventExtractor(),
+        EventTypeClusterer(),
+        RuleBasedTopicInterpreter(),
+    )
+
+    run = db.get(AgentRun, result.agent_run_id)
+    stages = db.scalars(
+        select(AgentRunStage).order_by(AgentRunStage.id)
+    ).all()
+    assert result.ingestion_result.inserted_count == 1
+    assert result.extraction_result.processed_document_count == 1
+    assert result.extraction_result.created_event_count == 1
+    assert result.clustering_result.created_topic_count == 1
+    assert result.interpretation_result.created_insight_count == 1
+    assert run is not None
+    assert run.status == AgentRunStatus.COMPLETED.value
+    assert run.processed_documents == 1
+    assert run.extracted_events == 1
+    assert run.active_topics == 3
+    assert run.analysis_version == "rule-based-skeleton"
+    assert run.started_at.replace(tzinfo=UTC) == SEEDED_AT
+    assert run.finished_at is not None
+    assert run.finished_at.replace(tzinfo=UTC) == SEEDED_AT
+    assert [
+        (stage.stage, stage.status, stage.delayed) for stage in stages
+    ] == [
+        (AgentStage.COLLECT.value, AgentRunStatus.COMPLETED.value, False),
+        (AgentStage.EXTRACT.value, AgentRunStatus.COMPLETED.value, False),
+        (AgentStage.CLUSTER.value, AgentRunStatus.COMPLETED.value, False),
+        (AgentStage.LINK.value, AgentRunStatus.COMPLETED.value, False),
+    ]
+    assert {
+        stage.stage for stage in stages
+    }.isdisjoint(
+        {
+            AgentStage.NORMALIZE.value,
+            AgentStage.SENTIMENT.value,
+            AgentStage.IMPACT.value,
+        }
+    )
+
+
+class FailingClusterer(EventClusterer):
+    def cluster(
+        self,
+        events: list[ExtractedEvent],
+    ) -> list[TopicClusterDraft]:
+        raise RuntimeError("cluster failed")
+
+
+def test_pipeline_records_failed_run_and_stage(db: Session) -> None:
+    add_raw_news_event(
+        db,
+        title="규제 강화 발표",
+        body="당국이 신규 규제를 발표했다.",
+    )
+
+    with pytest.raises(RuntimeError, match="cluster failed"):
+        run_pipeline(
+            db,
+            RuleBasedEventExtractor(),
+            FailingClusterer(),
+            RuleBasedTopicInterpreter(),
+        )
+
+    run = db.scalar(select(AgentRun))
+    stages = db.scalars(
+        select(AgentRunStage).order_by(AgentRunStage.id)
+    ).all()
+    assert run is not None
+    assert run.status == AgentRunStatus.FAILED.value
+    assert run.finished_at is not None
+    assert run.processed_documents == 1
+    assert run.extracted_events == 1
+    assert run.active_topics == 0
+    assert [
+        (stage.stage, stage.status) for stage in stages
+    ] == [
+        (AgentStage.COLLECT.value, AgentRunStatus.COMPLETED.value),
+        (AgentStage.EXTRACT.value, AgentRunStatus.COMPLETED.value),
+        (AgentStage.CLUSTER.value, AgentRunStatus.FAILED.value),
+    ]
+
+
+def test_pipeline_appends_run_and_records_zero_reprocessed_counts(
+    db: Session,
+) -> None:
+    add_raw_news_event(
+        db,
+        title="자사주 매입 결정",
+        body="회사가 자사주 매입을 결정해 주주환원을 강화한다.",
+    )
+    first_result = run_pipeline(
+        db,
+        RuleBasedEventExtractor(),
+        EventTypeClusterer(),
+        RuleBasedTopicInterpreter(),
+    )
+
+    second_result = run_pipeline(
+        db,
+        RuleBasedEventExtractor(),
+        EventTypeClusterer(),
+        RuleBasedTopicInterpreter(),
+    )
+
+    runs = db.scalars(select(AgentRun).order_by(AgentRun.id)).all()
+    stages = db.scalars(select(AgentRunStage)).all()
+    assert len(runs) == 2
+    assert [run.id for run in runs] == [
+        first_result.agent_run_id,
+        second_result.agent_run_id,
+    ]
+    assert runs[0].processed_documents == 1
+    assert runs[0].extracted_events == 1
+    assert runs[1].processed_documents == 0
+    assert runs[1].extracted_events == 0
+    assert runs[1].active_topics == 1
+    assert len(stages) == 8
 
 
 def test_overview_returns_four_summary_metrics_and_grounded_briefing(
