@@ -1,7 +1,7 @@
 import json
 
 from app.adapters.llm.prompts.language import KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION
-from app.domains.theses.conflict_schema import ThesisConflictResult
+from app.domains.theses.conflicts.schema import ThesisConflictResult
 
 
 def build_thesis_conflict_system_prompt() -> str:

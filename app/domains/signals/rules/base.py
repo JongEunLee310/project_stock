@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from app.domains.news.model import NewsItem
 from app.domains.signals.schema import SignalCreate
-from app.domains.theses.conflict_schema import ThesisConflictResult
+from app.domains.theses.conflicts.schema import ThesisConflictResult
 from app.domains.theses.model import InvestmentThesis
 
 

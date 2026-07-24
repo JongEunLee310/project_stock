@@ -15,7 +15,7 @@ from app.domains.signals.rules import (
 )
 from app.domains.signals.schema import SignalCreate
 from app.domains.signals.types import SignalType
-from app.domains.theses.conflict_schema import ThesisConflictResult
+from app.domains.theses.conflicts.schema import ThesisConflictResult
 from app.domains.theses.model import InvestmentThesis
 from app.domains.users.model import User
 

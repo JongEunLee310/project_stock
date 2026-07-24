@@ -19,8 +19,8 @@ from app.domains.reports.schema import ResearchReportCreate
 from app.domains.reports.service import ResearchReportService
 from app.domains.signals.repository import SignalRepository
 from app.domains.signals.rules import RuleContext, RuleEngine, default_rules
-from app.domains.theses.conflict_schema import ThesisConflictResult
-from app.domains.theses.conflict_service import ThesisAnalysisService
+from app.domains.theses.conflicts.schema import ThesisConflictResult
+from app.domains.theses.conflicts.service import ThesisAnalysisService
 from app.domains.theses.model import InvestmentThesis
 from app.domains.theses.repository import ThesisRepository
 from app.domains.watchlists.repository import (
