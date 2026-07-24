@@ -10,6 +10,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domains.news_insights.briefing import validate_evidence_event_ids
+from app.domains.news_insights.extraction import (
+    EventExtractor,
+    ExtractedEventDraft,
+    EvidenceDraft,
+    RuleBasedEventExtractor,
+    extract_events,
+)
 from app.domains.news_insights.ingestion import ingest_source_documents
 from app.domains.news_insights.model import (
     AgentRun,
@@ -135,6 +142,243 @@ def add_raw_news_event(
     db.commit()
     db.refresh(event)
     return event
+
+
+def add_extraction_document(
+    db: Session,
+    *,
+    title: str,
+    raw_content: str,
+    content_hash: str,
+    processing_status: ProcessingStatus = ProcessingStatus.PENDING,
+) -> SourceDocument:
+    document = SourceDocument(
+        document_type=DocumentType.NEWS.value,
+        source_name="테스트 뉴스",
+        source_url=f"https://example.com/extraction/{content_hash}",
+        external_id=None,
+        title=title,
+        raw_content=raw_content,
+        normalized_content=None,
+        language="ko",
+        published_at=SEEDED_AT - timedelta(hours=1),
+        collected_at=SEEDED_AT,
+        content_hash=content_hash,
+        source_reliability=0.5,
+        processing_status=processing_status.value,
+    )
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+def test_extract_events_creates_rule_based_event_and_primary_evidence(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.domains.news_insights.extraction.utcnow",
+        lambda: SEEDED_AT,
+    )
+    document = add_extraction_document(
+        db,
+        title="반도체 장기 공급계약 체결",
+        raw_content="회사는 장기 공급계약 체결로 매출 증가를 기대한다고 밝혔다.",
+        content_hash="rule-matched-document",
+    )
+
+    result = extract_events(db, RuleBasedEventExtractor())
+
+    event = db.scalar(select(ExtractedEvent))
+    evidence = db.scalar(select(EventEvidence))
+    db.refresh(document)
+    assert result.processed_document_count == 1
+    assert result.created_event_count == 1
+    assert result.created_evidence_count == 1
+    assert result.idempotent_skip_count == 0
+    assert result.failed_document_count == 0
+    assert event is not None
+    assert event.event_type == EventType.SUPPLY_CONTRACT.value
+    assert event.title == document.title
+    assert event.summary == document.raw_content
+    assert event.importance_score == 0.5
+    assert event.sentiment_direction == SentimentDirection.POSITIVE.value
+    assert event.sentiment_score == 0.5
+    assert event.confidence_score == 0.5
+    assert event.occurred_at is None
+    assert event.detected_at.replace(tzinfo=UTC) == SEEDED_AT
+    assert event.primary_symbol is None
+    assert event.sector_code is None
+    assert event.event_fingerprint == hashlib.sha256(
+        f"{EventType.SUPPLY_CONTRACT.value}||{document.content_hash}".encode()
+    ).hexdigest()
+    assert event.status == EventStatus.ACTIVE.value
+    assert evidence is not None
+    assert evidence.event_id == event.id
+    assert evidence.document_id == document.id
+    assert evidence.relevance_score == 0.5
+    assert evidence.evidence_role == EvidenceRole.PRIMARY.value
+    assert evidence.extracted_quote is None
+    assert document.processing_status == ProcessingStatus.EXTRACTED.value
+
+
+def test_extract_events_marks_unmatched_document_extracted_without_event(
+    db: Session,
+) -> None:
+    document = add_extraction_document(
+        db,
+        title="일반 기업 소식",
+        raw_content="회사가 새로운 사무실을 열었다.",
+        content_hash="rule-unmatched-document",
+    )
+
+    result = extract_events(db, RuleBasedEventExtractor())
+
+    db.refresh(document)
+    assert result.processed_document_count == 1
+    assert result.created_event_count == 0
+    assert result.created_evidence_count == 0
+    assert result.idempotent_skip_count == 0
+    assert result.failed_document_count == 0
+    assert document.processing_status == ProcessingStatus.EXTRACTED.value
+    assert db.scalar(select(func.count()).select_from(ExtractedEvent)) == 0
+    assert db.scalar(select(func.count()).select_from(EventEvidence)) == 0
+
+
+class FailingIfCalledExtractor(EventExtractor):
+    def extract(self, document: SourceDocument) -> list[ExtractedEventDraft]:
+        raise AssertionError(f"unexpected extraction: {document.id}")
+
+
+def test_extract_events_excludes_already_extracted_document(db: Session) -> None:
+    add_extraction_document(
+        db,
+        title="자사주 매입 결정",
+        raw_content="회사가 자사주 매입을 결정했다.",
+        content_hash="already-extracted-document",
+        processing_status=ProcessingStatus.EXTRACTED,
+    )
+
+    result = extract_events(db, FailingIfCalledExtractor())
+
+    assert result.processed_document_count == 0
+    assert result.created_event_count == 0
+    assert result.created_evidence_count == 0
+    assert result.idempotent_skip_count == 0
+    assert result.failed_document_count == 0
+
+
+def test_extract_events_skips_existing_fingerprint_when_document_is_requeued(
+    db: Session,
+) -> None:
+    document = add_extraction_document(
+        db,
+        title="자사주 매입 결정",
+        raw_content="회사가 자사주 매입을 결정했다.",
+        content_hash="idempotent-document",
+    )
+    first_result = extract_events(db, RuleBasedEventExtractor())
+    document.processing_status = ProcessingStatus.PENDING.value
+    db.commit()
+
+    second_result = extract_events(db, RuleBasedEventExtractor())
+
+    db.refresh(document)
+    assert first_result.created_event_count == 1
+    assert first_result.created_evidence_count == 1
+    assert second_result.processed_document_count == 1
+    assert second_result.created_event_count == 0
+    assert second_result.created_evidence_count == 0
+    assert second_result.idempotent_skip_count == 1
+    assert second_result.failed_document_count == 0
+    assert document.processing_status == ProcessingStatus.EXTRACTED.value
+    assert db.scalar(select(func.count()).select_from(ExtractedEvent)) == 1
+    assert db.scalar(select(func.count()).select_from(EventEvidence)) == 1
+
+
+def test_extract_events_returns_zero_counts_without_pending_documents(
+    db: Session,
+) -> None:
+    result = extract_events(db, FailingIfCalledExtractor())
+
+    assert result.processed_document_count == 0
+    assert result.created_event_count == 0
+    assert result.created_evidence_count == 0
+    assert result.idempotent_skip_count == 0
+    assert result.failed_document_count == 0
+
+
+class PartiallyInvalidExtractor(EventExtractor):
+    def extract(self, document: SourceDocument) -> list[ExtractedEventDraft]:
+        return [
+            self._draft(
+                document,
+                title="유효한 첫 이벤트",
+                event_fingerprint="valid-first-event",
+                evidence=(
+                    EvidenceDraft(
+                        evidence_role=EvidenceRole.PRIMARY,
+                        relevance_score=0.5,
+                        extracted_quote=None,
+                    ),
+                ),
+            ),
+            self._draft(
+                document,
+                title="근거 없는 두 번째 이벤트",
+                event_fingerprint="invalid-second-event",
+                evidence=(),
+            ),
+        ]
+
+    def _draft(
+        self,
+        document: SourceDocument,
+        *,
+        title: str,
+        event_fingerprint: str,
+        evidence: tuple[EvidenceDraft, ...],
+    ) -> ExtractedEventDraft:
+        return ExtractedEventDraft(
+            event_type=EventType.REGULATION,
+            title=title,
+            summary=document.raw_content,
+            sentiment_direction=SentimentDirection.NEUTRAL,
+            sentiment_score=0.5,
+            importance_score=0.5,
+            confidence_score=0.5,
+            occurred_at=None,
+            detected_at=SEEDED_AT,
+            primary_symbol=None,
+            sector_code=None,
+            event_fingerprint=event_fingerprint,
+            status=EventStatus.ACTIVE,
+            evidence=evidence,
+        )
+
+
+def test_extract_events_rolls_back_document_and_marks_failed(
+    db: Session,
+) -> None:
+    document = add_extraction_document(
+        db,
+        title="규제 발표",
+        raw_content="정부가 새로운 규제를 발표했다.",
+        content_hash="failed-document",
+    )
+
+    result = extract_events(db, PartiallyInvalidExtractor())
+
+    db.refresh(document)
+    assert result.processed_document_count == 1
+    assert result.created_event_count == 0
+    assert result.created_evidence_count == 0
+    assert result.idempotent_skip_count == 0
+    assert result.failed_document_count == 1
+    assert document.processing_status == ProcessingStatus.FAILED.value
+    assert db.scalar(select(func.count()).select_from(ExtractedEvent)) == 0
+    assert db.scalar(select(func.count()).select_from(EventEvidence)) == 0
 
 
 def test_source_document_ingestion_maps_all_fields_and_falls_back_published_at(
