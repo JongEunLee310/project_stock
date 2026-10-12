@@ -297,7 +297,7 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 | ID | 질문 | 해소 시점 |
 |---|---|---|
 | OQ1 | `OPENAI_BASE_URL` 프록시가 임베딩 엔드포인트를 지원하는가. 지원하지 않으면 `EMBEDDING_BASE_URL`·`EMBEDDING_API_KEY` 설정을 따로 두고 기본값은 `OPENAI_*`를 따른다 | #440 착수 시 실제 호출로 확인 |
-| OQ2 | 기존 Postgres 데이터 볼륨을 `pgvector/pgvector:pg16` 이미지로 바꿔도 그대로 쓸 수 있는가. 두 이미지의 기반 배포판(alpine, debian)이 달라 collation 경고가 날 수 있다 | #439에서 로컬 볼륨으로 확인하고 절차를 PR에 기록 |
+| OQ2 | **해소(2026-10-12).** 기존 볼륨으로 기동은 되지만 텍스트 btree 인덱스가 손상된다. alpine(musl)에서 만든 `en_US.utf8` 인덱스를 debian(glibc 2.36)에서 읽기 때문이다. 볼륨 복제본에서 amcheck(`bt_index_check`) 결과 32개 중 2개(`uq_raw_news_events_url`, `ix_fund_flow_outlooks_analysis_version_sector`)가 손상됐고, `REINDEX DATABASE stock_db` 후 0개가 됐다. 이후 `alembic upgrade head`가 실데이터에 정상 적용됐다. 기존 볼륨 전환 절차는 §12를 따른다 | #439 |
 | OQ3 | `source_documents` 적재가 상시 운영되면 코퍼스 원본을 그쪽으로 옮길 것인가 | 뉴스 인텔리전스 파이프라인 스케줄 확정 시 |
 | OQ4 | `raw_news_events.body`의 실제 길이 분포. `SUMMARY`·`TITLE_ONLY` 비율이 높으면 근거 품질이 낮다 | #441 backfill 후 기록 |
 
@@ -313,3 +313,18 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 
 신규 ADR은 필요 없다. 배치, 저장소, 경계 규칙은 ADR-018에서 결정했고, 클라우드 경계는
 ADR-009를 적용한다(`ResearchQASnapshot`).
+
+## 12. 기존 로컬 볼륨 전환 절차
+
+이미지를 바꾼 뒤 기존 `postgres_data` 볼륨을 계속 쓰려면 앱보다 먼저 인덱스를 다시 만든다.
+손상된 unique 인덱스를 그대로 두면 중복 행이 들어가거나 조회가 누락될 수 있다.
+
+1. 앱·워커를 멈춘 상태에서 postgres 서비스만 새 이미지로 기동한다.
+2. `REINDEX DATABASE stock_db`를 실행한다.
+3. 필요하면 `amcheck` 확장의 `bt_index_check`로 텍스트 btree 인덱스를 검사한다.
+4. `alembic upgrade head`로 `document_chunks`를 만든다.
+5. 앱·워커를 기동한다.
+
+`ALTER DATABASE ... REFRESH COLLATION VERSION`은 alpine에서 collation 버전이 기록되지 않아
+오류가 나므로 실행하지 않는다. 배포 환경도 같은 이미지 교체를 하면 같은 절차가 필요하다.
+

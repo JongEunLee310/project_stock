@@ -47,6 +47,7 @@ exclude = "^scripts/"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["postgres: requires a pgvector Postgres database via TEST_POSTGRES_URL"]
 addopts = "--cov=app --cov-report=xml --cov-report=term-missing"
 
 [tool.coverage.run]

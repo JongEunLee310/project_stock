@@ -60,7 +60,7 @@ services:
     command: sh -c 'exec rq cron app/scheduler/cron_config.py -u "$$REDIS_URL"'
 
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
