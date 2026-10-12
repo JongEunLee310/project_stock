@@ -192,9 +192,15 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
   `embedding_model`을 담는 값 객체다.
 - 노트 구성: frontmatter(`symbol`, `asset_name`, `question`, `generated_at`, `embedding_model`, `source_count`,
   `insufficient_evidence`, `tags: [stock-agent, research-qa]`), 본문(질문, 답변과 인용, 한계,
-  근거 목록, `[[SYMBOL]]` wikilink)
-- frontmatter 문자열은 JSON 방식의 따옴표·이스케이프로 YAML에 안전하게 직렬화한다.
-  `insufficient_evidence=true`여도 부족한 이유를 인용한 답변 항목을 안내와 함께 표시한다.
+  근거 각주 정의, `[[SYMBOL]]` wikilink)
+- frontmatter 문자열은 `json.dumps(..., ensure_ascii=False)`로 한글을 그대로 표시하면서
+  따옴표·역슬래시·줄바꿈·제어 문자를 이스케이프해 YAML에 안전하게 직렬화한다.
+- 답변 항목은 `- {text}[^1][^2]` 형식으로 본문 끝에 공백 없이 Obsidian 각주를 붙인다.
+  `## 근거`에는 `[^{id}]: [{title}]({source_url}) — {source_name}, {날짜}` 형식의 정의를
+  빈 줄로 구분해 기록한다. 답변에서 인용하지 않은 근거도 모두 남기며, 제목의 `[`와 `]`는
+  역슬래시로 이스케이프한다.
+- `insufficient_evidence=true`여도 부족한 이유를 인용한 답변 항목을
+  `근거가 부족합니다.` 안내와 함께 표시한다.
 - 근거가 0건인 답변도 저장 요청이 있으면 질문과 부족 사유를 기록한다. 설정 부재 또는
   `OSError`·`ValueError` 발생 시 경고 로그를 남기고 Q&A 응답은 유지한다.
 - compose: 로컬 `backend`에만 `${OBSIDIAN_VAULT_HOST_PATH:-./.obsidian-vault}:/vault`를

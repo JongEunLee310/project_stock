@@ -32,7 +32,10 @@ def render_research_note(note: ResearchNote) -> str:
     }
     # JSON scalars are also YAML scalars and escape quotes and control characters.
     lines = ["---"]
-    lines.extend(f"{key}: {json.dumps(value)}" for key, value in metadata.items())
+    lines.extend(
+        f"{key}: {json.dumps(value, ensure_ascii=False)}"
+        for key, value in metadata.items()
+    )
     lines.extend(
         [
             "tags: [stock-agent, research-qa]",
@@ -51,22 +54,22 @@ def render_research_note(note: ResearchNote) -> str:
         ]
     )
     if answer.insufficient_evidence:
-        lines.extend(["근거가 부족합니다", ""])
+        lines.extend(["근거가 부족합니다.", ""])
     for point in answer.answer_points:
-        citations = "".join(f"[{citation}]" for citation in point.citations)
-        lines.append(f"- {point.text} {citations}")
+        citations = "".join(f"[^{citation}]" for citation in point.citations)
+        lines.append(f"- {point.text}{citations}")
     if answer.limitations:
         lines.extend(["", "## 한계", "", answer.limitations])
     lines.extend(["", "## 근거", ""])
     for item in answer.evidence:
         published = item.published_at.date().isoformat() if item.published_at else ""
+        title = item.title.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
         lines.append(
-            f"[{item.id}] [{item.title}]({item.source_url}) — "
+            f"[^{item.id}]: [{title}]({item.source_url}) — "
             f"{item.source_name}, {published}"
         )
-    lines.extend(
-        ["", "이 노트는 stock-agent가 생성했습니다. 매수·매도 권유가 아닙니다.", ""]
-    )
+        lines.append("")
+    lines.extend(["이 노트는 stock-agent가 생성했습니다. 매수·매도 권유가 아닙니다.", ""])
     return "\n".join(lines)
 
 

@@ -64,11 +64,13 @@ def test_render_frontmatter_and_body() -> None:
         "insufficient_evidence": False,
     }
     assert metadata[-1] == "tags: [stock-agent, research-qa]"
+    assert 'question: "성장: \\"근거\\"\\n다음 질문?"' in metadata
+    assert 'asset_name: "NVIDIA: \\"기업\\""' in metadata
     assert f"# {research.asset_name}(NVDA) 리서치 Q&A" in rendered
     assert "[[NVDA]]" in rendered
     assert f"## 질문\n\n{research.question}" in rendered
-    assert "- 제품 출시 [1][3]" in rendered
-    assert "[1] [출시 소식](https://example.com/news) — 매체, 2026-10-11" in rendered
+    assert "- 제품 출시[^1][^3]" in rendered
+    assert "[^1]: [출시 소식](https://example.com/news) — 매체, 2026-10-11" in rendered
     assert "## 한계" not in rendered
     assert rendered.endswith(
         "이 노트는 stock-agent가 생성했습니다. 매수·매도 권유가 아닙니다.\n"
@@ -80,10 +82,40 @@ def test_render_insufficient_evidence_retains_points_and_limitations() -> None:
     research.answer.insufficient_evidence = True
     research.answer.limitations = "추가 근거 필요"
     rendered = render_research_note(research)
-    assert "## 답변\n\n근거가 부족합니다\n\n- 제품 출시 [1][3]" in rendered
+    assert "## 답변\n\n근거가 부족합니다.\n\n- 제품 출시[^1][^3]" in rendered
     assert "## 한계\n\n추가 근거 필요" in rendered
     research.answer.evidence[0].published_at = None
     assert "— 매체, \n" in render_research_note(research)
+
+
+def test_render_frontmatter_escapes_special_characters() -> None:
+    question = '한글 "질문"\\경로\n다음\r\t\x00\x1f'
+    rendered = render_research_note(replace(note(), question=question))
+    metadata = rendered.split("---\n")[1].splitlines()
+    question_line = next(line for line in metadata if line.startswith("question: "))
+    assert question_line == (
+        'question: "한글 \\"질문\\"\\\\경로\\n다음\\r\\t\\u0000\\u001f"'
+    )
+    assert json.loads(question_line.removeprefix("question: ")) == question
+
+
+def test_render_all_evidence_as_separated_footnotes() -> None:
+    research = note()
+    first = research.answer.evidence[0]
+    research.answer.evidence.extend(
+        [
+            first.model_copy(update={"id": 2, "title": "미인용 근거"}),
+            first.model_copy(update={"id": 3, "title": "[신제품] 출시"}),
+        ]
+    )
+    rendered = render_research_note(research)
+    assert "- 제품 출시[^1][^3]\n" in rendered
+    evidence_section = rendered.split("## 근거\n\n", 1)[1]
+    assert evidence_section.startswith(
+        "[^1]: [출시 소식](https://example.com/news) — 매체, 2026-10-11\n\n"
+        "[^2]: [미인용 근거](https://example.com/news) — 매체, 2026-10-11\n\n"
+        "[^3]: [\\[신제품\\] 출시](https://example.com/news) — 매체, 2026-10-11\n\n"
+    )
 
 
 @pytest.mark.parametrize(
