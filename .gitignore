@@ -19,3 +19,5 @@ htmlcov/
 .env*
 !.env.example
 
+
+.obsidian-vault/

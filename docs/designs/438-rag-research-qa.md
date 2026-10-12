@@ -177,16 +177,35 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 
 구현체가 하나라 ABC는 두지 않는다. 3차 읽기(#446)에서 필요하면 그때 분리한다.
 
-- `write_research_note(note: ResearchNote) -> Path` — 새 파일을 만들고 경로를 반환한다.
-  같은 이름이 있으면 `-2`, `-3` 접미사를 붙이며 기존 파일은 열지 않는다.
+- `write_research_note(note: ResearchNote) -> Path` — 새 파일을 만들고 vault 기준 상대 경로를 반환한다.
+  배타적 생성 모드(`open(..., "x")`)로 만들고 같은 이름이면 `-2`, `-3` 접미사를 붙인다.
+  최대 100회 시도하며(가정), 기존 파일은 읽거나 수정하지 않는다.
 - 설정: `OBSIDIAN_VAULT_PATH: str | None`(미설정이면 비활성), `OBSIDIAN_EXPORT_DIR`(기본
   `stock-agent`)
 - 경로: `{vault}/{export_dir}/research/{SYMBOL}/{YYYY-MM-DD}-{question-slug}.md`. slug는
-  질문 앞부분 최대 40자(가정)를 파일명 안전 문자로 바꾼 것이다.
-- 노트 구성: frontmatter(`symbol`, `question`, `generated_at`, `embedding_model`, `source_count`,
+  질문 앞부분 최대 40자(가정)에서 금지 문자(`/ \ : * ? " < > | # ^ [ ]`)와 공백을
+  `-`로 바꾸고, 연속 `-`를 합친 뒤 앞뒤 `-`를 제거한다. 한글은 유지하며 비면 `question`이다.
+  날짜는 `generated_at`을 `Asia/Seoul`로 변환한 날짜다(가정).
+- `symbol`과 export 경로의 경로 탈출을 차단하고, symlink를 해석한 최종 경로가 vault 아래인지
+  확인한다. 하위 디렉터리는 만들지만 vault 자체가 없으면 `FileNotFoundError`를 낸다.
+- `ResearchNote`는 `symbol`, `asset_name`, `question`, `answer: ResearchAnswer`,
+  `embedding_model`을 담는 값 객체다.
+- 노트 구성: frontmatter(`symbol`, `asset_name`, `question`, `generated_at`, `embedding_model`, `source_count`,
   `insufficient_evidence`, `tags: [stock-agent, research-qa]`), 본문(질문, 답변과 인용, 한계,
-  근거 목록, `[[SYMBOL]]` wikilink)
-- compose: 로컬 BE 서비스에만 vault 볼륨을 마운트한다. 경로는 환경변수로 받는다.
+  근거 각주 정의, `[[SYMBOL]]` wikilink)
+- frontmatter 문자열은 `json.dumps(..., ensure_ascii=False)`로 한글을 그대로 표시하면서
+  따옴표·역슬래시·줄바꿈·제어 문자를 이스케이프해 YAML에 안전하게 직렬화한다.
+- 답변 항목은 `- {text}[^1][^2]` 형식으로 본문 끝에 공백 없이 Obsidian 각주를 붙인다.
+  `## 근거`에는 `[^{id}]: [{title}]({source_url}) — {source_name}, {날짜}` 형식의 정의를
+  빈 줄로 구분해 기록한다. 답변에서 인용하지 않은 근거도 모두 남기며, 제목의 `[`와 `]`는
+  역슬래시로 이스케이프한다.
+- `insufficient_evidence=true`여도 부족한 이유를 인용한 답변 항목을
+  `근거가 부족합니다.` 안내와 함께 표시한다.
+- 근거가 0건인 답변도 저장 요청이 있으면 질문과 부족 사유를 기록한다. 설정 부재 또는
+  `OSError`·`ValueError` 발생 시 경고 로그를 남기고 Q&A 응답은 유지한다.
+- compose: 로컬 `backend`에만 `${OBSIDIAN_VAULT_HOST_PATH:-./.obsidian-vault}:/vault`를
+  마운트하고 `OBSIDIAN_VAULT_PATH=/vault`로 설정한다. 기본 호스트 폴더는 gitignore 대상이며,
+  실제 vault 경로는 `.env`로 바꾼다. worker나 배포 환경에는 마운트하지 않는다.
 
 ## 5. Q&A 서비스와 API
 
@@ -202,8 +221,7 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 `ResearchQARequest`
 - `question: str` — 앞뒤 공백 제거 후 1~500자(가정)
 - `lookback_days: int` — 기본 90, 범위 1~365(가정)
-
-`save_to_obsidian`은 #443에서 추가한다. 이번 #442 요청에는 포함하지 않는다.
+- `save_to_obsidian: bool = False` — 요청 시 새 Obsidian 노트를 저장한다.
 
 `ResearchAnswer`
 - `answer_points: list[AnswerPoint]` — `text: str`, `citations: list[int]`
@@ -212,8 +230,12 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 - `evidence: list[EvidenceItem]` — `id: int`(인용 번호, 1부터), `source_type`, `source_id`,
   `title`, `source_name`, `source_url`, `published_at`, `excerpt`, `score`, `content_quality`
 - `generated_at: datetime`
+- `obsidian_note_path: str | None = None` — 저장 성공 시 vault 기준 상대 경로이며, 미요청·설정
+  부재·저장 실패 시 `null`이다. 저장 실패도 HTTP 200이며 근거 0건도 저장 요청을 처리한다.
 
-`obsidian_note_path`는 #443에서 추가한다. 이번 #442 응답에는 포함하지 않는다.
+`insufficient_evidence=true`와 `answer_points`가 함께 올 수 있다. 부족한 이유를 인용과 함께
+설명하는 답변이므로 항목을 숨기지 않는다(PR #453 S3).
+
 `source_name`은 원문 제목의 마지막 ` - 매체명` 꼬리에서 가져오고, 꼬리가 없으면
 `raw_news_events.source`를 쓴다. `source`는 실매체 대신 Google News 피드 제목일 수 있다.
 
@@ -223,7 +245,7 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 ### 5.2 `ResearchQAService` (`app/domains/rag/service.py`)
 
 - `ask(asset_id, request) -> ResearchAnswer` — asset 확인, 검색, 생성, 인용 검증,
-  응답을 묶는다. 노트 저장은 #443에서 추가한다.
+  응답을 묶고, `save_to_obsidian=true`이면 주입된 `ObsidianWriter`로 저장한다.
 - `now: Callable[[], datetime]`를 주입할 수 있으며 기본값은 현재 UTC 시각이다.
 - `retrieval.postprocess_hits` — 검색 후처리 순수 함수.
 - `validate_citations(result, evidence_ids) -> tuple[ResearchQAResult, int]` — §5.4 규칙 적용과

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from sqlalchemy.orm import Session
 
 from app.adapters.disclosure.base import DisclosureProvider
@@ -48,6 +50,7 @@ from app.adapters.market.yfinance import (
 from app.adapters.news.base import NewsAdapter
 from app.adapters.news.mock import MockNewsAdapter
 from app.adapters.news.rss import RSSNewsAdapter
+from app.adapters.obsidian.writer import ObsidianWriter
 from app.adapters.portfolio.base import PortfolioProvider
 from app.adapters.portfolio.mock import MockPortfolioProvider
 from app.adapters.vector.base import VectorStore
@@ -237,4 +240,12 @@ def get_vector_store(db: Session) -> VectorStore:
         return InMemoryVectorStore()
     raise NotImplementedError(
         f"vector store provider 미구현: {settings.VECTOR_STORE_PROVIDER}"
+    )
+
+
+def get_obsidian_writer() -> ObsidianWriter | None:
+    if settings.OBSIDIAN_VAULT_PATH is None:
+        return None
+    return ObsidianWriter(
+        Path(settings.OBSIDIAN_VAULT_PATH), settings.OBSIDIAN_EXPORT_DIR
     )

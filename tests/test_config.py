@@ -29,6 +29,8 @@ def test_settings_use_defaults_without_env_file(monkeypatch: pytest.MonkeyPatch)
     assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 15
     assert settings.REFRESH_TOKEN_EXPIRE_MINUTES == 2880
     assert settings.OPENAI_API_KEY is None
+    assert settings.OBSIDIAN_VAULT_PATH is None
+    assert settings.OBSIDIAN_EXPORT_DIR == "stock-agent"
     assert settings.LLM_TIMEOUT_SECONDS == 30
     assert settings.LLM_PROVIDER == "cloud"
     assert settings.LLM_DAILY_CALL_LIMIT is None
@@ -226,4 +228,18 @@ def test_env_example_keys_match_settings_fields() -> None:
         if line and not line.startswith("#")
     }
 
-    assert example_keys == set(Settings.model_fields)
+    compose_keys = {"OBSIDIAN_VAULT_HOST_PATH"}
+    assert compose_keys <= example_keys
+    assert example_keys - compose_keys == set(Settings.model_fields)
+
+
+@pytest.mark.parametrize(
+    "value,expected", [("", None), ("  ", None), (" /vault ", "/vault")]
+)
+def test_obsidian_settings(
+    monkeypatch: pytest.MonkeyPatch, value: str, expected: str | None
+) -> None:
+    _clear_settings_env(monkeypatch)
+    settings = _settings_without_env_file(OBSIDIAN_VAULT_PATH=value)
+    assert settings.OBSIDIAN_VAULT_PATH == expected
+    assert settings.OBSIDIAN_EXPORT_DIR == "stock-agent"
