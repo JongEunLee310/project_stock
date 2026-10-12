@@ -125,7 +125,9 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 - `OpenAIEmbedder` — `text-embedding-3-small` 호출. 배치 크기 상한은 구현에서 API 제한에 맞춘다.
 - `MockEmbedder` — 텍스트 해시로 만든 결정적 벡터. 같은 텍스트면 같은 벡터를 낸다.
 - factory: `get_embedder()`. 설정 `EMBEDDING_PROVIDER: Literal["openai", "mock"]`,
-  `EMBEDDING_MODEL`(기본 `text-embedding-3-small`). `tests/conftest.py:12-18`의
+  `EMBEDDING_MODEL`(기본 `text-embedding-3-small`). `EMBEDDING_BASE_URL`은 기본 `None`이며
+  `OPENAI_BASE_URL`을 상속하지 않는다. API 키는 `EMBEDDING_API_KEY`를 우선 사용하고,
+  없으면 `OPENAI_API_KEY`로 fallback한다. `tests/conftest.py:12-18`의
   `_PROVIDER_SETTINGS`에 `EMBEDDING_PROVIDER`를 추가해 테스트에서 mock으로 고정한다.
 
 ### 4.2 `VectorStore` (`app/adapters/vector/`)
@@ -135,15 +137,15 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
   - `delete_by_source(source_type, source_id) -> int`
   - `search(query_vector, filters: ChunkFilter, k: int) -> list[ChunkHit]` — 코사인 유사도
     내림차순
-- `ChunkFilter`(값 객체): `asset_id: int | None`, `source_types: list[ChunkSourceType]`,
+- `ChunkFilter`(값 객체): `asset_id: int | None`, `source_types: tuple[ChunkSourceType, ...]`,
   `published_after: datetime | None`, `embedding_model: str`. SQL 표현을 담지 않는다(ADR-018 R4).
 - `ChunkHit`: `chunk_id`, `source_type`, `source_id`, `chunk_index`, `content`,
   `content_quality`, `published_at`, `score`
 - `PgVectorStore` — 실제 구현체
 - `InMemoryVectorStore` — 테스트와 로컬 mock용 구현체. 필터를 Python으로 평가한다. SQLite
   테스트에서 서비스·API를 검증하는 데 쓰고, 인터페이스가 저장소 중립인지 확인하는 역할도 한다.
-- factory: `get_vector_store()`. 설정 `VECTOR_STORE_PROVIDER: Literal["pgvector", "memory"]`.
-  테스트에서는 `memory`로 고정한다.
+- factory: `get_vector_store(db)`. 설정 `VECTOR_STORE_PROVIDER: Literal["pgvector", "mock"]`.
+  테스트에서는 `mock`으로 고정한다.
 
 ### 4.3 `ObsidianWriter` (`app/adapters/obsidian/writer.py`)
 

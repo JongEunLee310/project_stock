@@ -1,5 +1,10 @@
+from sqlalchemy.orm import Session
+
 from app.adapters.disclosure.base import DisclosureProvider
 from app.adapters.disclosure.mock import MockDisclosureProvider
+from app.adapters.embedding.base import Embedder
+from app.adapters.embedding.mock import MockEmbedder
+from app.adapters.embedding.openai import OpenAIEmbedder
 from app.adapters.llm.base import LLMClient
 from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.cache import LLMResponseCache
@@ -45,7 +50,11 @@ from app.adapters.news.mock import MockNewsAdapter
 from app.adapters.news.rss import RSSNewsAdapter
 from app.adapters.portfolio.base import PortfolioProvider
 from app.adapters.portfolio.mock import MockPortfolioProvider
+from app.adapters.vector.base import VectorStore
+from app.adapters.vector.memory import InMemoryVectorStore
+from app.adapters.vector.pgvector import PgVectorStore
 from app.core.config import settings
+from app.domains.rag.types import EMBEDDING_DIMENSIONS
 from app.worker.connection import get_redis_connection
 
 LOCAL_PROXY_OPENAI_API_KEY = "local-proxy"
@@ -194,3 +203,34 @@ def get_llm_gateway() -> LLMGateway:
             timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
         )
     raise NotImplementedError(f"llm provider 미구현: {settings.LLM_PROVIDER}")
+
+
+def get_embedder() -> Embedder:
+    if settings.EMBEDDING_PROVIDER == "mock":
+        return MockEmbedder()
+    if settings.EMBEDDING_PROVIDER == "openai":
+        api_key = settings.EMBEDDING_API_KEY or settings.OPENAI_API_KEY
+        if api_key is None or not api_key.strip():
+            raise RuntimeError(
+                "EMBEDDING_API_KEY or OPENAI_API_KEY is required "
+                "when EMBEDDING_PROVIDER=openai"
+            )
+        return OpenAIEmbedder(
+            api_key=api_key,
+            model=settings.EMBEDDING_MODEL,
+            base_url=settings.EMBEDDING_BASE_URL,
+            dimensions=EMBEDDING_DIMENSIONS,
+        )
+    raise NotImplementedError(
+        f"embedding provider 미구현: {settings.EMBEDDING_PROVIDER}"
+    )
+
+
+def get_vector_store(db: Session) -> VectorStore:
+    if settings.VECTOR_STORE_PROVIDER == "pgvector":
+        return PgVectorStore(db)
+    if settings.VECTOR_STORE_PROVIDER == "mock":
+        return InMemoryVectorStore()
+    raise NotImplementedError(
+        f"vector store provider 미구현: {settings.VECTOR_STORE_PROVIDER}"
+    )

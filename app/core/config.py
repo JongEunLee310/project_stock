@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     OPENAI_BASE_URL: str | None = None
     OPENAI_MODEL: str = "gpt-5.5"
+    EMBEDDING_PROVIDER: Literal["openai", "mock"] = "openai"
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_BASE_URL: str | None = None
+    EMBEDDING_API_KEY: str | None = None
+    VECTOR_STORE_PROVIDER: Literal["pgvector", "mock"] = "pgvector"
     LLM_TIMEOUT_SECONDS: int = 30
     LLM_PROVIDER: Literal["cloud", "local", "mock"] = "cloud"
     LLM_DAILY_CALL_LIMIT: int | None = None
@@ -54,7 +59,9 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("OPENAI_BASE_URL", mode="before")
+    @field_validator(
+        "OPENAI_BASE_URL", "EMBEDDING_BASE_URL", "EMBEDDING_API_KEY", mode="before"
+    )
     @classmethod
     def parse_optional_string(cls, value: Any) -> str | None | Any:
         if isinstance(value, str):
