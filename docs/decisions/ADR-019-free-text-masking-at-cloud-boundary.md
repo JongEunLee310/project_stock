@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — complements ADR-009.
+Accepted — complements ADR-009. 개발자가 2026-10-12 PR #457 리뷰 Q2에서 머지를 승인으로 보기로 했다.
 
 ## Context
 
@@ -85,7 +85,7 @@ API 응답 `masked_categories`에 담는다. 값은 `MaskCategory` enum(`EMAIL`,
   - 개인 맥락 판정이 틀리면 공개 사실을 가리거나 개인 금액을 놓칠 수 있다. 오탐·미탐 사례를 테스트로
     고정하고, 사례가 쌓이면 규칙을 고친다.
   - 새 `CloudSafePayload`에 사용자 작성 텍스트 필드를 추가할 때 `free_text_fields` 선언을 잊으면
-    마스킹되지 않는다. 로컬 리뷰 체크 항목으로 둔다.
+    마스킹되지 않는다. `docs/harness/local-review-policy.md`의 Project-Specific Checks에 체크 항목으로 두었다.
 - DB 변경은 없다. 두 API 응답에 필드가 추가된다(추가만, 기존 계약 유지). 프라이버시 경계 변경이므로
   구현은 머지 전 사람 리뷰가 필요하다.
 
