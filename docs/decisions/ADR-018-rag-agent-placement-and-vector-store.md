@@ -14,7 +14,11 @@ Q&A**로 정했다. 리서치 상세에서 받은 질문에 수집된 근거를 
    종목 매핑은 `news_items.asset_id`가 가지고 있다. 2단계 후보인 판단 기록도 BE DB에 있다.
 2. **Obsidian vault는 아직 비어 있다.** 그래서 1차에서 vault는 근거 소스가 아니라 agent
    결과를 내보내는 출력 대상으로 쓴다. 사용자 노트를 다시 읽어 코퍼스에 넣는 일은
-   2단계에서 다룬다.
+   3차(#446)에서 다룬다.
+6. **지식 수집이 단계적으로 추가된다.** 2차부터 기업 공시(EDGAR·DART), 개인 투자
+   원칙(vault), 경제 용어집·공개 교재·시장 제도, 학술 논문을 `knowledge_documents`
+   정본으로 수집한다(#445~#448). 수집 출처는 공식 공개 자료, 공식 API, OA 라이선스
+   자료, 사용자가 직접 넣은 자료로 한정한다.
 3. **LLM 기반 계층이 이미 있다.** `LLMGateway`, `PrivacyGate`(ADR-009), router, budget,
    cache, 구조화 출력이 BE에 있다.
 4. **repo 전체가 sync다.** ADR-007에서 async를 도입하지 않기로 결정했다.
@@ -117,14 +121,20 @@ agent는 별도 프로젝트로 나누지 않고 BE 안에 둔다. 코드는 다
 
 ## Follow-up
 
-- 종목 리서치 Q&A 설계 문서를 `docs/designs/`에 작성한다(청크 모델, 인덱싱 job, 검색·생성
-  흐름, API, Obsidian 출력, 테스트).
-- 임베딩 데이터 경계를 설계에서 다룬다. 1차 코퍼스는 공개 데이터인 `NEWS`로 한정하고,
-  판단 기록 같은 개인 데이터의 임베딩은 ADR-009 CloudSafe 판정과 함께 2단계에서 결정한다.
-- 이슈를 단계별로 분해해 등록한다(BE 1차, FE 질문 패널, 2단계 vault 읽기·판단 기록).
+- 종목 리서치 Q&A 설계 문서 `docs/designs/438-rag-research-qa.md`를 작성한다(청크 모델,
+  인덱싱 job, 검색·생성 흐름, API, Obsidian 출력, 테스트).
+- 임베딩 데이터 경계를 설계에서 다룬다. 1차 코퍼스는 공개 데이터인 `NEWS`로 한정한다.
+  vault 노트 같은 개인 텍스트는 3차(#446)에서 `PersonalNoteProjection`을 ADR-009
+  화이트리스트에 추가하고 지정 폴더 opt-in으로 전송 범위를 통제한다.
+- PDF 추출 의존성은 라이선스가 허용적인 것(`pdfminer.six`, MIT)을 쓴다. AGPL인 pymupdf와
+  Java 서비스인 GROBID는 쓰지 않으며, 구조 파서가 필요해지면 T2로 검토한다.
+- 단계별 이슈는 에픽 #438에 등록했다(1차 #439~#444, 2~5차 트래킹 #445~#448, FE
+  `project_stock_frontend#308`).
 - 운영 수치(청크 수, 검색 지연, 이미지 크기, CI 시간)가 쌓이면 §4·§5의 가정 수치를 개정한다.
 
 ## Related Documents
+
+- 에픽 #438 — RAG 리서치 에이전트
 
 - ADR-007 — LLM provider 추상화, sync 유지 결정
 - ADR-009 — Cloud 데이터 경계(CloudSafe projection)
