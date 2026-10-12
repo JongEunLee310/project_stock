@@ -18,6 +18,10 @@ Claude Code should review:
 - Failure Record need.
 - Domain knowledge impact.
 
+### Project-Specific Checks
+
+- **Cloud LLM free-text fields (ADR-019).** When a PR adds or changes a `CloudSafePayload` subclass, check every field that can carry user-authored free text (questions, notes, memos, rationale). Each such field must be listed in `free_text_fields` so `PrivacyGate.mask` masks it before cloud transmission. Public data (news titles, excerpts) must not be listed. A missing declaration is Blocking, because the field would reach the cloud LLM unmasked.
+
 ## Review Records
 
 The review is written to a durable, versioned file:

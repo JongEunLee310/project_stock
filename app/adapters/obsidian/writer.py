@@ -29,6 +29,7 @@ def render_research_note(note: ResearchNote) -> str:
         "embedding_model": note.embedding_model,
         "source_count": len(answer.evidence),
         "insufficient_evidence": answer.insufficient_evidence,
+        "masked_categories": [category.value for category in answer.masked_categories],
     }
     # JSON scalars are also YAML scalars and escape quotes and control characters.
     lines = ["---"]

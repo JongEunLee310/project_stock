@@ -1,11 +1,13 @@
+import logging
 from collections.abc import Mapping
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, ClassVar, Sequence
+from typing import Any, ClassVar, Sequence, get_args
 
 from pydantic import BaseModel, ConfigDict
 
 from app.adapters.llm.exceptions import CloudBoundaryViolationError
+from app.adapters.llm.masking import MaskCategory, mask_sensitive_text
 from app.adapters.llm.types import LLMTaskType, SensitivityLevel
 from app.domains.dashboard.schema import DashboardSummaryResponse
 from app.domains.llm_context.schema import (
@@ -17,6 +19,8 @@ from app.domains.portfolios.model import Portfolio, Position
 from app.domains.portfolios.schema import PortfolioSummaryResponse
 
 
+logger = logging.getLogger(__name__)
+
 ZERO = Decimal("0")
 POSITION_COUNT_SMALL_MAX = 5
 POSITION_COUNT_MEDIUM_MAX = 15
@@ -26,6 +30,7 @@ MEDIUM_SHARE_MAX = Decimal("0.40")
 
 class CloudSafePayload(BaseModel):
     sensitivity: ClassVar[SensitivityLevel]
+    free_text_fields: ClassVar[tuple[str, ...]] = ()
 
     model_config = ConfigDict(frozen=True)
 
@@ -51,6 +56,7 @@ class ThesisConflictSnapshot(CloudSafePayload):
 
 
 class DecisionAssistSnapshot(CloudSafePayload):
+    free_text_fields: ClassVar[tuple[str, ...]] = ("thesis", "rationale", "memo")
     sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
 
     target_type: str
@@ -70,6 +76,7 @@ class ResearchQAEvidenceProjection(BaseModel):
 
 
 class ResearchQASnapshot(CloudSafePayload):
+    free_text_fields: ClassVar[tuple[str, ...]] = ("question",)
     sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
 
     symbol: str
@@ -468,6 +475,37 @@ class PrivacyGate:
             )
 
         return payload
+
+    def mask(
+        self, payload: CloudSafePayload
+    ) -> tuple[CloudSafePayload, frozenset[MaskCategory]]:
+        updates: dict[str, str] = {}
+        categories: set[MaskCategory] = set()
+        for name in payload.free_text_fields:
+            field = type(payload).model_fields.get(name)
+            if field is None or not (
+                field.annotation is str
+                or set(get_args(field.annotation)) == {str, type(None)}
+            ):
+                raise CloudBoundaryViolationError(
+                    "invalid free_text_fields declaration"
+                )
+            value = getattr(payload, name)
+            if value is not None:
+                if not isinstance(value, str):
+                    raise CloudBoundaryViolationError("free text value is not a string")
+                result = mask_sensitive_text(value)
+                updates[name] = result.text
+                categories.update(result.categories)
+        if categories:
+            logger.info(
+                "llm masked categories: %s",
+                [category.value for category in MaskCategory if category in categories],
+            )
+        masked = (
+            payload.model_copy(update=updates) if payload.free_text_fields else payload
+        )
+        return masked, frozenset(categories)
 
 
 def _position_value(position: Position) -> Decimal:

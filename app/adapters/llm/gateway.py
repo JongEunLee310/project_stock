@@ -11,6 +11,7 @@ from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.cache import LLMResponseCache
 from app.adapters.llm.escalation import EscalationPolicy, EscalationSignal
 from app.adapters.llm.exceptions import CloudBoundaryViolationError, LLMRoutingError
+from app.adapters.llm.masking import MaskCategory
 from app.adapters.llm.privacy import CloudSafePayload, PrivacyGate
 from app.adapters.llm.router import LLMRouter
 from app.adapters.llm.types import LLMTaskType
@@ -28,6 +29,7 @@ class LLMCompletionResult:
     model_name: str
     cached: bool = False
     escalated: bool = False
+    masked_categories: frozenset[MaskCategory] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,7 @@ class _CloudVerificationResult:
     output: dict[str, Any] | None
     client: LLMClient
     attempted: bool
+    masked_categories: frozenset[MaskCategory] = frozenset()
 
 
 class LLMGateway:
@@ -98,9 +101,12 @@ class LLMGateway:
         if client is None:
             raise LLMRoutingError(f"LLM client is not configured: {provider}")
 
-        safe_payload = (
-            self.privacy_gate.guard(payload) if provider == CLOUD else payload
-        )
+        safe_payload = payload
+        masked_categories: frozenset[MaskCategory] = frozenset()
+        if provider == CLOUD:
+            safe_payload, masked_categories = self.privacy_gate.mask(
+                self.privacy_gate.guard(payload)
+            )
         cache_key: str | None = None
         if provider == CLOUD and self.response_cache is not None:
             cache_key = self.response_cache.build_key(
@@ -117,6 +123,7 @@ class LLMGateway:
                     provider=cached_completion.provider,
                     model_name=cached_completion.model_name,
                     cached=True,
+                    masked_categories=masked_categories,
                     escalated=escalated,
                 )
 
@@ -163,6 +170,7 @@ class LLMGateway:
                     schema,
                     system_prompt,
                 )
+                masked_categories |= verification.masked_categories
                 escalated = escalated or verification.attempted
                 if verification.output is not None:
                     output = verification.output
@@ -172,6 +180,7 @@ class LLMGateway:
             provider=client.provider_name,
             model_name=client.model_name,
             escalated=escalated,
+            masked_categories=masked_categories,
         )
 
     def _verify_with_cloud(
@@ -183,7 +192,9 @@ class LLMGateway:
         system_prompt: str,
     ) -> _CloudVerificationResult:
         try:
-            safe_payload = self.privacy_gate.guard(payload)
+            safe_payload, masked_categories = self.privacy_gate.mask(
+                self.privacy_gate.guard(payload)
+            )
             if self.call_budget is not None:
                 self.call_budget.consume()
         except Exception:
@@ -222,6 +233,7 @@ class LLMGateway:
                 output=None,
                 client=cloud_client,
                 attempted=True,
+                masked_categories=masked_categories,
             )
         except Exception:
             logger.warning(
@@ -234,6 +246,7 @@ class LLMGateway:
                 output=None,
                 client=cloud_client,
                 attempted=True,
+                masked_categories=masked_categories,
             )
         logger.info(
             "llm escalation cloud verification completed: task_type=%s provider=%s",
@@ -244,4 +257,5 @@ class LLMGateway:
             output=output,
             client=cloud_client,
             attempted=True,
+            masked_categories=masked_categories,
         )

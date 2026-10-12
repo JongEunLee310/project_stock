@@ -9,6 +9,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.adapters.llm.masking import MaskCategory
 from app.core.schema import UtcDatetime
 from app.domains.decision_logs.types import (
     ConfidenceLevel,
@@ -100,7 +101,7 @@ class DecisionAssistResult(BaseModel):
 
 
 class DecisionAssistResponse(DecisionAssistResult):
-    pass
+    masked_categories: list[MaskCategory] = Field(default_factory=list)
 
 
 class DecisionEvidenceInput(BaseModel):

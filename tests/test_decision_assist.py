@@ -92,7 +92,7 @@ def test_assist_maps_all_suggestion_groups_and_uses_cloud_safe_snapshot() -> Non
 
     response = service.assist(7, DecisionAssistRequest.model_validate(ASSIST_PAYLOAD))
 
-    assert response.model_dump() == ASSIST_RESULT
+    assert response.model_dump() == {**ASSIST_RESULT, "masked_categories": []}
     assert client.schema is DecisionAssistResult
     assert len(client.messages) == 2
     transmitted = json.loads(client.messages[1].content)
@@ -162,6 +162,7 @@ def test_assist_returns_empty_suggestions_when_llm_fails() -> None:
         "risk_candidates": [],
         "bias_candidates": [],
         "vague_flags": [],
+        "masked_categories": [],
     }
 
 
@@ -197,7 +198,7 @@ def test_assist_literal_route_returns_non_persistent_suggestions(
     response = client.post("/api/v1/decision-logs/assist", json=ASSIST_PAYLOAD)
 
     assert response.status_code == 200
-    assert api_data(response) == ASSIST_RESULT
+    assert api_data(response) == {**ASSIST_RESULT, "masked_categories": []}
 
 
 def test_decision_assist_prompt_preserves_user_decision_boundary() -> None:
@@ -207,3 +208,29 @@ def test_decision_assist_prompt_preserves_user_decision_boundary() -> None:
     assert "check candidates" in prompt.lower()
     assert "only the user's supplied text" in prompt.lower()
     assert "vague" in prompt.lower()
+
+
+def test_assist_api_masked_categories(client: TestClient, monkeypatch: Any) -> None:
+    set_current_user(7)
+    recording = RecordingClient()
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.decision_logs.get_llm_gateway",
+        lambda: gateway_for(recording),
+    )
+    payload = {
+        **ASSIST_PAYLOAD,
+        "memo": "내 300주 평단 7만 원, 010-1234-5678 me@example.com",
+    }
+    response = client.post("/api/v1/decision-logs/assist", json=payload)
+    assert response.status_code == 200
+    assert api_data(response)["masked_categories"] == [
+        "EMAIL",
+        "PHONE",
+        "QUANTITY",
+        "AMOUNT",
+    ]
+    for raw in ["300주", "7만 원", "010-1234-5678", "me@example.com"]:
+        assert raw not in recording.messages[1].content
+    recording.error = RuntimeError("unavailable")
+    response = client.post("/api/v1/decision-logs/assist", json=payload)
+    assert api_data(response)["masked_categories"] == []

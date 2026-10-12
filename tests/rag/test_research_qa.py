@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -431,3 +432,90 @@ def test_service_obsidian_unexpected_error_propagates(db: Session) -> None:
     )
     with pytest.raises(RuntimeError, match="unexpected"):
         service.ask(asset_id, ResearchQARequest(question="질문", save_to_obsidian=True))
+
+
+@pytest.mark.parametrize("mode", ["private", "public", "no_evidence", "failure"])
+def test_api_free_text_masking_keeps_local_question(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    from app.adapters.llm.gateway import CLOUD, LLMGateway
+    from tests.test_llm_gateway import SpyLLMClient
+
+    with TestingSessionLocal() as db:
+        asset_id, event_id = seed(db)
+    question = (
+        "애플-브로드컴 300억 달러 계약 내용은?"
+        if mode == "public"
+        else "삼성전자 300주를 평단 7만 원에 샀는데 지금 리스크는?"
+    )
+    embedder = MockEmbedder()
+    embed_spy = Mock(wraps=embedder.embed)
+    monkeypatch.setattr(embedder, "embed", embed_spy)
+    store = InMemoryVectorStore()
+    if mode != "no_evidence":
+        store.upsert(
+            [
+                ChunkRecord(
+                    ChunkSourceType.NEWS,
+                    event_id,
+                    0,
+                    "공개 계약 300억 달러",
+                    ChunkContentQuality.FULL,
+                    embedder.embed([question])[0],
+                    embedder.model_name,
+                    [asset_id],
+                    NOW,
+                    "hash",
+                )
+            ]
+        )
+    embed_spy.reset_mock()
+    recording = SpyLLMClient(
+        {
+            "answer_points": [{"text": "공개 근거", "citations": [1]}],
+            "limitations": None,
+            "insufficient_evidence": False,
+        }
+        if mode != "failure"
+        else {"invalid": True}
+    )
+    gateway = LLMGateway({CLOUD: recording})
+    monkeypatch.setattr("app.api.v1.endpoints.assets.get_embedder", lambda: embedder)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.assets.get_vector_store", lambda db: store
+    )
+    monkeypatch.setattr("app.api.v1.endpoints.assets.get_llm_gateway", lambda: gateway)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.assets.get_obsidian_writer",
+        lambda: ObsidianWriter(tmp_path, "stock-agent"),
+    )
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.assets.ResearchQAService",
+        partial(ResearchQAService, now=lambda: NOW),
+    )
+    set_current_user(7)
+    response = client.post(
+        f"/api/v1/assets/{asset_id}/research-qa",
+        json={"question": question, "save_to_obsidian": True},
+    )
+    assert response.status_code == 200
+    data = api_data(response)
+    expected = ["QUANTITY", "AMOUNT"] if mode == "private" else []
+    assert data["masked_categories"] == expected
+    embed_spy.assert_called_once_with([question])
+    content = (tmp_path / data["obsidian_note_path"]).read_text()
+    assert f"## 질문\n\n{question}" in content
+    assert f"masked_categories: {json.dumps(expected)}" in content
+    if mode == "no_evidence":
+        assert not recording.calls
+    else:
+        transmitted = json.loads(recording.calls[0][1].content)
+        assert transmitted["evidence"][0]["excerpt"] == "공개 계약 300억 달러"
+        if mode == "public":
+            assert transmitted["question"] == question
+        else:
+            assert "300주" not in transmitted["question"]
+            assert "7만 원" not in transmitted["question"]

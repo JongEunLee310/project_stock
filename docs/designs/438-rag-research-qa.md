@@ -229,6 +229,7 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 - `insufficient_evidence: bool`
 - `evidence: list[EvidenceItem]` — `id: int`(인용 번호, 1부터), `source_type`, `source_id`,
   `title`, `source_name`, `source_url`, `published_at`, `excerpt`, `score`, `content_quality`
+- `masked_categories: list[MaskCategory] = []` — 클라우드 전송 시 가린 범주이며, [설계 456](456-free-text-masking.md)을 따른다.
 - `generated_at: datetime`
 - `obsidian_note_path: str | None = None` — 저장 성공 시 vault 기준 상대 경로이며, 미요청·설정
   부재·저장 실패 시 `null`이다. 저장 실패도 HTTP 200이며 근거 0건도 저장 요청을 처리한다.

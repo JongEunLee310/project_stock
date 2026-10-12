@@ -23,6 +23,7 @@ This directory stores Architecture Decision Records.
 - `ADR-014-settings-consolidation-and-alerts-split.md` (Proposed)
 - `ADR-015-asset-level-alert-evaluation.md` (Proposed)
 - `ADR-018-rag-agent-placement-and-vector-store.md` (Proposed)
+- `ADR-019-free-text-masking-at-cloud-boundary.md` (Accepted, complements ADR-009)
 
 ## Writing Rules
 
