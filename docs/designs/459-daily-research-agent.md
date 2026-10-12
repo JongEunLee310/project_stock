@@ -71,6 +71,7 @@
 | 11. 신호·알림 | 새 기사마다 `RuleEngine(default_rules(), ...)` 실행. 생성된 신호마다 이 종목을 관심종목에 둔 사용자에게 알림 | `RuleEngine`, `AlertService` |
 | 12. 노트 기록 | §5. 실패해도 리포트 저장은 유지 | `ObsidianWriter` |
 
+- 새 소식은 수집 시각(`news_items.created_at`)으로 신규 유입을 놓치지 않게 고르고, 과거 맥락은 발행 시각(`published_at`)으로 사건의 시간적 맥락을 제한한다(PR #468 리뷰 S2).
 - 새 소식이 0건이면 6~8·11단계를 건너뛰고, 가격·일정만 담은 "새 소식 없음" 브리프를 저장한다(LLM 호출 0회).
 - 가설 충돌 판단은 하지 않는다. `RuleContext`의 `thesis`·`conflict_result`는 비워 둔다. 그래서
   `ThesisConflictRule`은 발동하지 않는다(에이전트 3까지).
@@ -89,7 +90,7 @@
   `stats.new_item_count`는 입력 기사 수, `truncated_count`는 제외한 기사 수다.
 
 `DailyResearchResult`: `processed`, `skipped_no_news`, `failed`(종목별 사유), `llm_calls`, `signals_created`,
-`alerts_created`
+`alerts_created`, `notes_written`, `note_failures`(종목 id 또는 `"index"` → 쓰기 실패 사유)
 
 ## 4. 종합 LLM 계약
 
@@ -150,13 +151,17 @@ JSON Schema에는 Pydantic 제약으로 `item_classifications[].item`과 `new_de
 
 - 종목별 노트: `stock-agent/daily/{SYMBOL}/{YYYY-MM-DD}.md`
   - frontmatter: `symbol`, `asset_name`, `brief_date`, `generated_at`, `new_item_count`, `no_news`,
-    `tags: [stock-agent, daily-brief]`
+    `price_stale`, `tags: [stock-agent, daily-brief]`
   - 본문: 핵심 요약, 새 소식, 이전 대비 달라진 점(새/계속/잠잠), 가격·신호(DB 수치 표, 이번에 만든 신호),
     다가오는 일정, 리스크 점검 후보, 한계, 근거(각주), `[[SYMBOL]]`
 - 일일 인덱스: `stock-agent/daily/{YYYY-MM-DD}.md` — 종목마다 핵심 요약 한 줄, 새 소식 수, 노트 링크
-  (`[[daily/{SYMBOL}/{date}]]`). 실패한 종목은 실패로 표시
+  (`[[stock-agent/daily/{SYMBOL}/{date}|{SYMBOL}]]`). 실패한 종목은 실패 사유로 표시한다.
+  인덱스는 전 종목 실행(`asset_ids=None`)에서만 쓰고, 종목 단위 실행에서는 쓰지 않는다.
+  링크는 이름 충돌 접미사를 포함한 실제 생성 경로를 사용한다.
 - 기존 `ObsidianWriter`의 원칙(새 파일만 생성, 이름 충돌 시 접미사, vault 밖 경로 차단)을 그대로 쓴다.
   같은 날 다시 실행하면 `-2` 노트가 생긴다(가정. 재실행은 드물다고 본다).
+- 노트 쓰기 실패(`OSError`·`ValueError`)는 브리프·신호 결과에 영향을 주지 않고 `note_failures`에 기록한다.
+  `notes_written`은 종목 노트와 인덱스의 성공한 쓰기 수다. writer가 없으면 둘 다 기록하지 않는다.
 - writer에 일일 노트용 경로·렌더링 함수를 추가한다. Q&A 노트 함수는 바꾸지 않는다.
 
 ## 6. 트리거와 스케줄(#463)

@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -17,6 +18,7 @@ from app.adapters.llm.prompts.daily_brief import build_daily_brief_system_prompt
 from app.adapters.llm.prompts.daily_brief import PROMPT_VERSION
 from app.adapters.llm.router import LLM_TASK_ROUTES
 from app.adapters.llm.types import LLMTaskType
+from app.adapters.obsidian.writer import ObsidianWriter
 from app.adapters.vector.memory import InMemoryVectorStore
 from app.adapters.vector.types import ChunkFilter, ChunkHit
 from app.domains.agents.daily_research.citations import validate_brief_citations
@@ -104,6 +106,7 @@ def agent(
     db: Session,
     client: CountingClient | None = None,
     store: InMemoryVectorStore | None = None,
+    writer: ObsidianWriter | None = None,
 ) -> DailyResearchAgent:
     return DailyResearchAgent(
         db,
@@ -111,6 +114,7 @@ def agent(
         store or InMemoryVectorStore(),
         LLMGateway({"cloud": client or CountingClient()}),
         lambda: NOW,
+        obsidian_writer=writer,
     )
 
 
@@ -638,3 +642,190 @@ def test_past_window_excludes_truncated_news(
     assert store.filters.published_after.replace(tzinfo=UTC) == start - timedelta(
         days=30
     )
+
+
+def watch(db: Session, targets: list[Asset]) -> None:
+    db.add(User(id=1, email="owner@example.com", hashed_password="hash"))
+    db.add(Watchlist(id=1, user_id=1, name="관심"))
+    db.flush()
+    for target in targets:
+        db.add(WatchlistItem(watchlist_id=1, asset_id=target.id))
+    db.commit()
+
+
+def test_daily_notes_all_assets_index_and_rerun(db: Session, tmp_path: Path) -> None:
+    first, second = asset(db), asset(db, "MSFT")
+    watch(db, [first, second])
+    news(db, first)
+    service = agent(db, writer=ObsidianWriter(tmp_path, "stock-agent"))
+    result = service.run()
+    assert result.notes_written == 3 and not result.note_failures
+    assert result.processed == 2 and result.signals_created == 1
+    daily = tmp_path / "stock-agent/daily"
+    text = (daily / f"AAPL/{DAY}.md").read_text()
+    signal = db.scalar(select(Signal))
+    assert signal is not None
+    assert f"{signal.signal_type} (점수 {signal.score}): {signal.reason}" in text
+    index = (daily / f"{DAY}.md").read_text()
+    for symbol in ["AAPL", "MSFT"]:
+        assert f"[[stock-agent/daily/{symbol}/{DAY}|{symbol}]]" in index
+    again = service.run()
+    assert again.notes_written == 3
+    assert "RISK_ALERT" not in (daily / f"AAPL/{DAY}-2.md").read_text()
+    assert (
+        f"[[stock-agent/daily/AAPL/{DAY}-2|AAPL]]"
+        in (daily / f"{DAY}-2.md").read_text()
+    )
+
+
+def test_targeted_notes_skip_index(db: Session, tmp_path: Path) -> None:
+    target = asset(db)
+    result = agent(db, writer=ObsidianWriter(tmp_path, "stock-agent")).run(
+        [target.id, target.id]
+    )
+    assert result.notes_written == 1 and not result.note_failures
+    assert list(tmp_path.rglob("*.md")) == [
+        tmp_path / f"stock-agent/daily/AAPL/{DAY}.md"
+    ]
+
+
+@pytest.mark.parametrize("error", [OSError, ValueError])
+def test_note_failures_do_not_change_briefs_signals(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error: type[Exception],
+) -> None:
+    from app.adapters.obsidian.writer import DailyBriefNote, DailyIndexEntry
+
+    target = asset(db)
+    watch(db, [target])
+    news(db, target)
+
+    def fail_note(self: ObsidianWriter, note: DailyBriefNote) -> Path:
+        raise error("note failure")
+
+    def fail_index(
+        self: ObsidianWriter, brief_date: date, entries: list[DailyIndexEntry]
+    ) -> Path:
+        assert entries[0].failed_reason == "note failure"
+        raise error("index failure")
+
+    monkeypatch.setattr(ObsidianWriter, "write_daily_brief_note", fail_note)
+    monkeypatch.setattr(ObsidianWriter, "write_daily_index", fail_index)
+    result = agent(db, writer=ObsidianWriter(tmp_path, "stock-agent")).run()
+    assert result.notes_written == 0
+    assert result.note_failures == {target.id: "note failure", "index": "index failure"}
+    assert result.processed == result.signals_created == result.alerts_created == 1
+    assert not result.failed
+    assert report(db, target).risk_level == "HIGH"
+
+
+def test_writer_none_no_note_failures(db: Session) -> None:
+    target = asset(db)
+    watch(db, [target])
+    result = agent(db).run()
+    assert result.processed == 1
+    assert result.notes_written == 0 and not result.note_failures
+
+
+def test_signal_failure_still_writes_note_and_failed_index(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = asset(db)
+    watch(db, [target])
+    news(db, target)
+
+    def fail(self: SignalRepository, data: Any) -> Signal:
+        raise RuntimeError("signal failure")
+
+    monkeypatch.setattr(SignalRepository, "create", fail)
+    result = agent(db, writer=ObsidianWriter(tmp_path, "stock-agent")).run()
+    assert result.processed == 1 and result.failed == {target.id: "signal failure"}
+    assert result.notes_written == 2 and not result.note_failures
+    assert report(db, target).risk_level == "HIGH"
+    index = (tmp_path / f"stock-agent/daily/{DAY}.md").read_text()
+    assert "failed_count: 1" in index and "실패: signal failure" in index
+    assert f"[[stock-agent/daily/AAPL/{DAY}|AAPL]]" in index
+
+
+def test_failed_asset_is_in_index_and_other_asset_continues(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first, second = asset(db), asset(db, "MSFT")
+    news(db, first)
+    watch(db, [first, second])
+    original = ResearchReportRepository.upsert_daily_brief
+    first_id = first.id
+
+    def fail_first(
+        self: ResearchReportRepository,
+        asset_id: int,
+        brief_date: date,
+        summary: str,
+        risk_level: str | None,
+        content: dict[str, Any],
+    ) -> ResearchReport:
+        if asset_id == first_id:
+            raise RuntimeError("report failure")
+        return original(self, asset_id, brief_date, summary, risk_level, content)
+
+    monkeypatch.setattr(ResearchReportRepository, "upsert_daily_brief", fail_first)
+    result = agent(db, writer=ObsidianWriter(tmp_path, "stock-agent")).run()
+    assert result.processed == 1 and result.notes_written == 2
+    assert result.failed == {first_id: "report failure"}
+    index = (tmp_path / f"stock-agent/daily/{DAY}.md").read_text()
+    assert "asset_count: 2" in index and "failed_count: 1" in index
+    assert "AAPL(AAPL) 실패: report failure" in index
+    assert f"[[stock-agent/daily/MSFT/{DAY}|MSFT]]" in index
+
+
+def test_alert_failure_note_contains_committed_signal(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.domains.alerts.service import AlertService
+
+    target = asset(db)
+    news(db, target)
+    watch(db, [target])
+
+    def fail(self: AlertService, user_id: int, signal: Signal) -> Alert | None:
+        raise RuntimeError("alert failure")
+
+    monkeypatch.setattr(AlertService, "create_alert", fail)
+    result = agent(db, writer=ObsidianWriter(tmp_path, "stock-agent")).run()
+    assert result.signals_created == 1 and result.notes_written == 2
+    assert result.failed == {target.id: "alert failure"}
+    assert "RISK_ALERT" in (tmp_path / f"stock-agent/daily/AAPL/{DAY}.md").read_text()
+
+
+def test_failed_asset_lookup_does_not_abort_index(
+    db: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.domains.assets.repository import AssetRepository
+
+    first, second = asset(db), asset(db, "MSFT")
+    watch(db, [first, second])
+    first_id = first.id
+    original = AssetRepository.get_by_id
+
+    def fail_first(self: AssetRepository, asset_id: int) -> Asset | None:
+        if asset_id == first_id:
+            raise RuntimeError("asset lookup failure")
+        return original(self, asset_id)
+
+    monkeypatch.setattr(AssetRepository, "get_by_id", fail_first)
+    result = agent(db, writer=ObsidianWriter(tmp_path, "stock-agent")).run()
+    assert result.failed == {first_id: "asset lookup failure"}
+    assert result.processed == 1 and result.notes_written == 2
+    index = (tmp_path / f"stock-agent/daily/{DAY}.md").read_text()
+    assert f"{first_id}({first_id}) 실패: asset lookup failure" in index
+    assert f"[[stock-agent/daily/MSFT/{DAY}|MSFT]]" in index
