@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted — 개발자가 2026-10-12 PR #467 리뷰 Q1에서 머지를 승인으로 보기로 했다.
 
 ## Context
 
