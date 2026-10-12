@@ -24,7 +24,7 @@
 | `raw_news_events.body`는 nullable이다 | `app/domains/raw_news/model.py:20` | 제목만 있는 문서를 `TITLE_ONLY`로 다룬다 |
 | 원문 1건이 종목별 `news_items` 여러 행으로 나뉜다 | `app/domains/news/model.py:13-16`(`raw_news_event_id`, `asset_id`) | 청크에 `asset_ids` 배열을 둔다 |
 | `LLMGateway.complete_json(task_type, payload, schema, system_prompt)` | `app/adapters/llm/gateway.py:59-66` | 생성 경로에 재사용한다 |
-| LLM 클라이언트는 `OPENAI_BASE_URL` 프록시를 쓸 수 있다 | `app/core/config.py:17-19` | 임베딩 엔드포인트 지원 여부를 확인해야 한다(§9 OQ1) |
+| LLM 클라이언트는 `OPENAI_BASE_URL` 프록시를 쓸 수 있다 | `app/core/config.py:17-19` | 임베딩은 이 프록시를 쓰지 않고 로컬 Ollama로 만든다(§9 OQ1, #450) |
 
 ## 1. 인프라
 
@@ -58,7 +58,7 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 | `chunk_index` | int | not null | 문서 안 순번, 0부터 |
 | `content` | text | not null | 청크 원문. 인용 발췌에 쓴다 |
 | `content_quality` | str(20) | not null | `ChunkContentQuality` 값 |
-| `embedding` | vector(1536) | not null | SQLite에서는 JSON variant(§7) |
+| `embedding` | vector(1024) | not null | SQLite에서는 JSON variant(§7). #450에서 1536→1024 |
 | `embedding_model` | str(100) | not null | 생성한 모델 식별자 |
 | `asset_ids` | int[] | not null, 기본 빈 배열 | SQLite에서는 JSON variant |
 | `published_at` | timestamptz | nullable | 원문 `published_at`, 없으면 `collected_at` |
@@ -70,8 +70,8 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
   (`source_type`, `source_id`) btree. 앞의 두 인덱스는 Postgres 전용이다.
 - `content_hash`는 청크 쪽에서 계산한다. `source_documents.content_hash`는 URL과 제목의
   해시라서(`app/domains/news_insights/ingestion.py:58-60`) 본문 변경을 감지하지 못한다.
-- `vector` 차원 1536은 `text-embedding-3-small`의 기본 출력 차원이다(출처: OpenAI 임베딩 문서,
-  외부. #440 구현 시 실제 응답 길이로 확인한다).
+- `vector` 차원 1024는 `bge-m3`의 출력 차원이다(실측: 2026-10-12 `ollama/ollama:0.40.3`의
+  `/v1/embeddings` 응답 길이). 차원 상수는 `app/domains/rag/types.py`의 `EMBEDDING_DIMENSIONS`다.
 
 ### 2.3 enum (`app/domains/rag/types.py`)
 
@@ -122,12 +122,14 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
   - `model_name -> str` — 청크에 기록할 모델 식별자
   - `dimensions -> int`
   - `embed(texts: list[str]) -> list[list[float]]` — 입력 순서를 보존한 벡터 목록
-- `OpenAIEmbedder` — `text-embedding-3-small` 호출. 배치 크기 상한은 구현에서 API 제한에 맞춘다.
+- `OpenAIEmbedder` — OpenAI 호환 `/v1/embeddings` 호출. 1차 대상은 로컬 Ollama의 `bge-m3`다
+  (ADR-018 §2a). 배치 상한은 100건(가정)이고, `dimensions` 인자를 보낸다(Ollama 지원 실측).
 - `MockEmbedder` — 텍스트 해시로 만든 결정적 벡터. 같은 텍스트면 같은 벡터를 낸다.
-- factory: `get_embedder()`. 설정 `EMBEDDING_PROVIDER: Literal["openai", "mock"]`,
-  `EMBEDDING_MODEL`(기본 `text-embedding-3-small`). `EMBEDDING_BASE_URL`은 기본 `None`이며
-  `OPENAI_BASE_URL`을 상속하지 않는다. API 키는 `EMBEDDING_API_KEY`를 우선 사용하고,
-  없으면 `OPENAI_API_KEY`로 fallback한다. `tests/conftest.py:12-18`의
+- factory: `get_embedder()`. 설정 `EMBEDDING_PROVIDER: Literal["openai", "mock"]`(`openai`는
+  OpenAI 호환 API를 뜻한다), `EMBEDDING_MODEL`(기본 `bge-m3`), `EMBEDDING_BASE_URL`(기본
+  `http://localhost:11434/v1`, compose 안에서는 `http://ollama:11434/v1`), `EMBEDDING_API_KEY`.
+  `OPENAI_BASE_URL`은 상속하지 않는다. API 키는 `EMBEDDING_API_KEY`, `OPENAI_API_KEY` 순으로
+  쓰고, 둘 다 없으면서 base URL이 있으면 더미 키를 쓴다. `tests/conftest.py`의
   `_PROVIDER_SETTINGS`에 `EMBEDDING_PROVIDER`를 추가해 테스트에서 mock으로 고정한다.
 
 ### 4.2 `VectorStore` (`app/adapters/vector/`)
@@ -258,7 +260,7 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 
 ## 7. 테스트 전략
 
-**SQLite 호환.** `embedding`은 `Vector(1536).with_variant(JSON, "sqlite")`, `asset_ids`는
+**SQLite 호환.** `embedding`은 `Vector(EMBEDDING_DIMENSIONS).with_variant(JSON, "sqlite")`, `asset_ids`는
 `ARRAY(Integer).with_variant(JSON, "sqlite")`로 선언한다. Postgres 전용 인덱스는 SQLite
 `create_all`에서 무시되는지 #439에서 확인한다. 무시되지 않으면 dialect 조건으로 분리한다.
 
@@ -298,7 +300,7 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 
 | ID | 질문 | 해소 시점 |
 |---|---|---|
-| OQ1 | `OPENAI_BASE_URL` 프록시가 임베딩 엔드포인트를 지원하는가. 지원하지 않으면 `EMBEDDING_BASE_URL`·`EMBEDDING_API_KEY` 설정을 따로 두고 기본값은 `OPENAI_*`를 따른다 | #440 착수 시 실제 호출로 확인 |
+| OQ1 | **해소(2026-10-12).** 로컬 프록시는 ChatGPT 구독 기반이라 임베딩 API를 쓸 수 없다. 사용자 결정으로 로컬 Ollama `bge-m3`(1024차원)를 쓴다. 실측 처리 시간은 1,500자 청크 약 2.8초, 120자 청크 약 1.2초(CPU)다. ADR-018 §2a | #440·#450 |
 | OQ2 | **해소(2026-10-12).** 기존 볼륨으로 기동은 되지만 텍스트 btree 인덱스가 손상된다. alpine(musl)에서 만든 `en_US.utf8` 인덱스를 debian(glibc 2.36)에서 읽기 때문이다. 볼륨 복제본에서 amcheck(`bt_index_check`) 결과 32개 중 2개(`uq_raw_news_events_url`, `ix_fund_flow_outlooks_analysis_version_sector`)가 손상됐고, `REINDEX DATABASE stock_db` 후 0개가 됐다. 이후 `alembic upgrade head`가 실데이터에 정상 적용됐다. 기존 볼륨 전환 절차는 §12를 따른다 | #439 |
 | OQ3 | `source_documents` 적재가 상시 운영되면 코퍼스 원본을 그쪽으로 옮길 것인가 | 뉴스 인텔리전스 파이프라인 스케줄 확정 시 |
 | OQ4 | `raw_news_events.body`의 실제 길이 분포. `SUMMARY`·`TITLE_ONLY` 비율이 높으면 근거 품질이 낮다 | #441 backfill 후 기록 |
@@ -329,4 +331,16 @@ ADR-009를 적용한다(`ResearchQASnapshot`).
 
 `ALTER DATABASE ... REFRESH COLLATION VERSION`은 alpine에서 collation 버전이 기록되지 않아
 오류가 나므로 실행하지 않는다. 배포 환경도 같은 이미지 교체를 하면 같은 절차가 필요하다.
+
+## 13. Ollama 준비 절차
+
+임베딩 모델은 compose `ollama` 서비스에서 한 번만 받아 두면 된다. 모델 파일은 `ollama_data`
+볼륨에 남는다.
+
+1. `docker compose up -d ollama`
+2. `docker compose exec ollama ollama pull bge-m3`
+3. 확인: `/v1/embeddings`에 `bge-m3`로 요청해 1024차원 벡터가 오는지 본다.
+
+호스트에서 uvicorn을 직접 실행할 때는 `EMBEDDING_BASE_URL` 기본값(`http://localhost:11434/v1`)이
+compose의 Ollama 포트를 가리킨다.
 

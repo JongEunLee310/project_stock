@@ -38,7 +38,7 @@ agent는 별도 프로젝트로 나누지 않고 BE 안에 둔다. 코드는 다
 
 - `app/domains/rag/` — 청크 모델, 인덱싱, 검색·생성 서비스, API
 - `app/adapters/vector/` — `VectorStore` ABC와 구현체
-- `app/adapters/embedding/` — `Embedder` ABC와 구현체(OpenAI, Mock)
+- `app/adapters/embedding/` — `Embedder` ABC와 구현체(OpenAI 호환, Mock)
 
 ### 2. 벡터 저장소 — pgvector를 쓴다
 
@@ -46,6 +46,24 @@ agent는 별도 프로젝트로 나누지 않고 BE 안에 둔다. 코드는 다
 `pgvector/pgvector:pg16`으로 바꾼다. 저장소 접근은 `VectorStore` ABC 뒤에 두고, 구현체는
 `adapters/factory.py`의 provider 선택 패턴에 따라 `VECTOR_STORE_PROVIDER` 설정으로 고른다.
 1차 구현체는 `PgVectorStore` 하나다.
+
+### 2a. 임베딩 — 로컬 Ollama(`bge-m3`)를 쓴다
+
+임베딩은 compose의 `ollama` 서비스(`ollama/ollama:0.40.3`)에서 `bge-m3`로 만든다(#450, 2026-10-12
+사용자 결정). 어댑터는 OpenAI 호환 `/v1/embeddings`를 호출하는 `OpenAIEmbedder`를 그대로 쓰고,
+`EMBEDDING_BASE_URL`로 엔드포인트만 바꾼다. 벡터 차원은 1024다.
+
+이렇게 정한 이유는 다음과 같다.
+
+- 로컬 LLM 엔드포인트(`OPENAI_BASE_URL`)는 ChatGPT 구독 기반 프록시라 임베딩 API를 쓸 수 없다.
+- 임베딩 단계에서 데이터가 외부로 나가지 않는다. 3차의 vault 개인 메모(#446)도 임베딩은 로컬에서
+  끝난다. 답변 생성 단계에서 근거가 클라우드 LLM으로 가는 경계는 여전히 ADR-009를 따른다.
+- `bge-m3`는 다국어 모델이다. 실측에서 같은 뜻의 한·영 문장 유사도가 0.78, 무관한 문장이 0.32였다.
+- Ollama는 별도 서비스라 BE 이미지와 CI에 의존성을 더하지 않는다(T2에 해당하지 않음).
+
+대가는 속도다. CPU(Intel i9, Docker 16스레드)에서 1,500자 청크 하나에 약 2.8초가 걸린다. 질문
+임베딩과 매시 증분에는 충분하지만 초기 backfill은 수 시간 단위다. 처리량이 문제가 되거나 다른
+모델로 바꿔야 하면, 모델 교체는 `EMBEDDING_MODEL`과 차원 마이그레이션, 전량 재임베딩으로 한다(R3).
 
 ### 3. 분리 가능성을 유지하는 경계 규칙
 
@@ -125,8 +143,9 @@ agent는 별도 프로젝트로 나누지 않고 BE 안에 둔다. 코드는 다
 - 종목 리서치 Q&A 설계 문서 `docs/designs/438-rag-research-qa.md`를 작성한다(청크 모델,
   인덱싱 job, 검색·생성 흐름, API, Obsidian 출력, 테스트).
 - 임베딩 데이터 경계를 설계에서 다룬다. 1차 코퍼스는 공개 데이터인 `NEWS`로 한정한다.
-  vault 노트 같은 개인 텍스트는 3차(#446)에서 `PersonalNoteProjection`을 ADR-009
-  화이트리스트에 추가하고 지정 폴더 opt-in으로 전송 범위를 통제한다.
+  임베딩은 로컬(§2a)이라 클라우드로 나가지 않는다. 다만 vault 노트 같은 개인 텍스트가 답변
+  근거로 클라우드 LLM에 들어가는 경로는 3차(#446)에서 `PersonalNoteProjection`을 ADR-009
+  화이트리스트에 추가하고 지정 폴더 opt-in으로 통제한다.
 - PDF 추출 의존성은 라이선스가 허용적인 것(`pdfminer.six`, MIT)을 쓴다. AGPL인 pymupdf와
   Java 서비스인 GROBID는 쓰지 않으며, 구조 파서가 필요해지면 T2로 검토한다.
 - 단계별 이슈는 에픽 #438에 등록했다(1차 #439~#444, 2~5차 트래킹 #445~#448, FE
