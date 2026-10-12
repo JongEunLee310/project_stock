@@ -40,6 +40,20 @@ class WatchlistItemRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
+    def list_watched_asset_ids(self) -> list[int]:
+        stmt = select(WatchlistItem.asset_id).distinct().order_by(WatchlistItem.asset_id)
+        return list(self.db.scalars(stmt))
+
+    def list_owner_ids_by_asset(self, asset_id: int) -> list[int]:
+        stmt = (
+            select(Watchlist.user_id)
+            .join(WatchlistItem, WatchlistItem.watchlist_id == Watchlist.id)
+            .where(WatchlistItem.asset_id == asset_id)
+            .distinct()
+            .order_by(Watchlist.user_id)
+        )
+        return list(self.db.scalars(stmt))
+
     def get_by_id(self, item_id: int) -> WatchlistItem | None:
         return self.db.get(WatchlistItem, item_id)
 

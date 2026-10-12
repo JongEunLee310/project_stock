@@ -1,6 +1,7 @@
 import json
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domains.news.categorizer import categorize
@@ -77,3 +78,33 @@ class NewsItemRepository:
             .limit(limit)
         )
         return list(self.db.scalars(stmt).all())
+
+    def list_by_asset_created_after(
+        self, asset_id: int, created_after: datetime, limit: int
+    ) -> list[NewsItem]:
+        stmt = (
+            select(NewsItem)
+            .where(NewsItem.asset_id == asset_id, NewsItem.created_at > created_after)
+            .order_by(NewsItem.created_at.desc(), NewsItem.id.desc())
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt))
+
+    def count_by_asset_created_after(
+        self, asset_id: int, created_after: datetime
+    ) -> int:
+        stmt = select(func.count()).select_from(NewsItem).where(
+            NewsItem.asset_id == asset_id, NewsItem.created_at > created_after
+        )
+        return int(self.db.scalar(stmt) or 0)
+
+    def update_classification(
+        self, news_item_id: int, impact_level: str, sentiment: str
+    ) -> NewsItem:
+        item = self.db.get(NewsItem, news_item_id)
+        if item is None:
+            raise ValueError("news item not found")
+        item.impact_level = impact_level
+        item.sentiment = sentiment
+        self.db.flush()
+        return item

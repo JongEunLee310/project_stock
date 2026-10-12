@@ -6,6 +6,16 @@ from app.adapters.llm.base import LLMClient, LLMMessage
 
 
 DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
+    "DailyBriefResult": {
+        "headline": "새로운 공개 소식의 영향을 점검하세요.",
+        "new_developments": [{"text": "새 소식이 확인됩니다.", "citations": ["N1"]}],
+        "changes": [{"kind": "NEW", "text": "새 이슈입니다.", "citations": ["N1"]}],
+        "risk_checks": [{"text": "후속 내용을 점검하세요.", "citations": ["N1"]}],
+        "item_classifications": [
+            {"item": "N1", "impact_level": "HIGH", "sentiment": "NEUTRAL"}
+        ],
+        "limitations": "헤드라인 수준의 근거로 세부 내용을 확인하기 어렵습니다.",
+    },
     "ResearchQAResult": {
         "answer_points": [
             {"text": "제공된 뉴스에서 관련 소식이 확인됩니다.", "citations": [1]}

@@ -24,6 +24,7 @@ class ChunkFilter:
     asset_id: int | None = None
     source_types: tuple[ChunkSourceType, ...] = ()
     published_after: datetime | None = None
+    published_before: datetime | None = None
 
 
 @dataclass(frozen=True)

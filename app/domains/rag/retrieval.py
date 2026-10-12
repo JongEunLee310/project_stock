@@ -11,7 +11,10 @@ FINAL_EVIDENCE_K = 8
 
 
 def postprocess_hits(
-    hits: list[ChunkHit], *, min_score: float | None = None
+    hits: list[ChunkHit],
+    *,
+    min_score: float | None = None,
+    final_evidence_k: int = FINAL_EVIDENCE_K,
 ) -> list[ChunkHit]:
     if min_score is None:
         min_score = MIN_SCORE
@@ -31,7 +34,7 @@ def postprocess_hits(
             continue
         counts[key] = counts.get(key, 0) + 1
         selected.append(hit)
-        if len(selected) == FINAL_EVIDENCE_K:
+        if len(selected) == final_evidence_k:
             break
     return selected
 
