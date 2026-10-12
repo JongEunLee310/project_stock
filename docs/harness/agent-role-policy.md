@@ -10,13 +10,15 @@ Codex is the implementer. It implements from handoff tasks, updates tests, runs 
 
 ## Standard Orchestration Combination
 
-The default going-forward division of labor is **Opus + Sonnet/VFF + Codex**:
+The default going-forward model lineup (effective 2026-10-12) is **Claude Opus 5.5 + Codex GPT-6.1 Sol**:
 
-- **Opus (Claude Code)** — orchestration, external execution (codex trigger, commit, push, PR), and final verification.
-- **Sonnet/VFF** — design and review, run as the `value-for-fable:itsvff` subagent at Sonnet rates.
-- **Codex** — implementation.
+- **Claude Code — Opus 5.5 (`claude-opus-5-5`)** — orchestration, design, handoff writing, local review, external execution (codex trigger, commit, push, PR), and final verification. Design and review are no longer delegated to the Sonnet/VFF subagent by default.
+- **Codex — GPT-6.1 Sol (`gpt-6.1-sol`), reasoning effort `medium`** — implementation.
+- **Codex — GPT-6.1 Sol, reasoning effort `high`** — escalation only, when the work needs it: cross-module refactors, concurrency or transaction correctness, migrations with data backfill, or a `medium` run that failed the same verification twice. Record the reason for escalating in the handoff document.
 
-Running design and review at Sonnet rates measured ~39% lower Anthropic billing than an all-Opus track on the same controlled work, with VFF review accuracy matching Opus on the validated round (see `docs/experiments/orchestrator-comparison-round2-vff-sonnet.md`). The VFF subagent cannot perform external or irreversible actions — it rejects relayed approvals — so codex triggering, commits, push, and PR creation stay with Opus. Keep Opus final verification as a low-cost safety net, and watch the trade-off where more detailed handoffs raise Codex implementation tokens.
+Always pass the model and effort explicitly on every `codex exec` call (`-c model="gpt-6.1-sol" -c model_reasoning_effort="medium"`, or `"high"` when escalating), because the global Codex config can override project defaults. Do not swap to a different model without human confirmation.
+
+The earlier Opus + Sonnet/VFF + Codex split and its cost measurements remain as history in `docs/experiments/`.
 
 ## CI
 

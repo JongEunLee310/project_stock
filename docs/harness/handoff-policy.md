@@ -50,6 +50,8 @@ A good handoff is narrow, testable, and explicit about what Codex must not chang
 
 Claude Code may invoke `codex exec` automatically as the implementation step, **under the default sandbox only** (`read-only` / `workspace-write`), passing the handoff document as the brief (per `docs/decisions/ADR-005-allow-claude-code-to-invoke-codex-exec.md`). Automation does not remove the handoff: the written scope / out-of-scope / verification contract above is still produced and passed to Codex as the prompt. The current Codex CLI runs `codex exec` correctly, so no specific pinned version is required (see `.codex/CODEX_SETUP_NOTES.md`).
 
+Every automated run names the model and reasoning effort explicitly — `gpt-6.1-sol` at `medium` by default, `high` only for the escalation cases listed in `docs/harness/agent-role-policy.md` — and reads stdin from `/dev/null` so `codex exec` does not wait for EOF on a piped stdin.
+
 If an automated run appears to make no progress, confirm it is **actually hung** — no new output or file activity within a reasonable window, not merely a long-running step — before retrying. Cap retries at a small bounded number; if the run stays hung after those attempts, fall back to manual execution (ADR-004) instead of looping.
 
 `--dangerously-bypass-approvals-and-sandbox` and `-s danger-full-access` must **never** be used in an automated Claude Code workflow. If Codex's default sandbox cannot run a task, stop and ask the human per `docs/harness/human-gate-policy.md` instead of escalating Codex's privileges — fall back to manual execution (ADR-004), never to elevated access. Mandatory human gate conditions still apply **before** the automated implementation step runs.
