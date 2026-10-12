@@ -408,6 +408,29 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`: 위 `ResearchSummaryResponse`와 동일한 envelope. `LLMGateway`로 새 요약을 생성하고 자산별 최신 1행으로 저장한다.
 - Representative error `404 ASSET_NOT_FOUND`: same as asset detail.
 
+#### `POST /api/v1/assets/{asset_id}/research-qa`
+
+- Auth: Required
+- Request: path `asset_id`, body `question: string`(앞뒤 공백 제거 후 1~500자), `lookback_days: int = 90`(1~365).
+- Success `200`:
+
+```json
+{ "data": { "answer_points": [{ "text": "관련 제품 출시 소식이 확인됩니다.", "citations": [1] }], "limitations": "헤드라인 수준의 근거로 세부 내용을 확인하기 어렵습니다.", "insufficient_evidence": false, "evidence": [{ "id": 1, "source_type": "NEWS", "source_id": 42, "title": "NVIDIA launches new product - Cybernews", "source_name": "Cybernews", "source_url": "https://example.com/news", "published_at": "2026-10-12T00:00:00Z", "excerpt": "NVIDIA launches new product - Cybernews", "score": 0.8, "content_quality": "TITLE_ONLY" }], "generated_at": "2026-10-12T01:00:00Z" }, "message": null, "error": null, "meta": null }
+```
+
+- `citations`는 응답 `evidence[].id`만 참조한다. 유효 인용이 없는 point는 제외한다.
+- `limitations`와 `published_at`은 nullable이다. `content_quality`: `FULL | SUMMARY | TITLE_ONLY`.
+- `source_name`은 원문 제목의 마지막 매체명 꼬리이며, 꼬리가 없으면 수집 원문의 `source`를 사용한다.
+- `score`는 코사인 유사도에 `TITLE_ONLY` 가중치 0.8을 적용한 값이다. 원점수 0.3 미만을 제외하고 원문당 최대 2청크, 최종 최대 8개를 반환한다(모두 가정).
+- 근거가 없으면 LLM을 호출하지 않고 `answer_points=[]`, `evidence=[]`, `insufficient_evidence=true`와 한계 사유를 반환한다.
+- 생성 실패도 `200`이며 `answer_points=[]`, `insufficient_evidence=true`, 생성 실패 사유와 검색한 근거를 반환한다.
+- 노트 저장 필드는 #443에서 추가한다.
+- Representative errors: `401 AUTH_INVALID_TOKEN`, `404 ASSET_NOT_FOUND`, `422 VALIDATION_ERROR`, `503 RAG_EMBEDDING_UNAVAILABLE`(질문 임베딩 실패).
+
+```json
+{ "data": null, "message": "질문 임베딩을 생성할 수 없습니다.", "error": { "code": "RAG_EMBEDDING_UNAVAILABLE" }, "meta": null }
+```
+
 #### `GET /api/v1/assets/{asset_id}/buy-checklist`
 
 - Auth: Required

@@ -1,5 +1,6 @@
 import math
 from copy import deepcopy
+from datetime import UTC, datetime
 
 from app.adapters.vector.base import VectorStore
 from app.adapters.vector.types import ChunkFilter, ChunkHit, ChunkRecord
@@ -64,7 +65,7 @@ class InMemoryVectorStore(VectorStore):
                 continue
             if filters.published_after is not None and (
                 record.published_at is None
-                or record.published_at <= filters.published_after
+                or _as_utc(record.published_at) <= _as_utc(filters.published_after)
             ):
                 continue
             dot = sum(
@@ -94,3 +95,8 @@ class InMemoryVectorStore(VectorStore):
                 hit.chunk_id,
             ),
         )[:k]
+
+
+def _as_utc(value: datetime) -> datetime:
+    # SQLite drops timezone information from UTC timestamps.
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

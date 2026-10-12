@@ -32,6 +32,16 @@ class RawNewsEventRepository:
         )
         return list(self.db.scalars(stmt).all())
 
+    def list_by_ids(self, ids: list[int]) -> list[RawNewsEvent]:
+        if not ids:
+            return []
+        stmt = (
+            select(RawNewsEvent)
+            .where(RawNewsEvent.id.in_(ids))
+            .order_by(RawNewsEvent.id)
+        )
+        return list(self.db.scalars(stmt).all())
+
     def get_by_url(self, url: str) -> RawNewsEvent | None:
         stmt = select(RawNewsEvent).where(RawNewsEvent.url == url)
         return self.db.scalars(stmt).first()
