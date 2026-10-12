@@ -612,3 +612,66 @@ def test_enqueue_llm_analysis_job_rejects_empty_symbols() -> None:
 
     app.dependency_overrides.clear()
     assert response.status_code == 422
+
+
+def test_embed_documents_job_records_success(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.adapters.vector.memory import InMemoryVectorStore
+    from app.worker.jobs import rag
+
+    db.add(RawNewsEvent(title="뉴스", url="https://example.com/rag", source="test"))
+    db.commit()
+    store = InMemoryVectorStore()
+    monkeypatch.setattr(rag, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(rag, "get_vector_store", lambda db: store)
+    result = rag.embed_documents_job(max_documents=10)
+    assert result is not None
+    assert result.embedded_documents == result.chunks_written == 1
+    job_run = db.scalars(select(JobRun)).one()
+    assert job_run.job_type == "embed_documents"
+    assert job_run.status == "success"
+    assert job_run.finished_at is not None
+    assert job_run.metadata_ == {"max_documents": 10}
+
+
+@pytest.mark.parametrize("embedding_error", [True, False])
+def test_embed_documents_job_records_failure(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    embedding_error: bool,
+) -> None:
+    from app.adapters.embedding.exceptions import EmbeddingError
+    from app.adapters.embedding.mock import MockEmbedder
+    from app.adapters.vector.memory import InMemoryVectorStore
+    from app.worker.jobs import rag
+
+    class FailingEmbedder(MockEmbedder):
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            if embedding_error:
+                raise EmbeddingError("endpoint unavailable")
+            raise RuntimeError("unexpected failure")
+
+    db.add(RawNewsEvent(title="뉴스", url="https://example.com/rag", source="test"))
+    db.commit()
+    store = InMemoryVectorStore()
+    monkeypatch.setattr(rag, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(rag, "get_embedder", FailingEmbedder)
+    monkeypatch.setattr(rag, "get_vector_store", lambda db: store)
+    if embedding_error:
+        assert rag.embed_documents_job() is None
+    else:
+        with pytest.raises(RuntimeError, match="unexpected failure"):
+            rag.embed_documents_job()
+    job_run = db.scalars(select(JobRun)).one()
+    assert job_run.status == "failed"
+    assert job_run.finished_at is not None
+    assert job_run.error_message == (
+        "endpoint unavailable" if embedding_error else "unexpected failure"
+    )
+    assert store._records == {}
+    monkeypatch.setattr(rag, "get_embedder", MockEmbedder)
+    result = rag.embed_documents_job()
+    assert result is not None
+    assert result.embedded_documents == 1

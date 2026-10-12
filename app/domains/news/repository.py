@@ -46,6 +46,14 @@ class NewsItemRepository:
         self.db.refresh(item)
         return item
 
+    def list_by_raw_event_ids(self, raw_event_ids: list[int]) -> list[NewsItem]:
+        stmt = (
+            select(NewsItem)
+            .where(NewsItem.raw_news_event_id.in_(raw_event_ids))
+            .order_by(NewsItem.id)
+        )
+        return list(self.db.scalars(stmt).all())
+
     def list_by_asset(self, asset_id: int) -> list[NewsItem]:
         stmt = (
             select(NewsItem)

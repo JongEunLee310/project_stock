@@ -2,7 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-SchedulerJobFunc = Callable[..., None]
+SchedulerJobFunc = Callable[..., object]
 
 
 class SchedulerJob(Protocol):

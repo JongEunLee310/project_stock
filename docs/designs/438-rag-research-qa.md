@@ -84,15 +84,22 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 
 **대상 선정.** 현재 `EMBEDDING_MODEL` 기준으로 청크가 없는 `raw_news_events`를 고른다.
 이미 청크가 있는 문서는 다시 계산한 `content_hash`가 다를 때만 재적재한다. 1회 배치 크기는
-100건이다(가정).
+100건이다(가정). `RawNewsEventRepository.list_after_id`로 id 오름차순 전체 스캔을
+매번 수행하고, `VectorStore.get_content_hashes`로 현재 모델의 원문별 해시를 비교한다.
+페이지 크기 기본값은 500건이다(가정). 현재 수천 건 규모에서 전체 스캔이 충분하다고 가정하며,
+워터마크 최적화는 이번 범위에서 제외한다.
 
 **본문 결정 규칙.**
 
 | 조건 | 임베딩 입력 | `content_quality` |
 |---|---|---|
-| `body` 길이가 200자 이상(가정) | `title` + `body` | `FULL` |
+| 앞뒤 공백을 제거한 `body` 길이가 200자 이상(가정) | `title` + 빈 줄 + `body` | `FULL` |
 | `body`가 200자 미만이거나 없고, 연결된 `news_items.summary`가 있음 | `title` + `body`(있으면) + `summary` | `SUMMARY` |
-| 둘 다 없음 | `title` | `TITLE_ONLY` |
+| 위 조건에 해당하지 않음(짧은 본문도 포함) | `title` + `body`(있으면) | `TITLE_ONLY` |
+
+입력 구성요소는 앞뒤 공백을 제거하고 빈 줄로 연결한다. 연결된 뉴스의 요약이 여러 개면
+`news_items.id` 오름차순에서 첫 번째 비어 있지 않은 요약을 사용한다(가정).
+규칙과 상수의 구현 위치는 `app/domains/rag/indexing.py`다.
 
 **청킹.** 문자 수 기준으로 자른다. 청크 크기 1,500자, 겹침 150자(가정). 뉴스 대부분이
 1~2청크가 될 것으로 본다(가정, #444 평가에서 분포를 기록한다).
@@ -104,15 +111,18 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 **갱신과 정리.**
 - 해시가 바뀐 문서는 `delete_by_source` 후 다시 적재한다. 한 트랜잭션으로 처리한다.
 - `EMBEDDING_MODEL`이 바뀌면 새 모델 기준으로 청크가 없는 상태가 되므로 같은 job이 전량을
-  다시 적재한다. 이전 모델 청크 정리는 `purge_other_models` 수동 스크립트로 한다. 검색은 항상
-  현재 모델의 청크만 대상으로 하므로 정리 전에도 결과가 섞이지 않는다.
+  다시 적재한다. `delete_by_source`는 모델과 관계없이 해당 원문의 기존 청크를 지운다.
+  아직 재적재하지 않은 원문의 이전 모델 청크는 남지만, 검색은 현재 모델만 대상으로 하므로
+  결과가 섞이지 않는다.
 - 임베딩 API가 실패한 배치는 기록만 하고 건너뛴다. 다음 실행에서 자연스럽게 다시 대상이 된다.
 
-**backfill.** 기존 문서는 같은 job을 수동으로 반복 실행해 채운다. 별도 API는 만들지 않는다.
+**backfill.** `scripts/backfill_rag_embeddings.py --max-documents 100`으로 인덱서를 반복
+실행한다. `has_more`는 배치 상한을 채워 중단했는지를 뜻하므로 마지막 배치가 정확히 상한이면
+다음 회차에서 변경 대상이 없음을 확인하고 끝낸다. 별도 API는 만들지 않는다.
 
 **예산.** 임베딩 호출은 `LLM_DAILY_CALL_LIMIT`(`app/core/config.py:22`) 집계에 넣지 않는다.
-배치 job의 호출 수가 대화형 LLM 한도를 소진하지 않게 하기 위해서다. 비용 관측은 job 실행
-기록의 처리 건수로 대신한다.
+배치 job의 호출 수가 대화형 LLM 한도를 소진하지 않게 하기 위해서다. 비용 관측은 성공 시
+로그에 남기는 `IndexingResult`의 처리 통계로 대신한다.
 
 ## 4. 어댑터
 
@@ -137,6 +147,8 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 - `VectorStore` ABC
   - `upsert(chunks: list[ChunkRecord]) -> int` — unique 키 기준 삽입·갱신, 처리 건수 반환
   - `delete_by_source(source_type, source_id) -> int`
+  - `get_content_hashes(source_type, source_ids: list[int], embedding_model) -> dict[int, str]`
+    — 청크가 있는 원문별 입력 해시를 반환한다. 없는 원문은 키에서 제외한다.
   - `search(query_vector, filters: ChunkFilter, k: int) -> list[ChunkHit]` — 코사인 유사도
     내림차순
 - `ChunkFilter`(값 객체): `asset_id: int | None`, `source_types: tuple[ChunkSourceType, ...]`,

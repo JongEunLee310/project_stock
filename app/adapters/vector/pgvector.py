@@ -41,6 +41,20 @@ class PgVectorStore(VectorStore):
         self.db.flush()
         return len(ids)
 
+    def get_content_hashes(
+        self, source_type: ChunkSourceType, source_ids: list[int], embedding_model: str
+    ) -> dict[int, str]:
+        if not source_ids:
+            return {}
+        rows = self.db.execute(
+            select(DocumentChunk.source_id, DocumentChunk.content_hash).where(
+                DocumentChunk.source_type == source_type.value,
+                DocumentChunk.source_id.in_(source_ids),
+                DocumentChunk.embedding_model == embedding_model,
+            )
+        ).all()
+        return {source_id: content_hash for source_id, content_hash in rows}
+
     def search(
         self, query_vector: list[float], filters: ChunkFilter, k: int
     ) -> list[ChunkHit]:

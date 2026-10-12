@@ -34,6 +34,18 @@ class InMemoryVectorStore(VectorStore):
             del self._records[key]
         return len(keys)
 
+    def get_content_hashes(
+        self, source_type: ChunkSourceType, source_ids: list[int], embedding_model: str
+    ) -> dict[int, str]:
+        wanted = set(source_ids)
+        return {
+            record.source_id: record.content_hash
+            for _, record in self._records.values()
+            if record.source_type == source_type
+            and record.source_id in wanted
+            and record.embedding_model == embedding_model
+        }
+
     def search(
         self, query_vector: list[float], filters: ChunkFilter, k: int
     ) -> list[ChunkHit]:
