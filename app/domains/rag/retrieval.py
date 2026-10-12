@@ -10,13 +10,15 @@ TITLE_ONLY_WEIGHT = 0.8
 FINAL_EVIDENCE_K = 8
 
 
-def postprocess_hits(hits: list[ChunkHit]) -> list[ChunkHit]:
+def postprocess_hits(
+    hits: list[ChunkHit], *, min_score: float = MIN_SCORE
+) -> list[ChunkHit]:
     weighted = [
         replace(hit, score=hit.score * TITLE_ONLY_WEIGHT)
         if hit.content_quality == ChunkContentQuality.TITLE_ONLY
         else hit
         for hit in hits
-        if hit.score >= MIN_SCORE
+        if hit.score >= min_score
     ]
     weighted.sort(key=lambda hit: (-hit.score, hit.chunk_id))
     counts: dict[tuple[str, int], int] = {}
