@@ -1,10 +1,37 @@
 from datetime import date, datetime
-from typing import ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    ValidatorFunctionWrapHandler,
+    WrapValidator,
+)
 
 from app.adapters.llm.privacy import CloudSafePayload
 from app.adapters.llm.types import SensitivityLevel
+
+
+def _retain_invalid_id(value: Any, handler: ValidatorFunctionWrapHandler) -> str:
+    # Advertise strict patterns to structured-output providers, but retain malformed
+    # strings for validate_brief_citations to remove and count after parsing.
+    try:
+        return str(handler(value))
+    except ValidationError as exc:
+        if isinstance(value, str) and all(
+            error["type"] == "string_pattern_mismatch" for error in exc.errors()
+        ):
+            return value
+        raise
+
+
+NewEvidenceId = Annotated[
+    str, Field(pattern=r"^N\d+$"), WrapValidator(_retain_invalid_id)
+]
+EvidenceId = Annotated[
+    str, Field(pattern=r"^[NP]\d+$"), WrapValidator(_retain_invalid_id)
+]
 
 
 class BriefEvidenceProjection(BaseModel):
@@ -16,6 +43,8 @@ class BriefEvidenceProjection(BaseModel):
 
 
 class BriefPrice(BaseModel):
+    as_of: date
+    stale: bool
     close: str
     change_pct: str | None
     volume_change_pct: str | None
@@ -41,15 +70,16 @@ class DailyBriefSnapshot(CloudSafePayload):
 
 class BriefPoint(BaseModel):
     text: str
-    citations: list[str]
+    citations: list[NewEvidenceId]
 
 
 class BriefChange(BriefPoint):
+    citations: list[EvidenceId]
     kind: Literal["NEW", "CONTINUING", "FADED"]
 
 
 class ItemClassification(BaseModel):
-    item: str
+    item: NewEvidenceId
     impact_level: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] = "LOW"
     sentiment: Literal["POSITIVE", "NEUTRAL", "NEGATIVE"] = "NEUTRAL"
 

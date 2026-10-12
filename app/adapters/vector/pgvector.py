@@ -74,6 +74,8 @@ class PgVectorStore(VectorStore):
             )
         if filters.published_after is not None:
             stmt = stmt.where(DocumentChunk.published_at > filters.published_after)
+        if filters.published_before is not None:
+            stmt = stmt.where(DocumentChunk.published_at < filters.published_before)
         stmt = stmt.order_by(distance, DocumentChunk.id).limit(k)
         rows = self.db.execute(stmt.execution_options(populate_existing=True)).all()
         return [

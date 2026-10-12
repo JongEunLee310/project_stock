@@ -68,6 +68,11 @@ class InMemoryVectorStore(VectorStore):
                 or _as_utc(record.published_at) <= _as_utc(filters.published_after)
             ):
                 continue
+            if filters.published_before is not None and (
+                record.published_at is None
+                or _as_utc(record.published_at) >= _as_utc(filters.published_before)
+            ):
+                continue
             dot = sum(
                 a * b for a, b in zip(query_vector, record.embedding, strict=True)
             )

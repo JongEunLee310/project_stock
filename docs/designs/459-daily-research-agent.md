@@ -61,7 +61,7 @@
 | 1. 기간 결정 | `brief_date`보다 이전인 가장 최근 `DAILY_BRIEF`의 `created_at` 이후. 직전 브리프가 없으면 실행 시각 기준 최근 48시간(가정) | `ResearchReportRepository` |
 | 2. 새 소식 수집 | `created_at`이 기간 시작보다 뒤인 이 종목의 `news_items`(발행 시각 기준이 아님). 최근 순 최대 30건(가정), 넘으면 잘라 내고 잘린 수를 기록 | `NewsItemRepository` |
 | 3. 임베딩 확인 | 새 소식의 원문이 아직 임베딩되지 않았으면 처리 | `EmbeddingIndexer.run` |
-| 4. 과거 맥락 검색 | 새 소식 제목들로 지난 30일(가정) 근거를 검색. 새 소식 자신은 제외, 상위 10개(가정) | `get_embedder`, `get_vector_store`, `postprocess_hits` |
+| 4. 과거 맥락 검색 | 새 소식 제목들로 기간 시작 이전 30일(가정)의 근거를 검색(`published_after=기간 시작-30일`, `published_before=기간 시작`, 양 끝 제외). 새 소식 원문 id는 계속 제외, 상위 10개(가정) | `get_embedder`, `get_vector_store`, `postprocess_hits` |
 | 5. 가격·일정 | 최근 일봉 2개(등락률·거래량 변화 계산), 14일 안의 실적 일정 | 가격·실적 repository |
 | 6. 종합(LLM) | §4. 새 소식이 0건이면 건너뜀 | `LLMGateway.complete_json` |
 | 7. 인용 검증 | 없는 번호·중복 제거, 인용 없는 항목 제거 | rag의 `validate_citations` 패턴 |
@@ -100,7 +100,9 @@
 - `symbol`, `asset_name`, `market`, `brief_date`
 - `new_items`: 번호(`N1`부터), 제목, 매체, 발행 시각, 정제된 본문 발췌
 - `past_context`: 번호(`P1`부터), 제목, 매체, 발행일, 발췌
-- `price`: 최근 종가, 전일 대비 등락률, 거래량 변화율(DB 계산값)
+- `price`: 최근 종가, 전일 대비 등락률, 거래량 변화율(DB 계산값), `as_of: date`(최근 일봉 날짜), `stale: bool`
+  - `as_of`가 `brief_date`보다 4일 넘게 이전이면 `stale=True`다(주말·휴장 고려, 가정). 스냅샷과 저장 결과에 같은 값을 싣는다.
+  - 프롬프트 `PROMPT_VERSION=v2`는 가격이 `as_of` 기준임을 명시하고, `stale=True`이면 오래된 데이터임을 밝히며 최근 시세처럼 서술하지 않도록 지시한다.
 - `upcoming`: 14일 안의 일정(종류, 날짜)
 - 사용자 식별자, 보유 정보, 가설은 싣지 않는다. 사용자 작성 텍스트가 없으므로 `free_text_fields`는 비운다.
 
@@ -113,6 +115,11 @@
 - `risk_checks: list[{text, citations}]` — 리스크 점검 후보(확정 진단이 아님)
 - `item_classifications: list[{item, impact_level, sentiment}]` — 새 소식 번호마다 영향도와 감성
 - `limitations: str | None`
+
+JSON Schema에는 Pydantic 제약으로 `item_classifications[].item`과 `new_developments`·`risk_checks`의
+`citations` 원소에 `^N\d+$`, `changes`의 `citations` 원소에 `^[NP]\d+$` 패턴을 명시한다.
+잘못된 형식의 문자열은 파싱 후 인용 검증에서 제거하고 보정 수에 포함한다. 보정 수가 새 기사 수
+이상이면 종목 id·보정 수·새 기사 수를 warning 로그로 남긴다.
 
 인용 규칙(가정)
 

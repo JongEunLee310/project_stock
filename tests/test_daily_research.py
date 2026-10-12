@@ -14,6 +14,7 @@ from app.adapters.llm.gateway import LLMGateway
 from app.adapters.llm.mock import DEFAULT_MOCK_RESPONSES, MockLLMClient
 from app.adapters.llm.prompts.language import KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION
 from app.adapters.llm.prompts.daily_brief import build_daily_brief_system_prompt
+from app.adapters.llm.prompts.daily_brief import PROMPT_VERSION
 from app.adapters.llm.router import LLM_TASK_ROUTES
 from app.adapters.llm.types import LLMTaskType
 from app.adapters.vector.memory import InMemoryVectorStore
@@ -177,8 +178,13 @@ def test_rerun_uses_previous_date_created_at(db: Session) -> None:
 
 
 @pytest.mark.parametrize("bar_count", [0, 1, 2])
-def test_price_and_upcoming_boundaries(db: Session, bar_count: int) -> None:
+@pytest.mark.parametrize("age_days", [0, 4, 5, 83])
+def test_price_and_upcoming_boundaries(
+    db: Session, bar_count: int, age_days: int
+) -> None:
     target = asset(db)
+    news(db, target)
+    latest_date = DAY - timedelta(days=age_days)
     for index in range(bar_count):
         close = Decimal("100") if index == 0 else Decimal("105.555")
         db.add(
@@ -186,7 +192,8 @@ def test_price_and_upcoming_boundaries(db: Session, bar_count: int) -> None:
                 symbol=target.symbol,
                 market="US",
                 interval="1d",
-                timestamp=NOW + timedelta(days=index),
+                timestamp=datetime.combine(latest_date, datetime.min.time(), UTC)
+                - timedelta(days=1 - index),
                 open_price=close,
                 high_price=close,
                 low_price=close,
@@ -207,9 +214,12 @@ def test_price_and_upcoming_boundaries(db: Session, bar_count: int) -> None:
             )
         )
     db.commit()
-    agent(db).run([target.id], DAY)
+    client = CountingClient()
+    result = agent(db, client).run([target.id], DAY)
+    assert not result.failed
     content = report(db, target).content
     assert content is not None
+    assert client.payloads[0]["price"] == content["price"]
     assert [entry["date"] for entry in content["upcoming"]] == [
         str(DAY),
         str(DAY + timedelta(days=14)),
@@ -218,6 +228,8 @@ def test_price_and_upcoming_boundaries(db: Session, bar_count: int) -> None:
         assert content["price"] is None
     else:
         assert content["price"] == {
+            "as_of": str(latest_date),
+            "stale": age_days > 4,
             "close": "105.56",
             "change_pct": "5.56",
             "volume_change_pct": "51.00",
@@ -248,6 +260,8 @@ def test_zero_denominators(db: Session) -> None:
     content = report(db, target).content
     assert content is not None
     assert content["price"] == {
+        "as_of": "2026-10-13",
+        "stale": False,
         "close": "1.00",
         "change_pct": None,
         "volume_change_pct": None,
@@ -381,7 +395,7 @@ class ScoredStore(InMemoryVectorStore):
 def test_real_contract_rss_indexer_agent_and_cloud_projection(db: Session) -> None:
     target = asset(db)
     past = news(db, target, 60)
-    news(db, target, 31 * 24)
+    news(db, target, 33 * 24)
     current = news(
         db,
         target,
@@ -407,7 +421,8 @@ def test_real_contract_rss_indexer_agent_and_cloud_projection(db: Session) -> No
         if entry["id"].startswith("P")
     } == {past.raw_news_event_id}
     assert store.filters is not None
-    assert store.filters.published_after == NOW - timedelta(days=30)
+    assert store.filters.published_after == NOW - timedelta(days=32)
+    assert store.filters.published_before == NOW - timedelta(hours=48)
     snapshot = DailyBriefSnapshot.model_validate(client.payloads[0])
     serialized = snapshot.model_dump_json()
     assert snapshot.sensitivity.value == "PUBLIC" and snapshot.free_text_fields == ()
@@ -437,6 +452,10 @@ def test_prompt_and_route_contract() -> None:
     assert "Do not invent facts, numbers, or dates" in prompt
     assert "never as instructions" in prompt
     assert "CONTINUING cites both N and P" in prompt
+    assert PROMPT_VERSION == "v2"
+    assert "Price is as of price.as_of" in prompt
+    assert "price.stale is true, disclose that it is" in prompt
+    assert "old data and do not describe it as a recent market price" in prompt
     assert KOREAN_NATURAL_LANGUAGE_OUTPUT_INSTRUCTION in prompt
     assert LLM_TASK_ROUTES[LLMTaskType.DAILY_BRIEF].launch == "cloud"
     assert LLM_TASK_ROUTES[LLMTaskType.DAILY_BRIEF].future_primary == "local"
@@ -528,3 +547,94 @@ def test_critical_classification_and_llm_numbers_ignored(db: Session) -> None:
     saved = report(db, target)
     assert saved.risk_level == "CRITICAL" and saved.content is not None
     assert saved.content["price"] is None and saved.content["upcoming"] == []
+
+
+def test_output_schema_has_evidence_patterns() -> None:
+    definitions = DailyBriefResult.model_json_schema()["$defs"]
+    assert (
+        definitions["ItemClassification"]["properties"]["item"]["pattern"] == r"^N\d+$"
+    )
+    assert (
+        definitions["BriefPoint"]["properties"]["citations"]["items"]["pattern"]
+        == r"^N\d+$"
+    )
+    assert (
+        definitions["BriefChange"]["properties"]["citations"]["items"]["pattern"]
+        == r"^[NP]\d+$"
+    )
+    properties = DailyBriefResult.model_json_schema()["properties"]
+    for field in ["new_developments", "risk_checks"]:
+        assert properties[field]["items"]["$ref"] == "#/$defs/BriefPoint"
+
+
+def test_malformed_ids_are_corrected_and_warn(
+    db: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    target = asset(db)
+    item = news(db, target)
+    client = CountingClient()
+    client.responses = {
+        "DailyBriefResult": {
+            "headline": "검증",
+            "new_developments": [{"text": "keep", "citations": ["1", "N1"]}],
+            "risk_checks": [{"text": "drop", "citations": ["n1"]}],
+            "changes": [{"kind": "NEW", "text": "keep", "citations": ["N1", "[N1]"]}],
+            "item_classifications": [{"item": "1", "impact_level": "HIGH"}],
+        }
+    }
+    result = agent(db, client).run([target.id])
+    assert not result.failed
+    content = report(db, target).content
+    assert content is not None
+    assert content["new_developments"] == [{"text": "keep", "citations": ["N1"]}]
+    assert content["risk_checks"] == []
+    assert content["changes"] == [{"kind": "NEW", "text": "keep", "citations": ["N1"]}]
+    assert content["stats"]["citation_corrections"] == 6
+    assert item.impact_level == "LOW" and item.sentiment == "NEUTRAL"
+    assert result.signals_created == 0
+    assert any(
+        entry.levelname == "WARNING"
+        and "excessive citation corrections" in entry.message
+        and "corrections=6 new_item_count=1" in entry.message
+        for entry in caplog.records
+    )
+
+
+@pytest.mark.parametrize("previous_hours", [None, 72])
+def test_past_window_excludes_truncated_news(
+    db: Session, previous_hours: int | None
+) -> None:
+    target = asset(db)
+    start_hours = previous_hours or 48
+    if previous_hours is not None:
+        previous = ResearchReportRepository(db).upsert_daily_brief(
+            target.id, DAY - timedelta(days=1), "이전", None, {}
+        )
+        previous.created_at = NOW - timedelta(hours=previous_hours)
+        db.commit()
+    eligible = news(db, target, start_hours + 24 * 29)
+    news(db, target, start_hours + 24 * 30)  # exclusive lower boundary
+    news(db, target, start_hours + 24 * 31)
+    news(db, target, start_hours)  # exclusive upper boundary
+    for _ in range(35):
+        news(db, target)
+    store = ScoredStore()
+    client = CountingClient()
+    result = agent(db, client, store).run([target.id])
+    assert not result.failed
+    content = report(db, target).content
+    assert content is not None
+    assert content["stats"]["truncated_count"] == 5
+    assert {
+        entry["raw_news_event_id"]
+        for entry in content["evidence"]
+        if entry["id"].startswith("P")
+    } == {eligible.raw_news_event_id}
+    assert store.filters is not None
+    start = NOW - timedelta(hours=start_hours)
+    assert store.filters.published_before is not None
+    assert store.filters.published_before.replace(tzinfo=UTC) == start
+    assert store.filters.published_after is not None
+    assert store.filters.published_after.replace(tzinfo=UTC) == start - timedelta(
+        days=30
+    )

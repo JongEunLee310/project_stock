@@ -129,7 +129,7 @@ class DailyResearchAgent:
             indexer = EmbeddingIndexer(self.db, self.embedder, self.vector_store)
             while indexer.run().has_more:
                 pass
-            past = self._past_evidence(asset_id, items, generated_at)
+            past = self._past_evidence(asset_id, items, start)
         else:
             past = []
         bars = PriceBarRepository(self.db).list_recent(
@@ -139,6 +139,8 @@ class DailyResearchAgent:
         if len(bars) == 2:
             old, latest = bars
             price = BriefPrice(
+                as_of=latest.timestamp.date(),
+                stale=(brief_date - latest.timestamp.date()).days > 4,
                 close=_decimal_string(latest.close_price),
                 change_pct=_change(latest.close_price, old.close_price),
                 volume_change_pct=_change(Decimal(latest.volume), Decimal(old.volume)),
@@ -186,6 +188,14 @@ class DailyResearchAgent:
                     {item.id for item in past},
                 )
                 logger.info("Daily brief citation corrections: %s", corrections)
+                if corrections >= len(items):
+                    logger.warning(
+                        "Daily brief excessive citation corrections: "
+                        "asset_id=%s corrections=%s new_item_count=%s",
+                        asset_id,
+                        corrections,
+                        len(items),
+                    )
                 item_ids = {entry.id: entry.news_item_id for entry in evidence}
                 for classification in synthesis.item_classifications:
                     item_id = item_ids[classification.item]
@@ -193,7 +203,9 @@ class DailyResearchAgent:
                     news.update_classification(
                         item_id, classification.impact_level, classification.sentiment
                     )
-        levels: list[str] = [entry.impact_level for entry in synthesis.item_classifications]
+        levels: list[str] = [
+            entry.impact_level for entry in synthesis.item_classifications
+        ]
         risk_level: str | None = (
             max(
                 levels,
@@ -284,7 +296,7 @@ class DailyResearchAgent:
         return evidence
 
     def _past_evidence(
-        self, asset_id: int, items: list[NewsItem], generated_at: datetime
+        self, asset_id: int, items: list[NewsItem], start: datetime
     ) -> list[BriefEvidence]:
         vector = self.embedder.embed(["\n".join(item.title for item in items)])[0]
         new_sources = {item.raw_news_event_id for item in items}
@@ -297,8 +309,8 @@ class DailyResearchAgent:
                         embedding_model=self.embedder.model_name,
                         asset_id=asset_id,
                         source_types=(ChunkSourceType.NEWS,),
-                        published_after=generated_at
-                        - timedelta(days=PAST_CONTEXT_DAYS),
+                        published_after=start - timedelta(days=PAST_CONTEXT_DAYS),
+                        published_before=start,
                     ),
                     CANDIDATE_K + len(new_sources) * 2,
                 )

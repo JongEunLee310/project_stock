@@ -125,6 +125,28 @@ def exercise_store(store: VectorStore) -> list[tuple[int, int, str, float]]:
         == 5
     )
     assert store.search(vector(1), replace(filters, published_after=NOW), 20) == []
+    assert [
+        hit.source_id
+        for hit in store.search(vector(1), replace(filters, published_before=NOW), 20)
+    ] == [44006]
+    assert (
+        store.search(
+            vector(1), replace(filters, published_before=NOW - timedelta(days=2)), 20
+        )
+        == []
+    )
+    assert [
+        hit.source_id
+        for hit in store.search(
+            vector(1),
+            replace(
+                filters,
+                published_after=NOW - timedelta(days=30),
+                published_before=NOW,
+            ),
+            20,
+        )
+    ] == [44006]
     combined = replace(
         filters,
         asset_id=10,
