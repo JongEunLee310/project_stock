@@ -10,7 +10,11 @@ from sqlalchemy.orm import Session
 from app.adapters.embedding.exceptions import EmbeddingDimensionError, EmbeddingError
 from app.adapters.embedding.mock import MockEmbedder
 from app.adapters.embedding.openai import OpenAIEmbedder
-from app.adapters.factory import get_embedder, get_vector_store
+from app.adapters.factory import (
+    LOCAL_EMBEDDING_API_KEY,
+    get_embedder,
+    get_vector_store,
+)
 from app.adapters.vector.memory import InMemoryVectorStore
 from app.adapters.vector.pgvector import PgVectorStore
 from app.core.config import Settings, settings
@@ -141,9 +145,11 @@ def test_factory_missing_keys(
     monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "openai")
     monkeypatch.setattr(settings, "EMBEDDING_API_KEY", None)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(settings, "EMBEDDING_BASE_URL", None)
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://chat-proxy.example/v1")
     with pytest.raises(
         RuntimeError,
-        match="EMBEDDING_API_KEY or OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai",
+        match="EMBEDDING_API_KEY or OPENAI_API_KEY or EMBEDDING_BASE_URL is required",
     ):
         get_embedder()
     fake_openai.embeddings.create.assert_not_called()
@@ -157,7 +163,7 @@ def test_embedding_settings() -> None:
     )
     assert configured.EMBEDDING_BASE_URL is None
     assert configured.EMBEDDING_API_KEY is None
-    assert configured.EMBEDDING_MODEL == "text-embedding-3-small"
+    assert configured.EMBEDDING_MODEL == "bge-m3"
 
 
 def test_openai_does_not_inherit_environment_base_url(
@@ -169,3 +175,32 @@ def test_openai_does_not_inherit_environment_base_url(
         assert str(embedder.client.base_url) == "https://api.openai.com/v1/"
     finally:
         embedder.client.close()
+
+
+def test_factory_local_embedding_without_keys(
+    monkeypatch: pytest.MonkeyPatch, fake_openai: Mock
+) -> None:
+    constructor = Mock(return_value=fake_openai)
+    monkeypatch.setattr("app.adapters.embedding.openai.openai.OpenAI", constructor)
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "openai")
+    monkeypatch.setattr(settings, "EMBEDDING_API_KEY", None)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(settings, "EMBEDDING_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.setattr(settings, "EMBEDDING_MODEL", "bge-m3")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://chat-proxy.example/v1")
+    embedder = get_embedder()
+    assert isinstance(embedder, OpenAIEmbedder)
+    assert embedder.model_name == "bge-m3"
+    assert embedder.dimensions == EMBEDDING_DIMENSIONS == 1024
+    constructor.assert_called_once_with(
+        api_key=LOCAL_EMBEDDING_API_KEY, base_url="http://localhost:11434/v1"
+    )
+
+
+def test_embedding_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
+    monkeypatch.delenv("EMBEDDING_BASE_URL", raising=False)
+    settings_cls = cast(Any, Settings)
+    configured = cast(Settings, settings_cls(_env_file=None))
+    assert configured.EMBEDDING_MODEL == "bge-m3"
+    assert configured.EMBEDDING_BASE_URL == "http://localhost:11434/v1"

@@ -1,6 +1,6 @@
 from enum import Enum
 
-EMBEDDING_DIMENSIONS = 1536
+EMBEDDING_DIMENSIONS = 1024
 
 
 class ChunkSourceType(str, Enum):

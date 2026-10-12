@@ -58,6 +58,7 @@ from app.domains.rag.types import EMBEDDING_DIMENSIONS
 from app.worker.connection import get_redis_connection
 
 LOCAL_PROXY_OPENAI_API_KEY = "local-proxy"
+LOCAL_EMBEDDING_API_KEY = "local-embedding"
 
 
 def get_market_provider() -> MarketDataProvider:
@@ -211,10 +212,13 @@ def get_embedder() -> Embedder:
     if settings.EMBEDDING_PROVIDER == "openai":
         api_key = settings.EMBEDDING_API_KEY or settings.OPENAI_API_KEY
         if api_key is None or not api_key.strip():
-            raise RuntimeError(
-                "EMBEDDING_API_KEY or OPENAI_API_KEY is required "
-                "when EMBEDDING_PROVIDER=openai"
-            )
+            if settings.EMBEDDING_BASE_URL:
+                api_key = LOCAL_EMBEDDING_API_KEY
+            else:
+                raise RuntimeError(
+                    "EMBEDDING_API_KEY or OPENAI_API_KEY or EMBEDDING_BASE_URL "
+                    "is required when EMBEDDING_PROVIDER=openai"
+                )
         return OpenAIEmbedder(
             api_key=api_key,
             model=settings.EMBEDDING_MODEL,

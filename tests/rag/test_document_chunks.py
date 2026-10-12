@@ -6,7 +6,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domains.rag.model import DocumentChunk
-from app.domains.rag.types import ChunkContentQuality, ChunkSourceType
+from app.domains.rag.types import (
+    EMBEDDING_DIMENSIONS,
+    ChunkContentQuality,
+    ChunkSourceType,
+)
 
 
 def make_chunk(
@@ -24,7 +28,11 @@ def make_chunk(
         chunk_index=chunk_index,
         content="테스트 뉴스 청크",
         content_quality=quality.value,
-        embedding=embedding if embedding is not None else [1.0] + [0.0] * 1535,
+        embedding=(
+            embedding
+            if embedding is not None
+            else [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1)
+        ),
         embedding_model=embedding_model,
         published_at=datetime(2026, 10, 12, tzinfo=UTC),
         content_hash="a" * 64,
@@ -47,7 +55,7 @@ def test_sqlite_round_trip(
 
     loaded = db.get(DocumentChunk, chunk_id)
     assert loaded is not None
-    assert loaded.embedding == [1.0] + [0.0] * 1535
+    assert loaded.embedding == [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1)
     assert loaded.asset_ids == (asset_ids if asset_ids is not None else [])
     assert loaded.source_type == ChunkSourceType.NEWS.value
     assert loaded.content_quality == quality.value
@@ -98,7 +106,7 @@ def test_postgres_vector_round_trip(postgres_db: Session) -> None:
 
     loaded = postgres_db.get(DocumentChunk, chunk_id)
     assert loaded is not None
-    assert list(loaded.embedding) == [1.0] + [0.0] * 1535
+    assert list(loaded.embedding) == [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1)
     assert loaded.asset_ids == [10, 20]
     assert loaded.source_type == ChunkSourceType.NEWS.value
     assert loaded.content_quality == ChunkContentQuality.FULL.value
@@ -123,9 +131,9 @@ def test_postgres_vector_round_trip(postgres_db: Session) -> None:
 @pytest.mark.postgres
 def test_postgres_cosine_distance_order(postgres_db: Session) -> None:
     vectors = [
-        [1.0] + [0.0] * 1535,
-        [0.0, 1.0] + [0.0] * 1534,
-        [-1.0] + [0.0] * 1535,
+        [1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1),
+        [0.0, 1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 2),
+        [-1.0] + [0.0] * (EMBEDDING_DIMENSIONS - 1),
     ]
     chunks = [make_chunk(chunk_index=i, embedding=v) for i, v in enumerate(vectors)]
     postgres_db.add_all(chunks)

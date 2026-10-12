@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str | None = None
     OPENAI_MODEL: str = "gpt-5.5"
     EMBEDDING_PROVIDER: Literal["openai", "mock"] = "openai"
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
-    EMBEDDING_BASE_URL: str | None = None
+    EMBEDDING_MODEL: str = "bge-m3"
+    EMBEDDING_BASE_URL: str | None = "http://localhost:11434/v1"
     EMBEDDING_API_KEY: str | None = None
     VECTOR_STORE_PROVIDER: Literal["pgvector", "mock"] = "pgvector"
     LLM_TIMEOUT_SECONDS: int = 30
