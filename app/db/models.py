@@ -14,6 +14,7 @@ import app.domains.news_insights.model  # noqa: F401 — registers news insight 
 import app.domains.notification_channels.model  # noqa: F401 — registers channel model
 import app.domains.portfolios.model  # noqa: F401 — registers Portfolio models for autogenerate
 import app.domains.prices.model  # noqa: F401 — registers price bar model
+import app.domains.rag.model  # noqa: F401 — registers DocumentChunk model
 import app.domains.raw_news.model  # noqa: F401 — registers RawNewsEvent model for autogenerate
 import app.domains.raw_prices.model  # noqa: F401 — registers RawPrice model
 import app.domains.reports.model  # noqa: F401 — registers ResearchReport model for autogenerate
