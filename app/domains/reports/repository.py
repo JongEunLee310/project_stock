@@ -83,6 +83,21 @@ class ResearchReportRepository:
         )
         return self.db.scalars(stmt).first()
 
+    def get_latest_daily_brief_before(
+        self, asset_id: int, brief_date: date
+    ) -> ResearchReport | None:
+        stmt = (
+            select(ResearchReport)
+            .where(
+                ResearchReport.asset_id == asset_id,
+                ResearchReport.report_type == ReportType.DAILY_BRIEF.value,
+                ResearchReport.brief_date < brief_date,
+            )
+            .order_by(ResearchReport.created_at.desc(), ResearchReport.id.desc())
+            .limit(1)
+        )
+        return self.db.scalars(stmt).first()
+
     def list_by_asset(
         self,
         asset_id: int,

@@ -58,22 +58,35 @@
 
 | 단계 | 책임 | 사용하는 공개 함수(추가 필요 시 해당 도메인에 읽기 함수 추가) |
 |---|---|---|
-| 1. 기간 결정 | 이 종목의 직전 `DAILY_BRIEF` 생성 시각부터 지금까지. 직전 브리프가 없으면 최근 48시간(가정) | `ResearchReportRepository` |
-| 2. 새 소식 수집 | 기간 안에 생긴 이 종목의 `news_items`. 최근 순 최대 30건(가정), 넘으면 잘라 내고 잘린 수를 기록 | `NewsItemRepository` |
+| 1. 기간 결정 | `brief_date`보다 이전인 가장 최근 `DAILY_BRIEF`의 `created_at` 이후. 직전 브리프가 없으면 실행 시각 기준 최근 48시간(가정) | `ResearchReportRepository` |
+| 2. 새 소식 수집 | `created_at`이 기간 시작보다 뒤인 이 종목의 `news_items`(발행 시각 기준이 아님). 최근 순 최대 30건(가정), 넘으면 잘라 내고 잘린 수를 기록 | `NewsItemRepository` |
 | 3. 임베딩 확인 | 새 소식의 원문이 아직 임베딩되지 않았으면 처리 | `EmbeddingIndexer.run` |
 | 4. 과거 맥락 검색 | 새 소식 제목들로 지난 30일(가정) 근거를 검색. 새 소식 자신은 제외, 상위 10개(가정) | `get_embedder`, `get_vector_store`, `postprocess_hits` |
 | 5. 가격·일정 | 최근 일봉 2개(등락률·거래량 변화 계산), 14일 안의 실적 일정 | 가격·실적 repository |
 | 6. 종합(LLM) | §4. 새 소식이 0건이면 건너뜀 | `LLMGateway.complete_json` |
 | 7. 인용 검증 | 없는 번호·중복 제거, 인용 없는 항목 제거 | rag의 `validate_citations` 패턴 |
 | 8. 영향도 기록 | 종합 출력의 새 기사별 영향도·감성을 `news_items`에 기록 | `NewsItemRepository.update_classification`(신설) |
-| 9. 신호·알림 | 새 기사마다 `RuleEngine(default_rules(), ...)` 실행. 생성된 신호마다 이 종목을 관심종목에 둔 사용자에게 알림 | `RuleEngine`, `AlertService` |
-| 10. 리포트 저장 | `DAILY_BRIEF` upsert(종목·날짜당 하나) | `ResearchReportRepository` |
-| 11. 노트 기록 | §5. 실패해도 리포트 저장은 유지 | `ObsidianWriter` |
+| 9. 리포트 저장 | `DAILY_BRIEF` upsert(종목·날짜당 하나) | `ResearchReportRepository` |
+| 10. 종목 커밋 | 영향도 기록과 브리프 저장을 함께 커밋 | `Session.commit` |
+| 11. 신호·알림 | 새 기사마다 `RuleEngine(default_rules(), ...)` 실행. 생성된 신호마다 이 종목을 관심종목에 둔 사용자에게 알림 | `RuleEngine`, `AlertService` |
+| 12. 노트 기록 | §5. 실패해도 리포트 저장은 유지 | `ObsidianWriter` |
 
-- 새 소식이 0건이면 6~9단계를 건너뛰고, 가격·일정만 담은 "새 소식 없음" 브리프를 저장한다(LLM 호출 0회).
+- 새 소식이 0건이면 6~8·11단계를 건너뛰고, 가격·일정만 담은 "새 소식 없음" 브리프를 저장한다(LLM 호출 0회).
 - 가설 충돌 판단은 하지 않는다. `RuleContext`의 `thesis`·`conflict_result`는 비워 둔다. 그래서
   `ThesisConflictRule`은 발동하지 않는다(에이전트 3까지).
-- 커밋 단위는 종목이다. 한 종목의 8~10단계가 성공하면 커밋한다.
+- 같은 날 재실행은 오늘 브리프를 덮어쓰지만 기간 시작은 오늘을 제외한 이전 브리프의 `created_at`으로
+  유지한다. 이전 날짜 브리프 중 생성 시각이 가장 최근인 행을 고른다.
+- 영향도 기록 → 브리프 upsert → 종목 커밋 → 신호·알림 순서다. 신호·알림 repository가 내부에서
+  커밋하므로 신호 단계까지 종목 원자성을 보장하지 않는다. 신호·알림 실패 시 브리프는 유지하고 실패를
+  `failed`에 기록한다. 이미 커밋된 신호·알림도 유지된다.
+- `processed`는 저장·커밋한 브리프 수다. 이후 신호 실패 또는 종합 실패 시 `failed`에도 함께 기록한다.
+- 가격은 `Decimal`로 계산하고 소수 둘째 자리에서 `ROUND_HALF_UP`으로 반올림한 문자열이다(가정).
+  일봉이 0~1개면 `price=None`, 전일 종가·거래량이 0이면 해당 변화율은 `None`이다(가정).
+- 일정은 기준일과 기준일+14일 양 끝을 포함한다(가정). 발췌 상한은 300자다(가정).
+- 기존 인덱서는 전체 원문을 앞에서부터 순회하므로 미처리 원문이 남지 않을 때까지 실행한다.
+  과거 근거 후처리는 기존 기본 8건을 유지하되 일일 브리프 호출에서 10건 상한을 지정한다(가정).
+- `stats.citation_corrections`는 제거한 인용 번호·중복 번호·탈락 항목·분류 보정 각각의 수를 합산한다.
+  `stats.new_item_count`는 입력 기사 수, `truncated_count`는 제외한 기사 수다.
 
 `DailyResearchResult`: `processed`, `skipped_no_news`, `failed`(종목별 사유), `llm_calls`, `signals_created`,
 `alerts_created`
@@ -113,7 +126,7 @@
 - `headline`, `new_developments`, `changes`, `risk_checks`, `limitations`(검증 후 결과)
 - `evidence`: 번호별 원문 메타데이터(`raw_news_event_id`, `news_item_id`, 제목, 매체, URL, 발행 시각)
 - `price`, `upcoming`(입력과 같은 DB 값)
-- `stats`: 새 소식 수, 잘린 수, 과거 맥락 수, 제거된 인용 항목 수
+- `stats`: 새 소식 수, 잘린 수, 과거 맥락 수, 제거·보정 수(`citation_corrections`)
 - `no_news: bool`
 
 ### 4.4 LLM 배선
