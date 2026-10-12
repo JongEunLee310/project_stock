@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "created_at": "2026-10-12",
+  "description": "RAG 1차 검색 품질 평가 세트. 관련 근거는 해당 종목에 연결된 raw_news_events 중 제목이 relevant_title_pattern(PostgreSQL ~* 정규식, 대소문자 무시)에 맞는 기사로 정의한다. relevant_title_pattern이 null인 질문은 근거가 없어야 하는 부정 질문이다. 라벨 기준 데이터는 2026-07-23 시점 로컬 DB 스냅샷(raw_news_events 2,703건)이다.",
+  "reference_now": "2026-07-24T00:00:00+00:00",
+  "lookback_days": 365,
+  "questions": [
+    {"id": "nvda-china-export", "symbol": "NVDA", "question": "중국 수출 규제가 엔비디아에 어떤 영향을 주고 있나?", "relevant_title_pattern": "China|H20|H200|export"},
+    {"id": "nvda-next-gen-chips", "symbol": "NVDA", "question": "블랙웰이나 루빈 같은 차세대 칩 출시 일정은?", "relevant_title_pattern": "Blackwell|Rubin|Kyber"},
+    {"id": "nvda-quantum", "symbol": "NVDA", "question": "엔비디아의 양자컴퓨팅 관련 행보는?", "relevant_title_pattern": "quantum"},
+    {"id": "nvda-coreweave", "symbol": "NVDA", "question": "엔비디아와 코어위브의 관계는?", "relevant_title_pattern": "CoreWeave"},
+    {"id": "nvda-earnings", "symbol": "NVDA", "question": "엔비디아 최근 실적 발표 내용은?", "relevant_title_pattern": "earnings|revenue|quarter"},
+    {"id": "googl-antitrust", "symbol": "GOOGL", "question": "구글 반독점 소송은 어떻게 진행되고 있나?", "relevant_title_pattern": "antitrust|DOJ|lawsuit|monopoly"},
+    {"id": "googl-waymo", "symbol": "GOOGL", "question": "웨이모 자율주행 사업 소식은?", "relevant_title_pattern": "Waymo"},
+    {"id": "googl-tpu", "symbol": "GOOGL", "question": "구글 TPU 칩 관련 소식은?", "relevant_title_pattern": "TPU"},
+    {"id": "googl-gemini", "symbol": "GOOGL", "question": "제미나이 AI 모델의 경쟁력은?", "relevant_title_pattern": "Gemini"},
+    {"id": "aapl-broadcom", "symbol": "AAPL", "question": "애플과 브로드컴의 칩 계약 내용은?", "relevant_title_pattern": "Broadcom"},
+    {"id": "aapl-iphone", "symbol": "AAPL", "question": "아이폰 판매 동향은?", "relevant_title_pattern": "iPhone"},
+    {"id": "aapl-app-store", "symbol": "AAPL", "question": "앱스토어 반독점 규제 이슈는?", "relevant_title_pattern": "antitrust|DOJ|EU|App Store"},
+    {"id": "samsung-drop", "symbol": "005930", "question": "삼성전자 주가 급락 배경은?", "relevant_title_pattern": "하락|급락|fall|sink|sell-off|plunge"},
+    {"id": "samsung-adr", "symbol": "005930", "question": "삼성전자 ADR 상장 루머는?", "relevant_title_pattern": "ADR"},
+    {"id": "neg-nvda-ceo", "symbol": "NVDA", "question": "엔비디아 CEO 교체 계획은?", "relevant_title_pattern": null},
+    {"id": "neg-aapl-vision-pro", "symbol": "AAPL", "question": "애플 비전프로 판매 실적은?", "relevant_title_pattern": null},
+    {"id": "neg-googl-ev", "symbol": "GOOGL", "question": "구글의 전기차 사업 진출 계획은?", "relevant_title_pattern": null},
+    {"id": "neg-samsung-buyback", "symbol": "005930", "question": "삼성전자 자사주 소각 계획은?", "relevant_title_pattern": null}
+  ]
+}
