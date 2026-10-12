@@ -13,6 +13,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import app.db.models  # noqa: E402, F401 — registers all models before DB use
 from app.adapters.embedding.base import Embedder  # noqa: E402
 from app.adapters.llm.gateway import LLMCompletionResult, LLMGateway  # noqa: E402
 from app.adapters.vector.base import VectorStore  # noqa: E402

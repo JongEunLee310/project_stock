@@ -7,6 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import app.db.models  # noqa: E402, F401 — registers all models before DB use
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)

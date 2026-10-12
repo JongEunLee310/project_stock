@@ -6,6 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import app.db.models  # noqa: E402, F401 — registers all models before DB use
 from app.adapters.factory import get_embedder, get_vector_store  # noqa: E402
 from app.db.session import SessionLocal  # noqa: E402
 from app.domains.rag.indexing_service import EmbeddingIndexer  # noqa: E402
