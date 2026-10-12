@@ -53,7 +53,9 @@ def test_repository_to_indexer_to_asset_search(db: Session) -> None:
     ]
     db.add_all(assets)
     db.commit()
-    event = create_event(db, 1, "본문" * 1600)
+    event = create_event(
+        db, 1, '<a href="https://example.com/article">' + "본문" * 1600 + "</a>"
+    )
     event.published_at = datetime(2026, 10, 10)
     db.commit()
     summary_event = create_event(db, 2, "짧은 본문")
@@ -92,10 +94,18 @@ def test_repository_to_indexer_to_asset_search(db: Session) -> None:
     )
     assert not result.has_more
     assert len(embedder.calls) == 1
+    assert embedder.calls[0][:3] == [
+        ("뉴스 1\n\n" + "본문" * 1600)[start : start + 1500]
+        for start in (0, 1350, 2700)
+    ]
     query = embedder.embed(["뉴스"])[0]
     hits = store.search(query, ChunkFilter(embedder.model_name), 20)
     full = [hit for hit in hits if hit.source_id == event.id]
     assert len(full) == 3
+    assert sorted(full, key=lambda hit: hit.chunk_index)[0].content == (
+        "뉴스 1\n\n" + "본문" * 1600
+    )[:1500]
+    assert all("https://" not in hit.content and "<a" not in hit.content for hit in full)
     assert all(hit.content_quality == ChunkContentQuality.FULL for hit in full)
     assert all(hit.published_at == event.published_at for hit in full)
     for asset in assets:
@@ -126,6 +136,11 @@ def test_repository_to_indexer_to_asset_search(db: Session) -> None:
     calls = len(embedder.calls)
     again = indexer.run(scan_page_size=1)
     assert (again.embedded_documents, again.unchanged, again.scanned) == (0, 3, 3)
+    assert len(embedder.calls) == calls
+    assert store.search(query, ChunkFilter(embedder.model_name), 20) == hits
+    event.body = '<a href="https://example.com/changed">' + "본문" * 1600 + "</a>"
+    db.commit()
+    assert indexer.run().unchanged == 3
     assert len(embedder.calls) == calls
     assert store.search(query, ChunkFilter(embedder.model_name), 20) == hits
     event.body = "수정 본문" * 100
