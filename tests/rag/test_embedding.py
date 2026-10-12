@@ -89,8 +89,13 @@ def test_openai_error_boundary(fake_openai: Mock) -> None:
     error = openai.OpenAIError("failed")
     fake_openai.embeddings.create.side_effect = error
     with pytest.raises(EmbeddingError) as raised:
-        OpenAIEmbedder("key").embed(["text"])
+        OpenAIEmbedder(
+            "secret-api-key", model="bge-m3", base_url="http://localhost:11434/v1"
+        ).embed(["text"])
     assert raised.value.__cause__ is error
+    assert "bge-m3" in str(raised.value)
+    assert "http://localhost:11434/v1" in str(raised.value)
+    assert "secret-api-key" not in str(raised.value)
 
 
 def test_mock_factories(db: Session) -> None:

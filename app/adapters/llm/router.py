@@ -11,6 +11,7 @@ class TaskRoute:
 
 
 LLM_TASK_ROUTES: dict[LLMTaskType, TaskRoute] = {
+    LLMTaskType.RESEARCH_QA: TaskRoute(launch="cloud", future_primary="cloud"),
     LLMTaskType.NEWS_SUMMARY: TaskRoute(launch="cloud", future_primary="local"),
     LLMTaskType.THESIS_CONFLICT: TaskRoute(launch="cloud", future_primary="cloud"),
     LLMTaskType.PORTFOLIO_BRIEFING: TaskRoute(launch="cloud", future_primary="cloud"),

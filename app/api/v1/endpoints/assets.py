@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.adapters.factory import get_llm_gateway
+from app.adapters.factory import get_embedder, get_llm_gateway, get_vector_store
 from app.api.v1.deps import get_current_user
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
@@ -37,6 +37,8 @@ from app.domains.earnings.schema import EarningsSummaryResponse
 from app.domains.earnings.service import EarningsService
 from app.domains.news.news_disclosure_service import NewsDisclosureService
 from app.domains.news.schema import NewsDisclosureResponse
+from app.domains.rag.schema import ResearchAnswer, ResearchQARequest
+from app.domains.rag.service import ResearchQAService
 from app.domains.research_coverage.schema import ResearchCoverageResponse
 from app.domains.research_coverage.service import ResearchCoverageService
 from app.domains.research_summary.schema import ResearchSummaryResponse
@@ -162,6 +164,25 @@ def refresh_asset_research_summary(
             asset_id,
             current_user.id,
         )
+    )
+
+
+@router.post(
+    "/{asset_id}/research-qa",
+    response_model=ApiResponse[ResearchAnswer],
+    summary="Ask asset research question",
+    description="Answer a research question using recent asset news with validated evidence citations.",
+)
+def ask_asset_research_question(
+    asset_id: int,
+    data: ResearchQARequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[ResearchAnswer]:
+    return success(
+        ResearchQAService(
+            db, get_embedder(), get_vector_store(db), get_llm_gateway()
+        ).ask(asset_id, data)
     )
 
 

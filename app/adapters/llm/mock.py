@@ -6,6 +6,13 @@ from app.adapters.llm.base import LLMClient, LLMMessage
 
 
 DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
+    "ResearchQAResult": {
+        "answer_points": [
+            {"text": "제공된 뉴스에서 관련 소식이 확인됩니다.", "citations": [1]}
+        ],
+        "limitations": "헤드라인 수준의 근거로 세부 내용을 확인하기 어렵습니다.",
+        "insufficient_evidence": False,
+    },
     "NewsSummaryResult": {
         "summary": "Mock analysis summary.",
         "positive_factors": ["Mock positive factor"],

@@ -15,6 +15,7 @@ class OpenAIEmbedder(Embedder):
     ) -> None:
         if dimensions <= 0:
             raise ValueError("dimensions must be positive")
+        self._base_url = base_url or "https://api.openai.com/v1"
         self._model = model
         self._dimensions = dimensions
         # The SDK otherwise inherits OPENAI_BASE_URL from the chat configuration.
@@ -42,7 +43,9 @@ class OpenAIEmbedder(Embedder):
                     encoding_format="float",
                 )
             except openai.OpenAIError as exc:
-                raise EmbeddingError("OpenAI embedding request failed") from exc
+                raise EmbeddingError(
+                    f"Embedding request failed: model={self.model_name} base_url={self._base_url}"
+                ) from exc
             ordered = sorted(response.data, key=lambda item: item.index)
             if [item.index for item in ordered] != list(range(len(batch))):
                 raise EmbeddingError("OpenAI returned invalid embedding indices")

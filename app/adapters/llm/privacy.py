@@ -61,6 +61,23 @@ class DecisionAssistSnapshot(CloudSafePayload):
     memo: str | None
 
 
+class ResearchQAEvidenceProjection(BaseModel):
+    id: int
+    title: str
+    source_name: str
+    published_at: datetime | None
+    excerpt: str
+
+
+class ResearchQASnapshot(CloudSafePayload):
+    sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
+
+    symbol: str
+    asset_name: str
+    question: str
+    evidence: list[ResearchQAEvidenceProjection]
+
+
 class PortfolioConcentrationSnapshot(CloudSafePayload):
     sensitivity: ClassVar[SensitivityLevel] = SensitivityLevel.AGGREGATED
 

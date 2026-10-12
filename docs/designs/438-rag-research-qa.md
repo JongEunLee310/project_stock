@@ -194,15 +194,16 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 
 | Method · Path | request | response | Auth | 영속 |
 |---|---|---|---|---|
-| `POST /api/v1/assets/{asset_id}/research-qa` | `ResearchQARequest` | `ResearchAnswer` | Required | No(노트 저장 선택) |
+| `POST /api/v1/assets/{asset_id}/research-qa` | `ResearchQARequest` | `ResearchAnswer` | Required | No |
 
 경로는 기존 리서치 계열 관례(`app/api/v1/endpoints/assets.py`의 `/{asset_id}/research-coverage`
 등)를 따른다. 응답은 공통 `ApiResponse` 형식이다.
 
 `ResearchQARequest`
-- `question: str` — 1~500자(가정)
+- `question: str` — 앞뒤 공백 제거 후 1~500자(가정)
 - `lookback_days: int` — 기본 90, 범위 1~365(가정)
-- `save_to_obsidian: bool` — 기본 false
+
+`save_to_obsidian`은 #443에서 추가한다. 이번 #442 요청에는 포함하지 않는다.
 
 `ResearchAnswer`
 - `answer_points: list[AnswerPoint]` — `text: str`, `citations: list[int]`
@@ -211,25 +212,30 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 - `evidence: list[EvidenceItem]` — `id: int`(인용 번호, 1부터), `source_type`, `source_id`,
   `title`, `source_name`, `source_url`, `published_at`, `excerpt`, `score`, `content_quality`
 - `generated_at: datetime`
-- `obsidian_note_path: str | None`
+
+`obsidian_note_path`는 #443에서 추가한다. 이번 #442 응답에는 포함하지 않는다.
+`source_name`은 원문 제목의 마지막 ` - 매체명` 꼬리에서 가져오고, 꼬리가 없으면
+`raw_news_events.source`를 쓴다. `source`는 실매체 대신 Google News 피드 제목일 수 있다.
 
 2차(#445)에서 `AnswerPoint.kind`와 인용 종류 구분이 추가될 예정이다. 1차 응답 필드는 그대로
 두고 필드를 추가하는 방식으로 확장한다.
 
 ### 5.2 `ResearchQAService` (`app/domains/rag/service.py`)
 
-- `ask(asset_id, user_id, request) -> ResearchAnswer` — asset 확인, 검색, 생성, 인용 검증,
-  선택적 노트 저장을 묶는다.
-- `_retrieve(asset_id, question, lookback_days) -> list[EvidenceItem]` — 질문 임베딩, 검색,
-  후처리
-- `_generate(asset, question, evidence) -> ResearchQAResult` — projection 구성과 게이트웨이 호출
-- `_validate_citations(result, evidence) -> ResearchQAResult` — §5.4 규칙 적용
+- `ask(asset_id, request) -> ResearchAnswer` — asset 확인, 검색, 생성, 인용 검증,
+  응답을 묶는다. 노트 저장은 #443에서 추가한다.
+- `now: Callable[[], datetime]`를 주입할 수 있으며 기본값은 현재 UTC 시각이다.
+- `retrieval.postprocess_hits` — 검색 후처리 순수 함수.
+- `validate_citations(result, evidence_ids) -> tuple[ResearchQAResult, int]` — §5.4 규칙 적용과
+  제거한 point 수 반환. 서비스에서 제거 수를 info 로그로 남긴다.
+- 원문 메타데이터는 `RawNewsEventRepository.list_by_ids`로 한 번에 읽는다. 원문이 없는
+  청크는 근거에서 제외한다. `excerpt`는 청크 내용 앞 300자다(가정).
 
 검색 후처리 규칙(모두 가정, #444 평가 결과로 조정한다)
 - 후보 k=20을 가져온다.
 - 유사도가 0.3 미만인 청크는 버린다.
-- 원문 1건당 최대 2청크만 남긴다.
-- `TITLE_ONLY` 청크 점수에 0.8을 곱한다.
+- `TITLE_ONLY` 청크 점수에 0.8을 곱하고 재정렬한다. 동점은 `chunk_id` 오름차순이다.
+- 원문 1건당 최대 2청크만 남긴다. 응답 점수도 가중치를 적용한 값이다.
 - 최종 상위 8개를 근거로 쓴다.
 
 ### 5.3 LLM 배선
@@ -269,7 +275,7 @@ rag는 두 테이블을 읽기만 하며, 다른 도메인의 repository 공개 
 | 입력 검증 실패 | 422(기존 검증 처리) | |
 | 질문 임베딩 실패 | 503 `RAG_EMBEDDING_UNAVAILABLE`(신규 코드, 가정) | 검색 없이는 답할 수 없으므로 실패로 응답한다 |
 | LLM 호출 실패 | 200, `insufficient_evidence=true`, 근거 목록은 채워서 반환, `limitations`에 생성 실패 명시 | `assist_service.py:49-55`의 안전 실패 관례를 따른다 |
-| 노트 저장 실패 | 200, `obsidian_note_path=null`, 경고 로그 | 저장은 부가 기능이다 |
+| 노트 저장 실패(#443) | 200, `obsidian_note_path=null`, 경고 로그 | 저장은 부가 기능이다 |
 
 ## 6. 모듈 경계 (ADR-018 R1~R5)
 
