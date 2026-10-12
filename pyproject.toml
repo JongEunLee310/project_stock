@@ -12,6 +12,7 @@ dependencies = [
     "lxml>=6.1.1",
     "openai>=1.0.0",
     "passlib[bcrypt]>=1.7.4",
+    "pgvector>=0.5.1",
     "psycopg2-binary>=2.9.12",
     "pydantic-settings>=2.14.1",
     "pyjwt>=2.13.0",
