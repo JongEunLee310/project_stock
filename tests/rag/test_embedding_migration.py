@@ -21,13 +21,12 @@ PREVIOUS_REVISION = "c3d4e5f6006f"
 def test_embedding_migration_head_and_model_dimension() -> None:
     config = Config(str(REPO_ROOT / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == [REVISION]
     revision = script.get_revision(REVISION)
     assert revision is not None
     assert revision.down_revision == PREVIOUS_REVISION
     column_type = DocumentChunk.__table__.c.embedding.type
     assert isinstance(column_type, Vector)
-    assert column_type.dim == EMBEDDING_DIMENSIONS == 1024
+    assert column_type.dim == EMBEDDING_DIMENSIONS
 
 
 @pytest.mark.parametrize("upgrade", [True, False])

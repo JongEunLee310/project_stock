@@ -9,6 +9,7 @@ from app.worker.jobs.decision_review_triggers import (
 )
 from app.worker.jobs.news import collect_news_job
 from app.worker.jobs.prices import collect_prices_job
+from app.worker.jobs.rag import embed_documents_job
 from app.worker.jobs.signal_snapshots import snapshot_signal_states_job
 
 
@@ -62,6 +63,11 @@ default_scheduler_registry = SchedulerRegistry(
                 func=collect_news_job,
             ),
             cron="0 * * * *",
+            enabled=True,
+        ),
+        ScheduleDefinition(
+            job=FunctionSchedulerJob(name="embed_documents", func=embed_documents_job),
+            cron="20 * * * *",
             enabled=True,
         ),
         ScheduleDefinition(

@@ -68,6 +68,13 @@ def exercise_store(store: VectorStore) -> list[tuple[int, int, str, float]]:
     ]
     assert store.upsert([]) == 0
     assert store.upsert(records) == len(records)
+    assert store.get_content_hashes(ChunkSourceType.NEWS, [], "test-model-440") == {}
+    assert store.get_content_hashes(
+        ChunkSourceType.NEWS, [44001, 44008, 99999], "test-model-440"
+    ) == {44001: "a" * 64}
+    assert store.get_content_hashes(
+        ChunkSourceType.NEWS, [44001, 44008], "other-model-440"
+    ) == {44001: "a" * 64, 44008: "a" * 64}
     filters = ChunkFilter("test-model-440")
     initial = store.search(vector(1), filters, 20)
     assert len(initial) == 7
@@ -79,6 +86,9 @@ def exercise_store(store: VectorStore) -> list[tuple[int, int, str, float]]:
         content_hash="b" * 64,
     )
     assert store.upsert([changed, changed]) == 2
+    assert store.get_content_hashes(
+        ChunkSourceType.NEWS, [44001, 44002], "test-model-440"
+    ) == {44001: "b" * 64, 44002: "a" * 64}
     hits = store.search(vector(1), filters, 20)
     assert len(hits) == 7
     assert hits[0].chunk_id == old_id
@@ -126,6 +136,9 @@ def exercise_store(store: VectorStore) -> list[tuple[int, int, str, float]]:
     assert len(store.search(vector(1), ChunkFilter("other-model-440"), 20)) == 2
     assert store.delete_by_source(ChunkSourceType.NEWS, 44001) == 2
     assert store.delete_by_source(ChunkSourceType.NEWS, 44001) == 0
+    assert (
+        store.get_content_hashes(ChunkSourceType.NEWS, [44001], "test-model-440") == {}
+    )
     assert len(store.search(vector(1), filters, 20)) == 6
     assert len(store.search(vector(1), ChunkFilter("other-model-440"), 20)) == 1
     return [

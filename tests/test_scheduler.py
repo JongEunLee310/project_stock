@@ -23,6 +23,7 @@ from app.worker.jobs.decision_review_triggers import (
 )
 from app.worker.jobs.news import collect_news_job
 from app.worker.jobs.prices import collect_prices_job
+from app.worker.jobs.rag import embed_documents_job
 from app.worker.jobs.signal_snapshots import snapshot_signal_states_job
 from tests.conftest import api_data
 
@@ -35,9 +36,9 @@ class FakeQueuedJob:
 class FakeQueue:
     def __init__(self, job_id: str = "rq-job-1") -> None:
         self.job_id = job_id
-        self.enqueued: list[Callable[..., None]] = []
+        self.enqueued: list[Callable[..., object]] = []
 
-    def enqueue(self, f: Callable[..., None]) -> FakeQueuedJob:
+    def enqueue(self, f: Callable[..., object]) -> FakeQueuedJob:
         self.enqueued.append(f)
         return FakeQueuedJob(self.job_id)
 
@@ -96,6 +97,7 @@ def test_default_scheduler_registry_contains_expected_jobs() -> None:
     assert set(schedules_by_name) == {
         "price_collection",
         "news_collection",
+        "embed_documents",
         "analysis_kr_open",
         "analysis_kr_main",
         "analysis_us_session",
@@ -108,6 +110,9 @@ def test_default_scheduler_registry_contains_expected_jobs() -> None:
     assert schedules_by_name["price_collection"].cron == "10 22 * * 1-5"
     assert schedules_by_name["news_collection"].job.func is collect_news_job
     assert schedules_by_name["news_collection"].cron == "0 * * * *"
+    assert schedules_by_name["embed_documents"].job.func is embed_documents_job
+    assert schedules_by_name["embed_documents"].cron == "20 * * * *"
+    assert schedules_by_name["embed_documents"].enabled is True
     assert schedules_by_name["signal_snapshot"].job.func is snapshot_signal_states_job
     assert schedules_by_name["signal_snapshot"].cron == "30 11 * * 1-5"
     assert schedules_by_name["alert_evaluation"].job.func is evaluate_alert_rules_job
@@ -189,10 +194,10 @@ def test_alert_engine_enabled_flag_controls_alert_entry(
 def test_cron_config_registers_enabled_scheduler_jobs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    registered: list[tuple[Callable[..., None], str, str | None]] = []
+    registered: list[tuple[Callable[..., object], str, str | None]] = []
 
     def fake_register(
-        func: Callable[..., None],
+        func: Callable[..., object],
         queue_name: str,
         *,
         cron: str | None = None,
@@ -212,6 +217,7 @@ def test_cron_config_registers_enabled_scheduler_jobs(
         (evaluate_decision_review_triggers_job, "default", "*/5 * * * *"),
         (collect_prices_job, "default", "10 22 * * 1-5"),
         (collect_news_job, "default", "0 * * * *"),
+        (embed_documents_job, "default", "20 * * * *"),
         (snapshot_signal_states_job, "default", "30 11 * * 1-5"),
     ]
 
@@ -224,10 +230,10 @@ def test_cron_config_analysis_registration_follows_enabled_flag(
     import app.scheduler.registry as registry_module
     import rq.cron
 
-    registered: list[tuple[Callable[..., None], str]] = []
+    registered: list[tuple[Callable[..., object], str]] = []
 
     def fake_register(
-        func: Callable[..., None],
+        func: Callable[..., object],
         queue_name: str,
         *,
         cron: str | None = None,

@@ -23,6 +23,15 @@ class RawNewsEventRepository:
         self.db.refresh(event)
         return event
 
+    def list_after_id(self, after_id: int, limit: int) -> list[RawNewsEvent]:
+        stmt = (
+            select(RawNewsEvent)
+            .where(RawNewsEvent.id > after_id)
+            .order_by(RawNewsEvent.id)
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt).all())
+
     def get_by_url(self, url: str) -> RawNewsEvent | None:
         stmt = select(RawNewsEvent).where(RawNewsEvent.url == url)
         return self.db.scalars(stmt).first()
