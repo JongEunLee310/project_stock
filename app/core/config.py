@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     EMBEDDING_BASE_URL: str | None = "http://localhost:11434/v1"
     EMBEDDING_API_KEY: str | None = None
     VECTOR_STORE_PROVIDER: Literal["pgvector", "mock"] = "pgvector"
+    OBSIDIAN_VAULT_PATH: str | None = None
+    OBSIDIAN_EXPORT_DIR: str = "stock-agent"
     LLM_TIMEOUT_SECONDS: int = 30
     LLM_PROVIDER: Literal["cloud", "local", "mock"] = "cloud"
     LLM_DAILY_CALL_LIMIT: int | None = None
@@ -60,7 +62,11 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "OPENAI_BASE_URL", "EMBEDDING_BASE_URL", "EMBEDDING_API_KEY", mode="before"
+        "OPENAI_BASE_URL",
+        "EMBEDDING_BASE_URL",
+        "EMBEDDING_API_KEY",
+        "OBSIDIAN_VAULT_PATH",
+        mode="before",
     )
     @classmethod
     def parse_optional_string(cls, value: Any) -> str | None | Any:

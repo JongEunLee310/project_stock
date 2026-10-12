@@ -3,7 +3,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.adapters.factory import get_embedder, get_llm_gateway, get_vector_store
+from app.adapters.factory import (
+    get_embedder,
+    get_llm_gateway,
+    get_obsidian_writer,
+    get_vector_store,
+)
 from app.api.v1.deps import get_current_user
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
@@ -181,7 +186,11 @@ def ask_asset_research_question(
 ) -> ApiResponse[ResearchAnswer]:
     return success(
         ResearchQAService(
-            db, get_embedder(), get_vector_store(db), get_llm_gateway()
+            db,
+            get_embedder(),
+            get_vector_store(db),
+            get_llm_gateway(),
+            obsidian_writer=get_obsidian_writer(),
         ).ask(asset_id, data)
     )
 

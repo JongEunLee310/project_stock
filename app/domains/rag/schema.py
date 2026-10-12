@@ -11,6 +11,7 @@ class ResearchQARequest(BaseModel):
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)
     ]
     lookback_days: int = Field(default=90, ge=1, le=365)
+    save_to_obsidian: bool = False
 
 
 class AnswerPoint(BaseModel):
@@ -40,3 +41,4 @@ class ResearchQAResult(BaseModel):
 class ResearchAnswer(ResearchQAResult):
     evidence: list[EvidenceItem]
     generated_at: datetime
+    obsidian_note_path: str | None = None

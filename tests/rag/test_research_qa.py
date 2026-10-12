@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from functools import partial
+from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
@@ -15,6 +16,7 @@ from app.adapters.llm.privacy import ResearchQAEvidenceProjection, ResearchQASna
 from app.adapters.llm.prompts.research_qa import build_research_qa_system_prompt
 from app.adapters.llm.router import LLM_TASK_ROUTES
 from app.adapters.llm.types import LLMTaskType
+from app.adapters.obsidian.writer import ObsidianWriter
 from app.adapters.vector.memory import InMemoryVectorStore
 from app.adapters.vector.types import ChunkHit, ChunkRecord
 from app.domains.assets.model import Asset
@@ -330,3 +332,79 @@ def test_api_auth_and_missing_asset(client: TestClient) -> None:
     )
     assert ResearchQARequest(question="  질문  ").question == "질문"
     assert len(ResearchQARequest(question=" " + "a" * 500 + " ").question) == 500
+
+
+@pytest.mark.parametrize(
+    "mode", ["success", "missing", "oserror", "valueerror", "disabled", "no_evidence"]
+)
+def test_api_obsidian_export(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    mode: str,
+) -> None:
+    with TestingSessionLocal() as db:
+        asset_id, _ = seed(db)
+        embedder = MockEmbedder()
+        store = InMemoryVectorStore()
+        if mode != "no_evidence":
+            EmbeddingIndexer(db, embedder, store).run()
+    writer = ObsidianWriter(tmp_path, "stock-agent")
+    if mode in {"oserror", "valueerror"}:
+        error = (
+            OSError("write failed") if mode == "oserror" else ValueError("unsafe path")
+        )
+        monkeypatch.setattr(writer, "write_research_note", Mock(side_effect=error))
+    monkeypatch.setattr("app.api.v1.endpoints.assets.get_embedder", lambda: embedder)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.assets.get_vector_store", lambda db: store
+    )
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.assets.get_obsidian_writer",
+        lambda: None if mode == "missing" else writer,
+    )
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.assets.ResearchQAService",
+        partial(ResearchQAService, now=lambda: NOW),
+    )
+    set_current_user(1)
+    response = client.post(
+        f"/api/v1/assets/{asset_id}/research-qa",
+        json={"question": TITLE, "save_to_obsidian": mode != "disabled"},
+    )
+    assert response.status_code == 200
+    data = api_data(response)
+    if mode in {"success", "no_evidence"}:
+        path = Path(data["obsidian_note_path"])
+        assert not path.is_absolute()
+        content = (tmp_path / path).read_text()
+        assert TITLE in content and "[[NVDA]]" in content
+        if mode == "no_evidence":
+            assert data["evidence"] == [] and "근거가 부족합니다" in content
+    else:
+        assert data["obsidian_note_path"] is None
+        assert list(tmp_path.iterdir()) == []
+    if mode != "no_evidence":
+        assert data["answer_points"][0]["citations"] == [1]
+    if mode in {"missing", "oserror", "valueerror"}:
+        assert any(
+            record.levelname == "WARNING" and "Obsidian" in record.message
+            for record in caplog.records
+        )
+
+
+def test_service_obsidian_unexpected_error_propagates(db: Session) -> None:
+    asset_id, _ = seed(db)
+    writer = Mock(spec=ObsidianWriter)
+    writer.write_research_note.side_effect = RuntimeError("unexpected")
+    service = ResearchQAService(
+        db,
+        MockEmbedder(),
+        InMemoryVectorStore(),
+        get_llm_gateway(),
+        now=lambda: NOW,
+        obsidian_writer=writer,
+    )
+    with pytest.raises(RuntimeError, match="unexpected"):
+        service.ask(asset_id, ResearchQARequest(question="질문", save_to_obsidian=True))

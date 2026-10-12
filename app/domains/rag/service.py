@@ -10,6 +10,7 @@ from app.adapters.llm.gateway import LLMGateway
 from app.adapters.llm.privacy import ResearchQAEvidenceProjection, ResearchQASnapshot
 from app.adapters.llm.prompts.research_qa import build_research_qa_system_prompt
 from app.adapters.llm.types import LLMTaskType
+from app.adapters.obsidian.writer import ObsidianWriter, ResearchNote
 from app.adapters.vector.base import VectorStore
 from app.adapters.vector.types import ChunkFilter
 from app.core.error_codes import ErrorCode
@@ -56,12 +57,14 @@ class ResearchQAService:
         vector_store: VectorStore,
         gateway: LLMGateway,
         now: Callable[[], datetime] = utc_now,
+        obsidian_writer: ObsidianWriter | None = None,
     ) -> None:
         self.db = db
         self.embedder = embedder
         self.vector_store = vector_store
         self.gateway = gateway
         self.now = now
+        self.obsidian_writer = obsidian_writer
 
     def ask(self, asset_id: int, request: ResearchQARequest) -> ResearchAnswer:
         asset = AssetRepository(self.db).get_by_id(asset_id)
@@ -158,6 +161,30 @@ class ResearchQAService:
                 )
             result, removed = validate_citations(result, {item.id for item in evidence})
             logger.info("Research QA citation validation: removed_points=%s", removed)
-        return ResearchAnswer(
+        answer = ResearchAnswer(
             **result.model_dump(), evidence=evidence, generated_at=generated_at
         )
+        if request.save_to_obsidian:
+            if self.obsidian_writer is None:
+                logger.warning(
+                    "Obsidian vault is not configured: asset_id=%s", asset_id
+                )
+            else:
+                try:
+                    path = self.obsidian_writer.write_research_note(
+                        ResearchNote(
+                            symbol=asset.symbol,
+                            asset_name=asset.name,
+                            question=request.question,
+                            answer=answer,
+                            embedding_model=self.embedder.model_name,
+                        )
+                    )
+                    answer.obsidian_note_path = path.as_posix()
+                except (OSError, ValueError):
+                    logger.warning(
+                        "Obsidian note export failed: asset_id=%s",
+                        asset_id,
+                        exc_info=True,
+                    )
+        return answer
