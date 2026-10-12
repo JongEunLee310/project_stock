@@ -1,14 +1,36 @@
-from sqlalchemy import ForeignKey, String, Text
+from datetime import date
+from typing import Any
+
+from sqlalchemy import JSON, Date, ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin
+from app.domains.reports.types import ReportType
 
 
 class ResearchReport(Base, TimestampMixin):
     __tablename__ = "research_reports"
+    __table_args__ = (
+        Index(
+            "uq_research_reports_daily_brief",
+            "asset_id",
+            "brief_date",
+            unique=True,
+            postgresql_where=text("report_type = 'DAILY_BRIEF'"),
+            sqlite_where=text("report_type = 'DAILY_BRIEF'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
+    report_type: Mapped[str] = mapped_column(
+        String(20),
+        default=ReportType.ARTICLE.value,
+        server_default=ReportType.ARTICLE.value,
+        nullable=False,
+    )
+    brief_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    content: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     thesis_id: Mapped[int | None] = mapped_column(
         ForeignKey("investment_theses.id"), nullable=True
     )
