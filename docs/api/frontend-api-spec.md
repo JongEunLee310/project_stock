@@ -415,9 +415,11 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 - Success `200`:
 
 ```json
-{ "data": { "answer_points": [{ "text": "관련 제품 출시 소식이 확인됩니다.", "citations": [1] }], "limitations": "헤드라인 수준의 근거로 세부 내용을 확인하기 어렵습니다.", "insufficient_evidence": false, "evidence": [{ "id": 1, "source_type": "NEWS", "source_id": 42, "title": "NVIDIA launches new product - Cybernews", "source_name": "Cybernews", "source_url": "https://example.com/news", "published_at": "2026-10-12T00:00:00Z", "excerpt": "NVIDIA launches new product - Cybernews", "score": 0.8, "content_quality": "TITLE_ONLY" }], "generated_at": "2026-10-12T01:00:00Z", "obsidian_note_path": null }, "message": null, "error": null, "meta": null }
+{ "data": { "answer_points": [{ "text": "관련 제품 출시 소식이 확인됩니다.", "citations": [1] }], "limitations": "헤드라인 수준의 근거로 세부 내용을 확인하기 어렵습니다.", "insufficient_evidence": false, "evidence": [{ "id": 1, "source_type": "NEWS", "source_id": 42, "title": "NVIDIA launches new product - Cybernews", "source_name": "Cybernews", "source_url": "https://example.com/news", "published_at": "2026-10-12T00:00:00Z", "excerpt": "NVIDIA launches new product - Cybernews", "score": 0.8, "content_quality": "TITLE_ONLY" }], "generated_at": "2026-10-12T01:00:00Z", "obsidian_note_path": null, "masked_categories": [] }, "message": null, "error": null, "meta": null }
 ```
 
+- `masked_categories: list[MaskCategory]`는 클라우드 전송 시 가린 범주를 선언 순서로 반환한다. 값은 `EMAIL | PHONE | RESIDENT_ID | CARD | ACCOUNT | QUANTITY | AMOUNT`이며, 근거 0건·LLM 실패·클라우드 전송 없는 로컬 호출이면 `[]`이다.
+- 개인식별 정보와 개인 맥락의 수량·금액만 가린다([설계 456](../designs/456-free-text-masking.md)). 질문 임베딩과 Obsidian 질문은 원문을 유지하고, 노트 frontmatter에 `masked_categories`를 기록한다.
 - `citations`는 응답 `evidence[].id`만 참조한다. 유효 인용이 없는 point는 제외한다.
 - `limitations`와 `published_at`은 nullable이다. `content_quality`: `FULL | SUMMARY | TITLE_ONLY`.
 - `source_name`은 원문 제목의 마지막 매체명 꼬리이며, 꼬리가 없으면 수집 원문의 `source`를 사용한다.
@@ -602,6 +604,17 @@ contract 변경 PR은 다음 순서로 영향 범위를 확인한다.
 ```
 
 ### Decision Logs
+
+#### `POST /api/v1/decision-logs/assist`
+
+- Auth: Required
+- Request: `target`, 선택 필드 `decision_type`, `thesis`, `rationale`, `memo`.
+- Success `200`: 기존 `structured_thesis`, `structured_rationale`, `counter_arguments`,
+  `risk_candidates`, `bias_candidates`, `vague_flags`에 `masked_categories: list[MaskCategory]`를 추가한다.
+- `masked_categories` 값은 선언 순서의 `EMAIL | PHONE | RESIDENT_ID | CARD | ACCOUNT | QUANTITY | AMOUNT`다.
+  클라우드에 전송한 가설·이유·메모에서 가린 범주이며, 클라우드 전송 없는 로컬 호출이나 LLM 실패 시 빈 목록이다.
+  실패 시 기존과 같이 빈 제안을 반환한다([설계 456](../designs/456-free-text-masking.md)).
+- 제안은 판단 기록으로 저장하지 않는다.
 
 #### `POST /api/v1/decision-logs`
 

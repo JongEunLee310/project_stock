@@ -62,6 +62,7 @@ def test_render_frontmatter_and_body() -> None:
         "embedding_model": "bge-m3",
         "source_count": 1,
         "insufficient_evidence": False,
+        "masked_categories": [],
     }
     assert metadata[-1] == "tags: [stock-agent, research-qa]"
     assert 'question: "성장: \\"근거\\"\\n다음 질문?"' in metadata

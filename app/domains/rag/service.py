@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.adapters.embedding.base import Embedder
 from app.adapters.embedding.exceptions import EmbeddingError
 from app.adapters.llm.gateway import LLMGateway
+from app.adapters.llm.masking import MaskCategory
 from app.adapters.llm.privacy import ResearchQAEvidenceProjection, ResearchQASnapshot
 from app.adapters.llm.prompts.research_qa import build_research_qa_system_prompt
 from app.adapters.llm.types import LLMTaskType
@@ -124,6 +125,7 @@ class ResearchQAService:
             insufficient_evidence=True,
             limitations=f"최근 {request.lookback_days}일 안에 이 종목과 관련된 근거를 찾지 못했습니다.",
         )
+        masked_categories: list[MaskCategory] = []
         if evidence:
             snapshot = ResearchQASnapshot(
                 symbol=asset.symbol,
@@ -148,6 +150,11 @@ class ResearchQAService:
                     build_research_qa_system_prompt(),
                 )
                 result = ResearchQAResult.model_validate(completion.output)
+                masked_categories = [
+                    category
+                    for category in MaskCategory
+                    if category in completion.masked_categories
+                ]
             except Exception:
                 logger.warning(
                     "Research QA generation failed: asset_id=%s",
@@ -162,7 +169,10 @@ class ResearchQAService:
             result, removed = validate_citations(result, {item.id for item in evidence})
             logger.info("Research QA citation validation: removed_points=%s", removed)
         answer = ResearchAnswer(
-            **result.model_dump(), evidence=evidence, generated_at=generated_at
+            **result.model_dump(),
+            evidence=evidence,
+            generated_at=generated_at,
+            masked_categories=masked_categories,
         )
         if request.save_to_obsidian:
             if self.obsidian_writer is None:

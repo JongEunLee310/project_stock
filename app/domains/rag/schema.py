@@ -3,6 +3,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, StringConstraints
 
+from app.adapters.llm.masking import MaskCategory
 from app.domains.rag.types import ChunkContentQuality, ChunkSourceType
 
 
@@ -39,6 +40,7 @@ class ResearchQAResult(BaseModel):
 
 
 class ResearchAnswer(ResearchQAResult):
+    masked_categories: list[MaskCategory] = Field(default_factory=list)
     evidence: list[EvidenceItem]
     generated_at: datetime
     obsidian_note_path: str | None = None

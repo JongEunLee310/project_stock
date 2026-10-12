@@ -1,6 +1,7 @@
 import logging
 
 from app.adapters.llm.gateway import LLMGateway
+from app.adapters.llm.masking import MaskCategory
 from app.adapters.llm.privacy import DecisionAssistSnapshot
 from app.adapters.llm.prompts.decision_assist import (
     build_decision_assist_system_prompt,
@@ -38,6 +39,7 @@ class DecisionAssistService:
             rationale=data.rationale,
             memo=data.memo,
         )
+        masked_categories: list[MaskCategory] = []
         try:
             completion = self.gateway.complete_json(
                 LLMTaskType.DECISION_ASSIST,
@@ -46,6 +48,11 @@ class DecisionAssistService:
                 build_decision_assist_system_prompt(),
             )
             result = DecisionAssistResult.model_validate(completion.output)
+            masked_categories = [
+                category
+                for category in MaskCategory
+                if category in completion.masked_categories
+            ]
         except Exception:
             logger.warning(
                 "Decision assist failed; returning empty suggestions: user_id=%s",
@@ -53,4 +60,6 @@ class DecisionAssistService:
                 exc_info=True,
             )
             result = DecisionAssistResult()
-        return DecisionAssistResponse.model_validate(result.model_dump())
+        return DecisionAssistResponse(
+            **result.model_dump(), masked_categories=masked_categories
+        )
