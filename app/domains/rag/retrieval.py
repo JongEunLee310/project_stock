@@ -4,15 +4,17 @@ from app.adapters.vector.types import ChunkHit
 from app.domains.rag.types import ChunkContentQuality
 
 CANDIDATE_K = 20
-MIN_SCORE = 0.3
+MIN_SCORE = 0.5
 MAX_CHUNKS_PER_SOURCE = 2
-TITLE_ONLY_WEIGHT = 0.8
+TITLE_ONLY_WEIGHT = 1.0
 FINAL_EVIDENCE_K = 8
 
 
 def postprocess_hits(
-    hits: list[ChunkHit], *, min_score: float = MIN_SCORE
+    hits: list[ChunkHit], *, min_score: float | None = None
 ) -> list[ChunkHit]:
+    if min_score is None:
+        min_score = MIN_SCORE
     weighted = [
         replace(hit, score=hit.score * TITLE_ONLY_WEIGHT)
         if hit.content_quality == ChunkContentQuality.TITLE_ONLY

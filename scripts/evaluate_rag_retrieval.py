@@ -17,9 +17,9 @@ from app.adapters.embedding.base import Embedder  # noqa: E402
 from app.adapters.llm.gateway import LLMCompletionResult, LLMGateway  # noqa: E402
 from app.adapters.vector.base import VectorStore  # noqa: E402
 from app.adapters.vector.types import ChunkFilter, ChunkHit, ChunkRecord  # noqa: E402
+from app.domains.rag import retrieval  # noqa: E402
 from app.domains.rag.retrieval import (  # noqa: E402
     CANDIDATE_K,
-    MIN_SCORE,
     postprocess_hits,
 )
 from app.domains.rag.schema import ResearchQARequest, ResearchQAResult  # noqa: E402
@@ -38,7 +38,7 @@ class EvaluationCase:
 
 
 def question_metrics(
-    case: EvaluationCase, min_score: float = MIN_SCORE
+    case: EvaluationCase, min_score: float | None = None
 ) -> dict[str, Any]:
     evidence = postprocess_hits(case.candidates, min_score=min_score)
     relevant = [h.score for h in case.candidates if h.source_id in case.relevant_ids]
@@ -71,7 +71,7 @@ def mean_present(values: list[Any]) -> float | None:
 
 
 def aggregate_metrics(
-    cases: list[EvaluationCase], min_score: float = MIN_SCORE
+    cases: list[EvaluationCase], min_score: float | None = None
 ) -> dict[str, Any]:
     rows = [question_metrics(case, min_score) for case in cases]
     positive = [row for row in rows if row["positive"]]
@@ -337,7 +337,7 @@ def evaluate(
         "reference_now": reference_now.isoformat(),
         "lookback_days": eval_set["lookback_days"],
         "embedding_model": embedder.model_name,
-        "min_score": MIN_SCORE,
+        "min_score": retrieval.MIN_SCORE,
         "questions": rows,
         "aggregate": aggregate_metrics(cases),
         "sweep": threshold_sweep(cases, thresholds),

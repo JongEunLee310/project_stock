@@ -22,7 +22,11 @@ from app.adapters.vector.types import ChunkHit, ChunkRecord
 from app.domains.assets.model import Asset
 from app.domains.news.model import NewsItem
 from app.domains.rag.indexing_service import EmbeddingIndexer
-from app.domains.rag.retrieval import extract_source_name, postprocess_hits
+from app.domains.rag.retrieval import (
+    TITLE_ONLY_WEIGHT,
+    extract_source_name,
+    postprocess_hits,
+)
 from app.domains.rag.schema import AnswerPoint, ResearchQARequest, ResearchQAResult
 from app.domains.rag.service import ResearchQAService, validate_citations
 from app.domains.rag.types import ChunkContentQuality, ChunkSourceType
@@ -47,13 +51,32 @@ def hit(chunk_id: int, score: float, source_id: int = 1) -> ChunkHit:
     )
 
 
-def test_retrieval_threshold_weight_and_ties() -> None:
+def test_retrieval_threshold_weight_and_ties(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.domains.rag.retrieval.TITLE_ONLY_WEIGHT", 0.8)
     title_only = replace(hit(4, 0.5), content_quality=ChunkContentQuality.TITLE_ONLY)
     inputs = [hit(3, 0.299), hit(2, 0.4, 2), title_only, hit(1, 0.3, 3)]
-    selected = postprocess_hits(inputs)
+    selected = postprocess_hits(inputs, min_score=0.3)
     assert [h.chunk_id for h in selected] == [2, 4, 1]
     assert selected[1].score == pytest.approx(0.4)
     assert title_only.score == 0.5
+
+
+def test_retrieval_default_threshold_and_title_score() -> None:
+    title_only = replace(hit(2, 0.5), content_quality=ChunkContentQuality.TITLE_ONLY)
+    selected = postprocess_hits([hit(1, 0.499), title_only, hit(3, 0.5, 2)])
+    assert [h.chunk_id for h in selected] == [2, 3]
+    assert selected[0].score == title_only.score == 0.5
+
+
+@pytest.mark.parametrize("threshold", [0.0, 0.7])
+def test_retrieval_default_reads_current_min_score(
+    monkeypatch: pytest.MonkeyPatch, threshold: float
+) -> None:
+    monkeypatch.setattr("app.domains.rag.retrieval.MIN_SCORE", threshold)
+    inputs = [hit(1, threshold - 0.001), hit(2, threshold, 2)]
+    assert [h.chunk_id for h in postprocess_hits(inputs)] == [2]
+    assert postprocess_hits(inputs) == postprocess_hits(inputs, min_score=threshold)
+    assert len(postprocess_hits(inputs, min_score=threshold - 0.001)) == 2
 
 
 def test_retrieval_source_limit_and_final_k() -> None:
@@ -283,7 +306,7 @@ def test_indexer_to_api_contract(
     assert data["evidence"][0]["title"] == TITLE
     assert data["evidence"][0]["source_name"] == "Cybernews"
     assert data["evidence"][0]["content_quality"] == "TITLE_ONLY"
-    assert data["evidence"][0]["score"] == pytest.approx(0.8)
+    assert data["evidence"][0]["score"] == pytest.approx(TITLE_ONLY_WEIGHT)
     assert data["insufficient_evidence"] == (failure == "llm")
     if failure:
         assert data["answer_points"] == [] and "실패" in data["limitations"]

@@ -30,7 +30,8 @@ def hit(chunk_id: int, score: float, source_id: int = 1) -> ChunkHit:
     )
 
 
-def test_question_metrics_and_raw_scores() -> None:
+def test_question_metrics_and_raw_scores(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.domains.rag.retrieval.TITLE_ONLY_WEIGHT", 0.8)
     candidates = [
         replace(hit(1, 0.9, 1), content_quality=ChunkContentQuality.TITLE_ONLY),
         hit(2, 0.8, 2),
@@ -68,7 +69,7 @@ def test_aggregation_and_candidate_distribution() -> None:
         EvaluationCase("n1", False, set(), [hit(4, 0.5, 4)]),
         EvaluationCase("n2", False, set(), []),
     ]
-    result = aggregate_metrics(cases)
+    result = aggregate_metrics(cases, min_score=0.3)
     assert result["positive_hit_at_k"] == 0.5
     assert result["positive_precision_at_k"] == 0.5
     assert result["positive_top1_rate"] == 0.5
@@ -99,6 +100,21 @@ def test_sweep_reuses_candidates_and_threshold_compatibility() -> None:
     assert [row["positive_precision_at_k"] for row in rows] == [1 / 3, 0.0, None]
     assert [row["negative_zero_evidence_rate"] for row in rows] == [0.0, 0.0, 1.0]
     assert candidates[0].score == 0.3
+
+
+@pytest.mark.parametrize("threshold", [0.0, 0.7])
+def test_metrics_default_reads_current_min_score(
+    monkeypatch: pytest.MonkeyPatch, threshold: float
+) -> None:
+    monkeypatch.setattr("app.domains.rag.retrieval.MIN_SCORE", threshold)
+    case = EvaluationCase(
+        "p", True, {1}, [hit(1, threshold - 0.001), hit(2, threshold, 2)]
+    )
+    assert question_metrics(case)["evidence_count"] == 1
+    assert question_metrics(case)["hit_at_k"] is False
+    assert aggregate_metrics([case])["positive_hit_at_k"] == 0.0
+    assert question_metrics(case, threshold - 0.001)["hit_at_k"] is True
+    assert aggregate_metrics([case], threshold - 0.001)["positive_hit_at_k"] == 1.0
 
 
 @pytest.mark.parametrize("value", ["", "abc", "0.3,", "nan", "inf", "-0.1", "1.1"])
@@ -184,6 +200,7 @@ def test_evaluate_reuses_one_search_and_fixed_time(
     session.__enter__ = Mock(return_value=db)
     session.__exit__ = Mock(return_value=False)
     monkeypatch.setattr("app.db.session.SessionLocal", lambda: session)
+    monkeypatch.setattr("app.domains.rag.retrieval.MIN_SCORE", 0.85)
     embedder = Mock(spec=Embedder, model_name="test-model", dimensions=2)
     embedder.embed.return_value = [[0.1, 0.2]]
     store = Mock(spec=VectorStore)
@@ -238,6 +255,9 @@ def test_evaluate_reuses_one_search_and_fixed_time(
         ],
     }
     report = evaluate(eval_set, [0.3, 0.9], with_llm)
+    assert report["min_score"] == 0.85
+    assert report["questions"][0]["evidence_count"] == 0
+    assert report["aggregate"]["positive_hit_at_k"] == 0.0
     assert embedder.embed.call_count == 2
     assert store.search.call_count == 2
     filters = store.search.call_args.args[1]
