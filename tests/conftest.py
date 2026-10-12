@@ -15,6 +15,8 @@ _PROVIDER_SETTINGS = (
     "DISCLOSURE_PROVIDER",
     "PORTFOLIO_PROVIDER",
     "LLM_PROVIDER",
+    "EMBEDDING_PROVIDER",
+    "VECTOR_STORE_PROVIDER",
 )
 for _provider_setting in _PROVIDER_SETTINGS:
     os.environ[_provider_setting] = "mock"
@@ -110,11 +112,3 @@ def stable_password_hashing(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("app.domains.users.service.hash_password", hash_password)
     monkeypatch.setattr("app.domains.users.service.verify_password", verify_password)
-
-
-@pytest.fixture(autouse=True)
-def skip_postgres_without_url(request: pytest.FixtureRequest) -> None:
-    if request.node.get_closest_marker("postgres") and not os.getenv(
-        "TEST_POSTGRES_URL"
-    ):
-        pytest.skip("TEST_POSTGRES_URL is not set")

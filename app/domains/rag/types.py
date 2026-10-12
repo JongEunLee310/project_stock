@@ -1,5 +1,7 @@
 from enum import Enum
 
+EMBEDDING_DIMENSIONS = 1024
+
 
 class ChunkSourceType(str, Enum):
     NEWS = "NEWS"

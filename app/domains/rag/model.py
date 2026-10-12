@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.domains.rag.types import EMBEDDING_DIMENSIONS
 
 
 class DocumentChunk(Base):
@@ -49,7 +50,7 @@ class DocumentChunk(Base):
     content: Mapped[str] = mapped_column(Text)
     content_quality: Mapped[str] = mapped_column(String(20))
     embedding: Mapped[list[float]] = mapped_column(
-        Vector(1536).with_variant(JSON, "sqlite")
+        Vector(EMBEDDING_DIMENSIONS).with_variant(JSON, "sqlite")
     )
     embedding_model: Mapped[str] = mapped_column(String(100))
     asset_ids: Mapped[list[int]] = mapped_column(
