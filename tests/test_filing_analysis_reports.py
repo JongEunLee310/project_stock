@@ -120,7 +120,7 @@ def test_created_between_boundaries_and_order(db: Session) -> None:
 
 def test_single_head() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == [REVISION]
+    assert script.get_heads() == ["c3d4e5f60074"]
     revision = script.get_revision(REVISION)
     assert revision is not None and revision.down_revision == PREVIOUS
 

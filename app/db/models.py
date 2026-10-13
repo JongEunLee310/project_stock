@@ -1,4 +1,5 @@
 # Register all models in metadata regardless of each process import graph.
+import app.domains.agents.thesis_watch.model  # noqa: F401 — registers thesis check model
 import app.domains.alert_candidates.model  # noqa: F401 — registers alert candidate model
 import app.domains.alert_events.model  # noqa: F401 — registers alert event models
 import app.domains.alert_rules.model  # noqa: F401 — registers AlertRule model
