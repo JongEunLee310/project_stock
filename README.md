@@ -264,3 +264,15 @@ v0.2는 이 흐름을 프론트엔드 연동과 운영이 가능한 수준으로
 
 자동매매(automated trading)는 v0.1과 v0.2 범위가 아닙니다. 이 프로젝트는 주문 실행,
 브로커 연동, 실거래 자동화, 포지션 자동 조정 기능을 제공하지 않습니다.
+
+## Filing Collection
+
+미국 관심종목(`NASDAQ`, `NYSE`)의 최근 10-K 2건에서 사업·위험요인 섹션을 수집해
+`knowledge_documents`에 저장한다. 이미 저장된 섹션은 재수집하지 않으며, 기존 매시
+임베딩 job이 `KNOWLEDGE` 청크로 적재한다. 국내 종목은 건너뛴다.
+
+`FILING_PROVIDER=real`과 연락처를 포함한 `SEC_USER_AGENT`를 설정하면 SEC EDGAR를
+사용한다. 기본값 `mock`에서는 기존 뉴스·가격 job과 같이 결정적 mock 데이터를 저장한다.
+주간 `filing_collection` 스케줄은 토요일 01:00 UTC에 실행된다. 수동 실행은
+`uv run python scripts/collect_filings.py`이며, `--asset-id N`을 반복해 대상을 지정한다.
+결과 JSON은 저장·중복 건수와 섹션 누락·종목 실패·미지원 대상을 담는다.

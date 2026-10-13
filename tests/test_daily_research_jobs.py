@@ -120,5 +120,17 @@ def test_enqueue_failure_is_logged_and_swallowed(
     queue.enqueue.side_effect = ConnectionError("enqueue unavailable")
     monkeypatch.setattr(agents, "Queue", Mock(return_value=queue))
     agents.enqueue_daily_research_safe([3])
-    queue.enqueue.assert_called_once_with(agents.run_daily_research_job, [3])
+    queue.enqueue.assert_called_once_with(
+        agents.run_daily_research_job, [3], job_timeout=3600
+    )
     assert "failed to enqueue daily research" in caplog.text
+
+
+def test_enqueue_daily_research_sets_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(agents, "get_redis_connection", Mock())
+    queue = Mock()
+    monkeypatch.setattr(agents, "Queue", Mock(return_value=queue))
+    agents.enqueue_daily_research_safe([3, 9])
+    queue.enqueue.assert_called_once_with(
+        agents.run_daily_research_job, [3, 9], job_timeout=3600
+    )

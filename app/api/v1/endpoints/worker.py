@@ -19,6 +19,7 @@ from app.scheduler.runner import (
     SchedulerJobNotFoundError,
 )
 from app.worker.connection import get_redis_connection
+from app.worker.jobs.timeouts import DAILY_RESEARCH_JOB_TIMEOUT
 from app.worker.jobs.agents import run_daily_research_job
 from app.worker.jobs.earnings import collect_earnings_job
 from app.worker.jobs.llm_analysis import run_llm_analysis_job
@@ -144,7 +145,9 @@ def enqueue_analysis_job(
     if not asset_ids:
         return success(JobQueuedResponse(job_id="", status="skipped"))
     queue = Queue("default", connection=connection)
-    job = queue.enqueue(run_daily_research_job, asset_ids)
+    job = queue.enqueue(
+        run_daily_research_job, asset_ids, job_timeout=DAILY_RESEARCH_JOB_TIMEOUT
+    )
     return success(JobQueuedResponse(job_id=str(job.id), status="queued"))
 
 

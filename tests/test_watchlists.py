@@ -163,7 +163,10 @@ def test_add_watchlist_item_success(
         def __init__(self, name: str, connection: object) -> None:
             assert name == "default"
 
-        def enqueue(self, func: object, asset_ids: list[int]) -> object:
+        def enqueue(
+            self, func: object, asset_ids: list[int], *, job_timeout: int
+        ) -> object:
+            assert job_timeout == 3600
             enqueued.append((func, asset_ids))
             return object()
 

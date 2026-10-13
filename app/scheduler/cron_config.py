@@ -6,7 +6,12 @@ from app.scheduler.registry import default_scheduler_registry
 def _register_cron_jobs() -> None:
     for schedule in default_scheduler_registry.list():
         if schedule.enabled:
-            rq_cron.register(schedule.job.func, "default", cron=schedule.cron)
+            rq_cron.register(
+                schedule.job.func,
+                "default",
+                cron=schedule.cron,
+                job_timeout=schedule.job_timeout,
+            )
 
 
 _register_cron_jobs()

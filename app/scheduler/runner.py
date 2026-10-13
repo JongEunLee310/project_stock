@@ -15,7 +15,9 @@ class QueuedJob(Protocol):
 
 
 class SchedulerQueue(Protocol):
-    def enqueue(self, f: SchedulerJobFunc) -> QueuedJob: ...
+    def enqueue(
+        self, f: SchedulerJobFunc, *, job_timeout: int | None = None
+    ) -> QueuedJob: ...
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,9 @@ class ManualSchedulerRunner:
             "scheduler job queued",
             extra={"operation": "scheduler.run", "job_name": schedule.job.name},
         )
-        queued_job = self.queue.enqueue(schedule.job.func)
+        queued_job = self.queue.enqueue(
+            schedule.job.func, job_timeout=schedule.job_timeout
+        )
         return SchedulerRunResult(
             job_name=schedule.job.name,
             job_id=str(queued_job.id),
