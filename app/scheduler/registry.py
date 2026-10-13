@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from app.core.config import settings
 from app.scheduler.interface import FunctionSchedulerJob, SchedulerJob
-from app.worker.jobs.agents import run_daily_research_job
+from app.worker.jobs.agents import run_daily_research_job, run_filing_analysis_job
 from app.worker.jobs.alerts import evaluate_alert_rules_job
 from app.worker.jobs.decision_review_triggers import (
     evaluate_decision_review_triggers_job,
@@ -15,6 +15,7 @@ from app.worker.jobs.signal_snapshots import snapshot_signal_states_job
 from app.worker.jobs.timeouts import (
     DAILY_RESEARCH_JOB_TIMEOUT,
     EMBED_DOCUMENTS_JOB_TIMEOUT,
+    FILING_ANALYSIS_JOB_TIMEOUT,
     FILING_COLLECTION_JOB_TIMEOUT,
 )
 
@@ -41,7 +42,17 @@ class SchedulerRegistry:
 default_scheduler_registry = SchedulerRegistry(
     [
         ScheduleDefinition(
-            job=FunctionSchedulerJob(name="filing_collection", func=collect_filings_job),
+            job=FunctionSchedulerJob(
+                name="filing_analysis_agent", func=run_filing_analysis_job
+            ),
+            cron="30 1 * * 6",
+            enabled=True,
+            job_timeout=FILING_ANALYSIS_JOB_TIMEOUT,
+        ),
+        ScheduleDefinition(
+            job=FunctionSchedulerJob(
+                name="filing_collection", func=collect_filings_job
+            ),
             cron="0 1 * * 6",
             enabled=True,
             job_timeout=FILING_COLLECTION_JOB_TIMEOUT,

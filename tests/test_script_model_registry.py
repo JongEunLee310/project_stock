@@ -11,6 +11,7 @@ import pytest
     "module_name",
     [
         "scripts.run_daily_research",
+        "scripts.run_filing_analysis",
         "scripts.backfill_rag_embeddings",
         "scripts.evaluate_rag_retrieval",
     ],

@@ -25,6 +25,7 @@ def test_llm_task_type_values_match_contract() -> None:
         "STOCK_RECOMMENDATION": "STOCK_RECOMMENDATION",
         "RESEARCH_QA": "RESEARCH_QA",
         "DAILY_BRIEF": "DAILY_BRIEF",
+        "FILING_ANALYSIS": "FILING_ANALYSIS",
         "RESEARCH_SUMMARY": "RESEARCH_SUMMARY",
         "DECISION_ASSIST": "DECISION_ASSIST",
         "TAG_SENTIMENT": "TAG_SENTIMENT",

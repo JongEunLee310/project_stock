@@ -93,6 +93,9 @@
 - 입력 상한 8만 자(가정, 실측 최대 약 4.5만 자). 넘으면 `modified`를 바뀐 글자 수가 적은 순으로 빼고
   `truncated_count`를 기록한다.
 - 사용자 식별자와 사용자 작성 텍스트가 없으므로 `free_text_fields`는 비운다.
+- #478 구현 가정: 상한은 메타데이터·표시 태그를 포함한 전체 JSON 문자열로 계산한다.
+  `modified`를 모두 제외한 뒤에도 초과하면 섹션 실패로 기록한다. 새 문단의 바뀐 토큰은
+  `<changed>…</changed>`로 표시하고, 삭제는 빈 태그로 표시한다. 저장 근거는 태그 없는 원문이다.
 
 ### 4.2 출력 모델 `FilingSectionAnalysis`
 
@@ -113,10 +116,11 @@
 ### 4.3 저장 형태 `FilingAnalysisContent`
 
 - `old_filing`·`new_filing`: 접수번호, 회계연도, 제출일, 원문 URL, `knowledge_document_id`(섹션별)
-- `headline`: 두 섹션 헤드라인을 묶은 한 줄(가장 중요한 변화 기준)
+- `headline`: 검증된 변화의 최고 중요도가 가장 높은 성공 섹션의 헤드라인을 선택한다(#478 구현 가정).
+  동률이면 `BUSINESS`를 우선하며, 검증된 변화가 없는 섹션의 중요도는 `LOW`로 본다.
 - `sections`: 섹션별 `headline`, 검증된 `changes`, `limitations`, `diff_stats`, `citation_corrections`,
   `truncated_count`
-- `evidence`: 인용된 번호별 문단 원문(옛·새)과 출처 문서 id
+- `evidence`: 섹션별로 구분한 인용 번호별 문단 원문(옛·새)과 출처 문서 id. 섹션 간 번호 충돌을 막는다.
 - `max_importance`
 
 ### 4.4 LLM 배선
