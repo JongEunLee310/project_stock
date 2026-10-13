@@ -5,6 +5,7 @@ EMBEDDING_DIMENSIONS = 1024
 
 class ChunkSourceType(str, Enum):
     NEWS = "NEWS"
+    KNOWLEDGE = "KNOWLEDGE"
 
 
 class ChunkContentQuality(str, Enum):

@@ -1,4 +1,6 @@
 from dataclasses import dataclass, replace
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -6,6 +8,7 @@ from app.adapters.embedding.base import Embedder
 from app.adapters.embedding.exceptions import EmbeddingError
 from app.adapters.vector.base import VectorStore
 from app.adapters.vector.types import ChunkRecord
+from app.domains.knowledge.repository import KnowledgeDocumentRepository
 from app.domains.news.model import NewsItem
 from app.domains.news.repository import NewsItemRepository
 from app.domains.rag.indexing import (
@@ -13,7 +16,7 @@ from app.domains.rag.indexing import (
     compose_embedding_text,
     embedding_input_hash,
 )
-from app.domains.rag.types import ChunkSourceType
+from app.domains.rag.types import ChunkContentQuality, ChunkSourceType
 from app.domains.raw_news.repository import RawNewsEventRepository
 
 
@@ -44,7 +47,7 @@ class EmbeddingIndexer:
         scanned = unchanged = documents = 0
         after_id = 0
         records: list[ChunkRecord] = []
-        source_ids: list[int] = []
+        sources: list[tuple[ChunkSourceType, int]] = []
         while documents < max_documents:
             page = raw_repo.list_after_id(after_id, scan_page_size)
             if not page:
@@ -74,7 +77,7 @@ class EmbeddingIndexer:
                     unchanged += 1
                     continue
                 documents += 1
-                source_ids.append(event.id)
+                sources.append((ChunkSourceType.NEWS, event.id))
                 asset_ids = sorted({item.asset_id for item in items})
                 records.extend(
                     ChunkRecord(
@@ -94,7 +97,54 @@ class EmbeddingIndexer:
                 if documents == max_documents:
                     break
             after_id = page[-1].id
-        if source_ids:
+        knowledge_repo = KnowledgeDocumentRepository(self.db)
+        after_id = 0
+        while documents < max_documents:
+            knowledge_page = knowledge_repo.list_after_id(after_id, scan_page_size)
+            if not knowledge_page:
+                break
+            hashes = self.vector_store.get_content_hashes(
+                ChunkSourceType.KNOWLEDGE,
+                [document.id for document in knowledge_page],
+                self.embedder.model_name,
+            )
+            for document in knowledge_page:
+                scanned += 1
+                text = document.title + "\n\n" + document.content
+                content_hash = embedding_input_hash(text)
+                if hashes.get(document.id) == content_hash:
+                    unchanged += 1
+                    continue
+                documents += 1
+                sources.append((ChunkSourceType.KNOWLEDGE, document.id))
+                published_at = (
+                    datetime.combine(
+                        document.effective_date, time(), ZoneInfo("Asia/Seoul")
+                    )
+                    if document.effective_date is not None
+                    else document.created_at
+                )
+                records.extend(
+                    ChunkRecord(
+                        source_type=ChunkSourceType.KNOWLEDGE,
+                        source_id=document.id,
+                        chunk_index=index,
+                        content=content,
+                        content_quality=ChunkContentQuality.FULL,
+                        embedding=[],
+                        embedding_model=self.embedder.model_name,
+                        asset_ids=[document.asset_id]
+                        if document.asset_id is not None
+                        else [],
+                        published_at=published_at,
+                        content_hash=content_hash,
+                    )
+                    for index, content in enumerate(chunk_text(text))
+                )
+                if documents == max_documents:
+                    break
+            after_id = knowledge_page[-1].id
+        if sources:
             vectors = self.embedder.embed([record.content for record in records])
             # Validate the batch before deleting any existing chunks.
             if len(vectors) != len(records) or any(
@@ -105,10 +155,15 @@ class EmbeddingIndexer:
                 replace(record, embedding=vector)
                 for record, vector in zip(records, vectors, strict=True)
             ]
-            for source_id in source_ids:
-                self.vector_store.delete_by_source(ChunkSourceType.NEWS, source_id)
+            for source_type, source_id in sources:
+                self.vector_store.delete_by_source(source_type, source_id)
                 self.vector_store.upsert(
-                    [record for record in records if record.source_id == source_id]
+                    [
+                        record
+                        for record in records
+                        if record.source_type == source_type
+                        and record.source_id == source_id
+                    ]
                 )
             self.db.commit()
         return IndexingResult(
