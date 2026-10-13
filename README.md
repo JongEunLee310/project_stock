@@ -74,7 +74,7 @@ flowchart TD
 ```
 
 수집·가공은 RQ 워커 잡이 구동합니다. `collect_prices_job`은 가격 일봉을, `collect_news_job`은
-뉴스를 수집·정규화해 저장하고, `analyze_watchlist_job`은 시그널·분석 흐름을 실행합니다.
+뉴스를 수집·정규화해 저장하고, `run_daily_research_job`은 관심종목 일일 브리프·시그널·알림을 생성합니다.
 스케줄러(`app/scheduler/`)는 RQ cron에 수집·분석 잡을 등록합니다.
 
 | 단계 | 모듈 | 구현 상태 |
@@ -85,7 +85,7 @@ flowchart TD
 | Raw Store | `domains/raw_prices` · `domains/raw_news` | 원본 아카이브·중복 방지 완료 |
 | Normalization · Validation | `domains/prices` · `domains/news` | 정규화·검증을 수집 잡 내부에 인라인 |
 | Feature | `domains/features` | `PriceFeatureBuilder`(수익률·낙폭·거래량 비율 등) |
-| Signal | `domains/signals` · `domains/analysis` | 룰 엔진 기반 시그널 생성 |
+| Signal | `domains/signals` · `domains/agents/daily_research` | 룰 엔진 기반 시그널 생성 |
 | Context Builder | `domains/llm_context` | `LLMContextBundle` 조립(가격·뉴스·시그널·포트폴리오·decision-log·데이터 품질) |
 | LLM Gateway · Analysis Store | `adapters/llm` · `domains/llm_analysis` | 오케스트레이션·결과 영속 구현 완료. 데이터 수집이 채워지기 전까지 파이프라인 연결 보류 |
 

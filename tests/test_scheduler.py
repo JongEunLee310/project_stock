@@ -16,7 +16,7 @@ from app.scheduler.registry import (
     default_scheduler_registry,
 )
 from app.scheduler.runner import ManualSchedulerRunner
-from app.worker.jobs.analysis import analyze_all_watchlists_job
+from app.worker.jobs.agents import run_daily_research_job
 from app.worker.jobs.alerts import evaluate_alert_rules_job
 from app.worker.jobs.decision_review_triggers import (
     evaluate_decision_review_triggers_job,
@@ -98,10 +98,7 @@ def test_default_scheduler_registry_contains_expected_jobs() -> None:
         "price_collection",
         "news_collection",
         "embed_documents",
-        "analysis_kr_open",
-        "analysis_kr_main",
-        "analysis_us_session",
-        "analysis_kr_post",
+        "daily_research_agent",
         "signal_snapshot",
         "alert_evaluation",
         "decision_review_trigger_evaluation",
@@ -124,50 +121,12 @@ def test_default_scheduler_registry_contains_expected_jobs() -> None:
     )
     assert schedules_by_name["decision_review_trigger_evaluation"].cron == "*/5 * * * *"
     assert schedules_by_name["decision_review_trigger_evaluation"].enabled is True
-    # Source: docs/designs/243-analysis-triggers.md UTC conversion table.
-    expected_analysis_crons = {
-        "analysis_kr_open": "0 23 * * 0-4",
-        "analysis_kr_main": "0 0-7 * * 1-5",
-        "analysis_us_session": "0 13-21 * * 1-5",
-        "analysis_kr_post": "0 9,11 * * 1-5",
-    }
-    for name, cron in expected_analysis_crons.items():
-        assert schedules_by_name[name].job.func is analyze_all_watchlists_job
-        assert schedules_by_name[name].cron == cron
-        assert schedules_by_name[name].enabled is False
-
-
-def test_analysis_schedule_enabled_flag_controls_all_analysis_entries(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import app.scheduler.registry as registry_module
-
-    analysis_names = {
-        "analysis_kr_open",
-        "analysis_kr_main",
-        "analysis_us_session",
-        "analysis_kr_post",
-    }
-    monkeypatch.delenv("ANALYSIS_SCHEDULE_ENABLED", raising=False)
-    assert Settings().ANALYSIS_SCHEDULE_ENABLED is False
-    monkeypatch.setenv("ANALYSIS_SCHEDULE_ENABLED", "true")
-    assert Settings().ANALYSIS_SCHEDULE_ENABLED is True
-
-    monkeypatch.setattr(
-        runtime_settings,
-        "ANALYSIS_SCHEDULE_ENABLED",
-        True,
-    )
-    reloaded = importlib.reload(registry_module)
-    schedules = {
-        schedule.job.name: schedule
-        for schedule in reloaded.default_scheduler_registry.list()
-    }
-
-    assert all(schedules[name].enabled for name in analysis_names)
-
-    monkeypatch.setattr(runtime_settings, "ANALYSIS_SCHEDULE_ENABLED", False)
-    importlib.reload(reloaded)
+    daily = schedules_by_name["daily_research_agent"]
+    assert daily.job.func is run_daily_research_job
+    assert daily.cron == "30 22 * * 0-4"
+    assert daily.enabled is True
+    assert not any(name.startswith("analysis_") for name in schedules_by_name)
+    assert not any(name.startswith("ANALYSIS_") for name in Settings.model_fields)
 
 
 def test_alert_engine_enabled_flag_controls_alert_entry(
@@ -218,55 +177,9 @@ def test_cron_config_registers_enabled_scheduler_jobs(
         (collect_prices_job, "default", "10 22 * * 1-5"),
         (collect_news_job, "default", "0 * * * *"),
         (embed_documents_job, "default", "20 * * * *"),
+        (run_daily_research_job, "default", "30 22 * * 0-4"),
         (snapshot_signal_states_job, "default", "30 11 * * 1-5"),
     ]
-
-
-@pytest.mark.parametrize("analysis_enabled", [False, True])
-def test_cron_config_analysis_registration_follows_enabled_flag(
-    monkeypatch: pytest.MonkeyPatch,
-    analysis_enabled: bool,
-) -> None:
-    import app.scheduler.registry as registry_module
-    import rq.cron
-
-    registered: list[tuple[Callable[..., object], str]] = []
-
-    def fake_register(
-        func: Callable[..., object],
-        queue_name: str,
-        *,
-        cron: str | None = None,
-        **_: object,
-    ) -> dict[str, object]:
-        assert cron is not None
-        registered.append((func, cron))
-        return {}
-
-    monkeypatch.setattr(rq.cron, "register", fake_register)
-    monkeypatch.setattr(
-        runtime_settings,
-        "ANALYSIS_SCHEDULE_ENABLED",
-        analysis_enabled,
-    )
-    importlib.reload(registry_module)
-    sys.modules.pop("app.scheduler.cron_config", None)
-
-    importlib.import_module("app.scheduler.cron_config")
-
-    analysis_registrations = [
-        registration
-        for registration in registered
-        if registration[0] is analyze_all_watchlists_job
-    ]
-    assert len(analysis_registrations) == (4 if analysis_enabled else 0)
-
-    monkeypatch.setattr(
-        runtime_settings,
-        "ANALYSIS_SCHEDULE_ENABLED",
-        False,
-    )
-    importlib.reload(registry_module)
 
 
 def test_run_scheduler_job_once_api_returns_queued_job_id(

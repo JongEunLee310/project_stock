@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from rq import Queue
+from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -8,7 +9,9 @@ from app.adapters.llm.types import LLMTaskType
 from app.core.error_codes import ErrorCode
 from app.core.exceptions import AppException
 from app.core.response import ApiResponse, success
+from app.db.session import get_db
 from app.domains.users.model import User
+from app.domains.watchlists.repository import WatchlistRepository, WatchlistItemRepository
 from app.scheduler.registry import default_scheduler_registry
 from app.scheduler.runner import (
     ManualSchedulerRunner,
@@ -16,7 +19,7 @@ from app.scheduler.runner import (
     SchedulerJobNotFoundError,
 )
 from app.worker.connection import get_redis_connection
-from app.worker.jobs.analysis import analyze_watchlist_job
+from app.worker.jobs.agents import run_daily_research_job
 from app.worker.jobs.earnings import collect_earnings_job
 from app.worker.jobs.llm_analysis import run_llm_analysis_job
 from app.worker.jobs.news import collect_news_job
@@ -111,12 +114,24 @@ def enqueue_earnings_job(
     "/jobs/analysis",
     response_model=ApiResponse[JobQueuedResponse],
     summary="Enqueue watchlist analysis job",
-    description="Queue a background job that analyzes a watchlist and produces research artifacts.",
+    description="Queue the daily research agent for the assets in an owned watchlist.",
 )
 def enqueue_analysis_job(
     payload: AnalysisJobRequest,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[JobQueuedResponse]:
+    watchlist = WatchlistRepository(db).get_by_id(payload.watchlist_id)
+    if watchlist is None or watchlist.user_id != current_user.id:
+        raise AppException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="관심 목록을 찾을 수 없습니다.",
+            error_code=ErrorCode.WATCHLIST_NOT_FOUND,
+        )
+    asset_ids = [
+        item.asset_id
+        for item in WatchlistItemRepository(db).list_by_watchlist(watchlist.id)
+    ]
     connection = get_redis_connection()
     rate_limit_key = f"rate_limit:analysis_manual:{current_user.id}"
     if not connection.set(rate_limit_key, "1", nx=True, ex=60):
@@ -126,8 +141,10 @@ def enqueue_analysis_job(
             error_code=ErrorCode.RATE_LIMIT_EXCEEDED,
             headers={"Retry-After": "60"},
         )
+    if not asset_ids:
+        return success(JobQueuedResponse(job_id="", status="skipped"))
     queue = Queue("default", connection=connection)
-    job = queue.enqueue(analyze_watchlist_job, payload.watchlist_id)
+    job = queue.enqueue(run_daily_research_job, asset_ids)
     return success(JobQueuedResponse(job_id=str(job.id), status="queued"))
 
 

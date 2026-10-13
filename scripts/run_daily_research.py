@@ -25,11 +25,16 @@ def main() -> None:
     from app.db.session import SessionLocal
     from app.domains.agents.daily_research.service import DailyResearchAgent
 
+    from app.domains.agents.daily_research.preparation import prepare_embeddings
+
     with SessionLocal() as db:
+        embedder = get_embedder()
+        vector_store = get_vector_store(db)
+        prepare_embeddings(db, embedder, vector_store)
         result = DailyResearchAgent(
             db,
-            get_embedder(),
-            get_vector_store(db),
+            embedder,
+            vector_store,
             get_llm_gateway(),
             obsidian_writer=get_obsidian_writer(),
         ).run(args.asset_ids, args.brief_date)

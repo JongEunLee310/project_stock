@@ -60,7 +60,7 @@
 |---|---|---|
 | 1. 기간 결정 | `brief_date`보다 이전인 가장 최근 `DAILY_BRIEF`의 `created_at` 이후. 직전 브리프가 없으면 실행 시각 기준 최근 48시간(가정) | `ResearchReportRepository` |
 | 2. 새 소식 수집 | `created_at`이 기간 시작보다 뒤인 이 종목의 `news_items`(발행 시각 기준이 아님). 최근 순 최대 30건(가정), 넘으면 잘라 내고 잘린 수를 기록 | `NewsItemRepository` |
-| 3. 임베딩 확인 | 새 소식의 원문이 아직 임베딩되지 않았으면 처리 | `EmbeddingIndexer.run` |
+| 실행 전 임베딩 확인 | job·수동 스크립트에서 전체 backlog를 한 번 처리(종목 루프 밖) | `prepare_embeddings`, `EmbeddingIndexer.run` |
 | 4. 과거 맥락 검색 | 새 소식 제목들로 기간 시작 이전 30일(가정)의 근거를 검색(`published_after=기간 시작-30일`, `published_before=기간 시작`, 양 끝 제외). 새 소식 원문 id는 계속 제외, 상위 10개(가정) | `get_embedder`, `get_vector_store`, `postprocess_hits` |
 | 5. 가격·일정 | 최근 일봉 2개(등락률·거래량 변화 계산), 14일 안의 실적 일정 | 가격·실적 repository |
 | 6. 종합(LLM) | §4. 새 소식이 0건이면 건너뜀 | `LLMGateway.complete_json` |
@@ -170,11 +170,21 @@ JSON Schema에는 Pydantic 제약으로 `item_classifications[].item`과 `new_de
 |---|---|
 | 스케줄 | `daily_research_agent`, cron `30 22 * * 0-4`(UTC, 평일 07:30 KST) |
 | 관심종목 추가 | `add_watchlist_item` 후 그 종목만 enqueue(`asset_ids=[asset_id]`) |
-| 워커 API 수동 실행 | 기존 `analyze_watchlist_job` 엔드포인트를 이 에이전트 실행으로 바꿈 |
+| 워커 API 수동 실행 | `POST /api/v1/worker/jobs/analysis`의 소유 관심목록 종목 id로 `run_daily_research_job` enqueue |
 
 - job 함수 `run_daily_research_job(asset_ids: list[int] | None = None)`(`app/worker/jobs/agents.py`),
   `JobRunService`로 기록
-- 임베딩 job(`20 * * * *`)과 시각이 겹치지 않는다. 3단계에서 필요한 임베딩은 에이전트가 직접 처리한다.
+- 스케줄은 `enabled=True`이며 `asset_ids=None`으로 전 관심종목을 처리한다. 실행 metadata에는
+  `asset_ids`와 부분 실패 시 `partial_failures.failed`·`partial_failures.note_failures`를 남긴다.
+- `prepare_embeddings`는 job과 수동 스크립트가 에이전트 실행 전에 한 번 호출하고, `has_more=False`까지
+  backlog를 처리한다. `EmbeddingError`는 rollback·경고 후 계속한다(과거 맥락 누락 허용).
+  종목 루프에서는 인덱서를 호출하지 않는다. 정기 임베딩 job(`20 * * * *`)은 유지한다.
+- 워커 API 경로·요청 `{"watchlist_id": int}`·응답 스키마·summary 문구 및 rate limit
+  (`rate_limit:analysis_manual:{user_id}`, 60초, 429·`Retry-After: 60`)은 유지한다.
+  `WatchlistRepository`로 소유권을 확인하며 미소유·없는 목록은 동일한 404다.
+  기존 관심목록 API는 미소유 시 403이지만, 이 엔드포인트는 #463 요구대로 404로 처리한다.
+- 가정: 빈 관심목록은 enqueue 없이 기존 응답 스키마로 `job_id=""`, `status="skipped"`를 반환한다.
+  소유권 확인 후 rate limit을 적용하므로 빈 목록 요청도 60초 제한을 소비한다.
 
 ## 7. 제거(#463)
 
@@ -184,8 +194,9 @@ JSON Schema에는 Pydantic 제약으로 `item_classifications[].item`과 `new_de
 - 관련 테스트
 - 설계 019 상단에 "ADR-020으로 대체됨" 표시
 
-`NewsAnalysisService.summarize`, `ThesisAnalysisService.analyze_conflict`는 다른 호출처가 없으면 남겨 두되
-(에이전트 3에서 재사용 가능성), 호출처가 없다는 사실을 #463 PR에 기록한다.
+`NewsAnalysisService.summarize`, `ThesisAnalysisService.analyze_conflict`는 운영 호출처가 없어졌지만
+단위 테스트와 함께 유지한다(에이전트 3에서 재사용 가능성). `NewsItemRepository.update_summary`는
+유지한 `summarize`의 내부 호출처가 있다.
 
 ## 8. 테스트 전략
 
@@ -209,7 +220,7 @@ JSON Schema에는 Pydantic 제약으로 `item_classifications[].item`과 `new_de
 |---|---|---|
 | OQ1 | 가격 수집 job(`price_collection`, 평일 22:10 UTC)이 실제 시세를 넣고 있는가. 마지막 실행이 2026-07-22다 | #461 착수 시 확인. 데이터가 없으면 브리프에 "가격 데이터 없음"으로 표시 |
 | OQ2 | 새 소식 30건 상한과 종합 품질의 관계 | #461 종단 검증에서 기사 수가 많은 종목으로 확인 |
-| OQ3 | `news_items.summary`가 더 이상 채워지지 않을 때 이를 표시하는 화면의 대체 표시 | #463에서 사용처 확인 |
+| OQ3 | `news_items.summary`가 더 이상 채워지지 않을 때 이를 표시하는 화면의 대체 표시 | #463 조사 완료: `HighImpactNewsRule`은 제목 fallback, `EmbeddingIndexer`는 빈 요약을 제외하고 원문 본문·요약·제목 순 fallback, `categorize`는 제목만으로 처리한다. 뉴스 API의 `NewsItemResponse`·`NewsItemProjection`은 nullable summary를 그대로 노출하며 `NewsContext`는 빈 문자열을 전달한다. `NewsAnalysisService._body_for`는 원문이 없으면 빈 문자열, `ThesisAnalysisService.analyze_conflict`는 요약이 없으면 명시적 오류지만 운영 호출처는 제거된다. BE 스키마·직렬화 오류가 없어 코드 변경 없이 기록한다. FE 표시 변경은 범위 밖이다. |
 
 ## 10. 범위 밖
 

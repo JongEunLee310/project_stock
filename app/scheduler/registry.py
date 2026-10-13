@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from app.core.config import settings
 from app.scheduler.interface import FunctionSchedulerJob, SchedulerJob
-from app.worker.jobs.analysis import analyze_all_watchlists_job
+from app.worker.jobs.agents import run_daily_research_job
 from app.worker.jobs.alerts import evaluate_alert_rules_job
 from app.worker.jobs.decision_review_triggers import (
     evaluate_decision_review_triggers_job,
@@ -72,35 +72,11 @@ default_scheduler_registry = SchedulerRegistry(
         ),
         ScheduleDefinition(
             job=FunctionSchedulerJob(
-                name="analysis_kr_open",
-                func=analyze_all_watchlists_job,
+                name="daily_research_agent",
+                func=run_daily_research_job,
             ),
-            cron="0 23 * * 0-4",
-            enabled=settings.ANALYSIS_SCHEDULE_ENABLED,
-        ),
-        ScheduleDefinition(
-            job=FunctionSchedulerJob(
-                name="analysis_kr_main",
-                func=analyze_all_watchlists_job,
-            ),
-            cron="0 0-7 * * 1-5",
-            enabled=settings.ANALYSIS_SCHEDULE_ENABLED,
-        ),
-        ScheduleDefinition(
-            job=FunctionSchedulerJob(
-                name="analysis_us_session",
-                func=analyze_all_watchlists_job,
-            ),
-            cron="0 13-21 * * 1-5",
-            enabled=settings.ANALYSIS_SCHEDULE_ENABLED,
-        ),
-        ScheduleDefinition(
-            job=FunctionSchedulerJob(
-                name="analysis_kr_post",
-                func=analyze_all_watchlists_job,
-            ),
-            cron="0 9,11 * * 1-5",
-            enabled=settings.ANALYSIS_SCHEDULE_ENABLED,
+            cron="30 22 * * 0-4",
+            enabled=True,
         ),
         ScheduleDefinition(
             job=FunctionSchedulerJob(
