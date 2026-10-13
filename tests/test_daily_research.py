@@ -845,3 +845,77 @@ def test_asset_loop_does_not_index_embeddings(db: Session, monkeypatch: pytest.M
     result = agent(db).run([target.id for target in targets])
     assert result.processed == 2
     assert result.failed == {}
+
+
+@pytest.mark.parametrize("with_news", [False, True])
+@pytest.mark.parametrize("with_previous", [False, True])
+def test_filing_links_period_no_news_and_unchanged_llm_snapshot(
+    db: Session, tmp_path: Path, with_news: bool, with_previous: bool,
+) -> None:
+    from app.domains.agents.daily_research.schema import DailyBriefContent
+    from app.domains.agents.filing_analysis.schema import FilingAnalysisContent, FilingReference
+
+    target = asset(db)
+    other = asset(db, "MSFT")
+    start = NOW - timedelta(hours=12 if with_previous else 48)
+    if with_previous:
+        previous = ResearchReportRepository(db).upsert_daily_brief(
+            target.id, DAY - timedelta(days=1), "이전", None,
+            DailyBriefContent(headline="이전").model_dump(mode="json"),
+        )
+        previous.created_at = start
+        db.commit()
+    if with_news:
+        news(db, target)
+    client = CountingClient()
+    service = agent(db, client, writer=ObsidianWriter(tmp_path, "custom"))
+    service.run([target.id])
+    before = client.payloads[-1] if with_news else None
+
+    def reference(year: int) -> FilingReference:
+        return FilingReference(
+            accession=str(year), fiscal_year=year, filed_date=date(year + 1, 2, 1),
+            source_url=f"https://example.com/{year}", knowledge_document_id={},
+        )
+
+    content = FilingAnalysisContent(
+        old_filing=reference(2024), new_filing=reference(2025),
+        headline="저장된 분석", max_importance="MEDIUM", sections={}, evidence={},
+    )
+    included = []
+    for index, (asset_id, created, keep) in enumerate([
+        (target.id, start - timedelta(seconds=1), False),
+        (target.id, start, False),
+        (target.id, start + timedelta(seconds=1), True),
+        (target.id, NOW, True),
+        (target.id, NOW + timedelta(seconds=1), False),
+        (other.id, NOW, False),
+    ]):
+        saved = ResearchReportRepository(db).create_filing_analysis(
+            asset_id, f"edgar:{index}", content.headline, content.max_importance,
+            content.model_dump(mode="json"),
+        )
+        saved.created_at = created
+        if keep:
+            included.append(saved.id)
+    db.commit()
+    result = service.run([target.id])
+    assert result.processed == 1 and not result.failed
+    brief = DailyBriefContent.model_validate(report(db, target).content)
+    assert [item.report_id for item in brief.filing_analyses] == included
+    assert brief.no_news == (not with_news)
+    assert all(
+        item.note_path == "custom/filings/AAPL/FY2025-10-K"
+        and item.symbol == "AAPL" and item.form == "10-K"
+        and item.fiscal_year == 2025 and item.headline == content.headline
+        and item.max_importance == "MEDIUM"
+        for item in brief.filing_analyses
+    )
+    text = (tmp_path / f"custom/daily/AAPL/{DAY}-2.md").read_text()
+    assert "## 새 연간보고서 분석" in text
+    assert "[[custom/filings/AAPL/FY2025-10-K|10-K FY2025]]" in text
+    if with_news:
+        assert client.payloads[-1] == before
+        assert "filing_analyses" not in client.payloads[-1]
+    else:
+        assert client.calls == 0

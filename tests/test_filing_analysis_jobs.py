@@ -14,30 +14,38 @@ from app.worker.jobs.timeouts import FILING_ANALYSIS_JOB_TIMEOUT
 
 @pytest.mark.parametrize("asset_ids", [None, [3, 9]])
 @pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("note_failure", [False, True])
 def test_job_records_success_and_partial_failures(
     db: Session,
     monkeypatch: pytest.MonkeyPatch,
     asset_ids: list[int] | None,
     partial: bool,
+    note_failure: bool,
 ) -> None:
     monkeypatch.setattr(agents, "SessionLocal", lambda: db)
     fake_gateway = Mock()
     monkeypatch.setattr(agents, "get_llm_gateway", Mock(return_value=fake_gateway))
+    writer = Mock()
+    monkeypatch.setattr(agents, "get_obsidian_writer", Mock(return_value=writer))
     agent = Mock()
     agent.run.return_value = FilingAnalysisResult(
-        analyzed=1, failed={3: "section failed"} if partial else {}
+        analyzed=1, failed={3: "section failed"} if partial else {},
+        note_failures={3: "disk full"} if note_failure else {},
     )
     factory = Mock(return_value=agent)
     monkeypatch.setattr(agents, "FilingAnalysisAgent", factory)
     agents.run_filing_analysis_job(asset_ids)
-    factory.assert_called_once_with(db, fake_gateway)
+    factory.assert_called_once_with(db, fake_gateway, obsidian_writer=writer)
     agent.run.assert_called_once_with(asset_ids)
     record = db.scalars(select(JobRun)).one()
     assert record.job_type == "filing_analysis_agent"
     assert record.status == "success" and record.finished_at is not None
     expected: dict[str, Any] = {"asset_ids": asset_ids}
-    if partial:
-        expected["partial_failures"] = {"failed": {"3": "section failed"}}
+    if partial or note_failure:
+        expected["partial_failures"] = {
+            "failed": {"3": "section failed"} if partial else {},
+            "note_failures": {"3": "disk full"} if note_failure else {},
+        }
     assert record.metadata_ == expected
 
 
@@ -78,10 +86,14 @@ def test_manual_script_repeated_assets_and_json_output(
         sys, "argv", ["run_filing_analysis.py", "--asset-id", "3", "--asset-id", "9"]
     )
     monkeypatch.setattr(session, "SessionLocal", lambda: db)
-    monkeypatch.setattr(factory, "get_llm_gateway", Mock())
+    fake_gateway, writer = Mock(), Mock()
+    monkeypatch.setattr(factory, "get_llm_gateway", Mock(return_value=fake_gateway))
+    monkeypatch.setattr(factory, "get_obsidian_writer", Mock(return_value=writer))
     agent = Mock()
     agent.run.return_value = FilingAnalysisResult(analyzed=2)
-    monkeypatch.setattr(service, "FilingAnalysisAgent", Mock(return_value=agent))
+    constructor = Mock(return_value=agent)
+    monkeypatch.setattr(service, "FilingAnalysisAgent", constructor)
     run_filing_analysis.main()
+    constructor.assert_called_once_with(db, fake_gateway, obsidian_writer=writer)
     agent.run.assert_called_once_with([3, 9])
     assert json.loads(capsys.readouterr().out)["analyzed"] == 2

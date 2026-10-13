@@ -209,3 +209,35 @@ def test_daily_rejects_symlink_escape(tmp_path: Path, index: bool) -> None:
         else:
             writer.write_daily_brief_note(note())
     assert not list(outside.iterdir())
+
+
+@pytest.mark.parametrize("no_news", [False, True])
+def test_filing_section_position_and_no_news(no_news: bool) -> None:
+    from app.domains.agents.daily_research.schema import BriefFilingAnalysis
+
+    value = note()
+    value.content.no_news = no_news
+    value.content.filing_analyses = [
+        BriefFilingAnalysis(
+            report_id=1,
+            symbol="NVDA",
+            fiscal_year=2025,
+            headline="사업 변화",
+            max_importance="HIGH",
+            note_path="custom/filings/NVDA/FY2025-10-K",
+        )
+    ]
+    text = render_daily_brief_note(value)
+    assert text.index("## 새 연간보고서 분석") < text.index("## 가격·신호")
+    assert (
+        "- [[custom/filings/NVDA/FY2025-10-K|10-K FY2025]] 사업 변화 (중요도 HIGH)"
+        in text
+    )
+    value.content.filing_analyses = []
+    assert "## 새 연간보고서 분석" not in render_daily_brief_note(value)
+
+
+def test_legacy_brief_without_filing_field() -> None:
+    payload = note().content.model_dump(mode="json")
+    payload.pop("filing_analyses")
+    assert DailyBriefContent.model_validate(payload).filing_analyses == []

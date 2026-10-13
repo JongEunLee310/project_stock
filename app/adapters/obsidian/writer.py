@@ -6,6 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from app.domains.agents.daily_research.schema import DailyBriefContent
+from app.domains.agents.filing_analysis.schema import FilingAnalysisContent
 from app.domains.rag.schema import ResearchAnswer
 
 UNSAFE_FILENAME = re.compile(r'[/\\:*?"<>|#^\[\]\s]')
@@ -72,7 +73,123 @@ def render_research_note(note: ResearchNote) -> str:
             f"{item.source_name}, {published}"
         )
         lines.append("")
-    lines.extend(["이 노트는 stock-agent가 생성했습니다. 매수·매도 권유가 아닙니다.", ""])
+    lines.extend(
+        ["이 노트는 stock-agent가 생성했습니다. 매수·매도 권유가 아닙니다.", ""]
+    )
+    return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class FilingAnalysisNote:
+    symbol: str
+    asset_name: str
+    generated_at: datetime
+    content: FilingAnalysisContent
+
+
+def _escape_link_text(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+
+
+def render_filing_analysis_note(note: FilingAnalysisNote) -> str:
+    content = note.content
+    metadata = {
+        "symbol": note.symbol,
+        "asset_name": note.asset_name,
+        "form": "10-K",
+        "old_fiscal_year": content.old_filing.fiscal_year,
+        "new_fiscal_year": content.new_filing.fiscal_year,
+        "filed_date": (
+            content.new_filing.filed_date.isoformat()
+            if content.new_filing.filed_date
+            else None
+        ),
+        "max_importance": content.max_importance,
+    }
+    lines = ["---"]
+    lines.extend(
+        f"{key}: {json.dumps(value, ensure_ascii=False)}"
+        for key, value in metadata.items()
+    )
+    lines.extend(
+        [
+            "tags: [stock-agent, filing-analysis]",
+            "---",
+            "",
+            f"# {note.asset_name}({note.symbol}) 10-K "
+            f"FY{content.new_filing.fiscal_year} 비교 분석",
+            "",
+            f"[[{note.symbol}]]",
+            "",
+            content.headline,
+        ]
+    )
+    sections = [
+        ("RISK_FACTORS", "위험요인 변화", "RF"),
+        ("BUSINESS", "사업 변화", "BIZ"),
+    ]
+    labels = {
+        "NEW_RISK": "신규 위험",
+        "REMOVED_RISK": "삭제된 위험",
+        "ESCALATED_RISK": "강화된 위험",
+        "SOFTENED_RISK": "완화된 위험",
+        "BUSINESS_CHANGE": "사업 변화",
+        "OTHER": "기타",
+    }
+    order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+    for key, title, prefix in sections:
+        stored = content.sections.get(key)
+        if stored is None:
+            continue
+        lines.extend(["", f"## {title}", ""])
+        if stored.failed is not None:
+            lines.append(f"섹션 분석 실패: {stored.failed}")
+        else:
+            lines.append(stored.headline)
+            for change in sorted(stored.changes, key=lambda c: order[c.importance]):
+                citations = "".join(f"[^{prefix}-{c}]" for c in change.citations)
+                lines.append(
+                    f"- [{change.importance}] {labels[change.kind]}: "
+                    f"{change.title} — {change.summary}{citations}"
+                )
+            if stored.limitations:
+                lines.extend(["", f"한계: {stored.limitations}"])
+    lines.extend(
+        [
+            "",
+            "## 통계",
+            "",
+            "| 섹션 | 같음 | 숫자만 변경 | 변경 | 신규 | 삭제 | 잘린 수 |",
+            "|---|---|---|---|---|---|---|",
+        ]
+    )
+    for key, title, _ in sections:
+        stored = content.sections.get(key)
+        if stored is not None:
+            stats = stored.diff_stats
+            lines.append(
+                f"| {title} | {stats.unchanged} | {stats.trivial} | "
+                f"{stats.modified} | {stats.added} | {stats.removed} | "
+                f"{stored.truncated_count} |"
+            )
+    lines.extend(["", "## 근거", ""])
+    for key, _, prefix in sections:
+        for citation, evidence in content.evidence.get(key, {}).items():
+            use_new = bool(evidence.new_text)
+            excerpt = (evidence.new_text or evidence.old_text or "")[:500]
+            reference = content.new_filing if use_new else content.old_filing
+            title = _escape_link_text(f"10-K FY{reference.fiscal_year} [{citation}]")
+            lines.extend(
+                [
+                    f"[^{prefix}-{citation}]: [{title}]({reference.source_url})",
+                    "",
+                    *[f"    {line}" for line in excerpt.splitlines()],
+                    "",
+                ]
+            )
+    lines.extend(
+        ["이 노트는 stock-agent가 생성했습니다. 매수·매도 권유가 아닙니다.", ""]
+    )
     return "\n".join(lines)
 
 
@@ -159,6 +276,14 @@ def render_daily_brief_note(note: DailyBriefNote) -> str:
             if group:
                 changes.extend([f"### {title}", "", *group, ""])
         section("이전 대비 달라진 점", changes)
+    section(
+        "새 연간보고서 분석",
+        [
+            f"- [[{item.note_path}|{item.form} FY{item.fiscal_year}]] "
+            f"{item.headline} (중요도 {item.max_importance})"
+            for item in content.filing_analyses
+        ],
+    )
     price_lines = []
     if content.price:
         price = content.price
@@ -252,6 +377,14 @@ class ObsidianWriter:
         stem = f"{day.isoformat()}-{slug}"
         content = render_research_note(note)
         return self._write_new(Path("research") / note.symbol, stem, content)
+
+    def write_filing_analysis_note(self, note: FilingAnalysisNote) -> Path:
+        self._validate_symbol(note.symbol)
+        return self._write_new(
+            Path("filings") / note.symbol,
+            f"FY{note.content.new_filing.fiscal_year}-10-K",
+            render_filing_analysis_note(note),
+        )
 
     def write_daily_brief_note(self, note: DailyBriefNote) -> Path:
         self._validate_symbol(note.symbol)

@@ -1,10 +1,12 @@
 import logging
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.adapters.llm.gateway import LLMGateway
 from app.adapters.llm.prompts.filing_analysis import build_filing_analysis_system_prompt
 from app.adapters.llm.types import LLMTaskType
+from app.adapters.obsidian.writer import FilingAnalysisNote, ObsidianWriter
 from app.domains.agents.filing_analysis.citations import validate_filing_citations
 from app.domains.agents.filing_analysis.diff import diff_sections
 from app.domains.agents.filing_analysis.projection import build_filing_diff_snapshot
@@ -55,9 +57,15 @@ def _importance(section: FilingSectionContent) -> Importance:
 
 
 class FilingAnalysisAgent:
-    def __init__(self, db: Session, gateway: LLMGateway) -> None:
+    def __init__(
+        self,
+        db: Session,
+        gateway: LLMGateway,
+        obsidian_writer: ObsidianWriter | None = None,
+    ) -> None:
         self.db = db
         self.gateway = gateway
+        self.obsidian_writer = obsidian_writer
 
     def run(self, asset_ids: list[int] | None = None) -> FilingAnalysisResult:
         targets = (
@@ -81,6 +89,7 @@ class FilingAnalysisAgent:
         asset = AssetRepository(self.db).get_by_id(asset_id)
         if asset is None:
             raise ValueError("asset not found")
+        symbol, asset_name = asset.symbol, asset.name
         # Read all available sections so an incomplete newest filing cannot hide
         # the previous accession behind an arbitrary document-count cutoff.
         documents = KnowledgeDocumentRepository(self.db).list_by_asset(
@@ -242,3 +251,16 @@ class FilingAnalysisAgent:
                 logger.warning(
                     "Filing signals failed: asset_id=%s", asset_id, exc_info=True
                 )
+        if self.obsidian_writer is not None:
+            try:
+                self.obsidian_writer.write_filing_analysis_note(
+                    FilingAnalysisNote(
+                        symbol=symbol,
+                        asset_name=asset_name,
+                        generated_at=datetime.now(UTC),
+                        content=content,
+                    )
+                )
+                result.notes_written += 1
+            except (OSError, ValueError) as exc:
+                result.note_failures[asset_id] = str(exc)

@@ -78,11 +78,16 @@ def run_filing_analysis_job(asset_ids: list[int] | None = None) -> None:
             "filing_analysis_agent", {"asset_ids": asset_ids}
         )
         job_run_id = job_run.id
-        result = FilingAnalysisAgent(db, get_llm_gateway()).run(asset_ids)
-        if result.failed:
+        result = FilingAnalysisAgent(
+            db, get_llm_gateway(), obsidian_writer=get_obsidian_writer()
+        ).run(asset_ids)
+        if result.failed or result.note_failures:
             job_run.metadata_ = {
                 **(job_run.metadata_ or {}),
-                "partial_failures": {"failed": result.failed},
+                "partial_failures": {
+                    "failed": result.failed,
+                    "note_failures": result.note_failures,
+                },
             }
         job_run_service.succeed(job_run_id)
         logger.info("filing analysis completed: %s", result.model_dump())

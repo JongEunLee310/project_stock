@@ -106,6 +106,16 @@ class BriefStats(BaseModel):
     citation_corrections: int = 0
 
 
+class BriefFilingAnalysis(BaseModel):
+    report_id: int
+    symbol: str
+    form: Literal["10-K"] = "10-K"
+    fiscal_year: int
+    headline: str
+    max_importance: Literal["LOW", "MEDIUM", "HIGH"]
+    note_path: str
+
+
 class DailyBriefContent(BaseModel):
     headline: str
     new_developments: list[BriefPoint] = Field(default_factory=list)
@@ -117,6 +127,7 @@ class DailyBriefContent(BaseModel):
     upcoming: list[BriefUpcoming] = Field(default_factory=list)
     stats: BriefStats = Field(default_factory=BriefStats)
     no_news: bool = False
+    filing_analyses: list[BriefFilingAnalysis] = Field(default_factory=list)
 
 
 class DailyResearchResult(BaseModel):

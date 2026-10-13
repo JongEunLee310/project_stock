@@ -14,12 +14,14 @@ def main() -> None:
     parser.add_argument("--asset-id", type=int, action="append", dest="asset_ids")
     args = parser.parse_args()
 
-    from app.adapters.factory import get_llm_gateway
+    from app.adapters.factory import get_llm_gateway, get_obsidian_writer
     from app.db.session import SessionLocal
     from app.domains.agents.filing_analysis.service import FilingAnalysisAgent
 
     with SessionLocal() as db:
-        result = FilingAnalysisAgent(db, get_llm_gateway()).run(args.asset_ids)
+        result = FilingAnalysisAgent(
+            db, get_llm_gateway(), obsidian_writer=get_obsidian_writer()
+        ).run(args.asset_ids)
         print(result.model_dump_json(indent=2))
 
 
