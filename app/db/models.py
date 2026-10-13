@@ -8,6 +8,7 @@ import app.domains.decision_checklist.model  # noqa: F401 — registers checklis
 import app.domains.decision_logs.model  # noqa: F401 — registers decision log model
 import app.domains.earnings.model  # noqa: F401 — registers earnings models
 import app.domains.jobs.model  # noqa: F401 — registers JobRun model for autogenerate
+import app.domains.knowledge.model  # noqa: F401 — registers KnowledgeDocument model
 import app.domains.llm_analysis.model  # noqa: F401 — registers LLM analysis run model
 import app.domains.news.model  # noqa: F401 — registers NewsItem model for autogenerate
 import app.domains.news_insights.model  # noqa: F401 — registers news insight models
