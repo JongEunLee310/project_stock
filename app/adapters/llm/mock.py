@@ -6,6 +6,11 @@ from app.adapters.llm.base import LLMClient, LLMMessage
 
 
 DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
+    "FilingSectionAnalysis": {
+        "headline": "공시 변화분을 확인하세요.",
+        "changes": [],
+        "limitations": "Mock 응답으로 실제 공시 변화 해석은 수행하지 않았습니다.",
+    },
     "DailyBriefResult": {
         "headline": "새로운 공개 소식의 영향을 점검하세요.",
         "new_developments": [{"text": "새 소식이 확인됩니다.", "citations": ["N1"]}],
@@ -40,9 +45,7 @@ DEFAULT_MOCK_RESPONSES: dict[str, Any] = {
         "structured_thesis": "Mock structured thesis.",
         "structured_rationale": "Mock structured rationale.",
         "counter_arguments": ["Mock counter argument."],
-        "risk_candidates": [
-            {"type": "VALUATION", "reason": "Mock risk candidate."}
-        ],
+        "risk_candidates": [{"type": "VALUATION", "reason": "Mock risk candidate."}],
         "bias_candidates": [{"type": "FOMO", "reason": "Mock bias candidate."}],
         "vague_flags": [
             {"quote": "Mock vague phrase", "suggestion": "Add a measurable basis."}
@@ -134,9 +137,7 @@ class MockLLMClient(LLMClient):
     def model_name(self) -> str:
         return "mock"
 
-    def complete(
-        self, messages: list[LLMMessage], timeout: float | None = None
-    ) -> str:
+    def complete(self, messages: list[LLMMessage], timeout: float | None = None) -> str:
         return "mock response"
 
     def complete_json(
@@ -145,7 +146,9 @@ class MockLLMClient(LLMClient):
         schema: type[BaseModel],
         timeout: float | None = None,
     ) -> dict[str, Any]:
-        response = self.responses.get(schema.__name__, self.responses.get("default", {}))
+        response = self.responses.get(
+            schema.__name__, self.responses.get("default", {})
+        )
         if isinstance(response, dict):
             return response
         return {"response": response}

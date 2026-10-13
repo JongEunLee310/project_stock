@@ -11,6 +11,7 @@ from app.adapters.factory import (
 from app.db.session import SessionLocal
 from app.domains.agents.daily_research.preparation import prepare_embeddings
 from app.domains.agents.daily_research.service import DailyResearchAgent
+from app.domains.agents.filing_analysis.service import FilingAnalysisAgent
 from app.domains.jobs.service import JobRunService
 from app.worker.connection import get_redis_connection
 from app.worker.jobs.timeouts import DAILY_RESEARCH_JOB_TIMEOUT
@@ -59,6 +60,32 @@ def run_daily_research_job(asset_ids: list[int] | None = None) -> None:
             }
         job_run_service.succeed(job_run_id)
         logger.info("daily research completed: %s", result.model_dump())
+    except Exception as exc:
+        db.rollback()
+        if job_run_id is not None:
+            job_run_service.fail(job_run_id, str(exc))
+        raise
+    finally:
+        db.close()
+
+
+def run_filing_analysis_job(asset_ids: list[int] | None = None) -> None:
+    db = SessionLocal()
+    job_run_service = JobRunService(db)
+    job_run_id: int | None = None
+    try:
+        job_run = job_run_service.start(
+            "filing_analysis_agent", {"asset_ids": asset_ids}
+        )
+        job_run_id = job_run.id
+        result = FilingAnalysisAgent(db, get_llm_gateway()).run(asset_ids)
+        if result.failed:
+            job_run.metadata_ = {
+                **(job_run.metadata_ or {}),
+                "partial_failures": {"failed": result.failed},
+            }
+        job_run_service.succeed(job_run_id)
+        logger.info("filing analysis completed: %s", result.model_dump())
     except Exception as exc:
         db.rollback()
         if job_run_id is not None:

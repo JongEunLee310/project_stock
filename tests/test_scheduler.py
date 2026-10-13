@@ -16,7 +16,7 @@ from app.scheduler.registry import (
     default_scheduler_registry,
 )
 from app.scheduler.runner import ManualSchedulerRunner
-from app.worker.jobs.agents import run_daily_research_job
+from app.worker.jobs.agents import run_daily_research_job, run_filing_analysis_job
 from app.worker.jobs.alerts import evaluate_alert_rules_job
 from app.worker.jobs.decision_review_triggers import (
     evaluate_decision_review_triggers_job,
@@ -102,6 +102,7 @@ def test_default_scheduler_registry_contains_expected_jobs() -> None:
 
     assert set(schedules_by_name) == {
         "filing_collection",
+        "filing_analysis_agent",
         "price_collection",
         "news_collection",
         "embed_documents",
@@ -184,6 +185,7 @@ def test_cron_config_registers_enabled_scheduler_jobs(
     importlib.import_module("app.scheduler.cron_config")
 
     assert registered == [
+        (run_filing_analysis_job, "default", "30 1 * * 6", 1800),
         (collect_filings_job, "default", "0 1 * * 6", 900),
         (evaluate_decision_review_triggers_job, "default", "*/5 * * * *", None),
         (collect_prices_job, "default", "10 22 * * 1-5", None),

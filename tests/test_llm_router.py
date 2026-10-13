@@ -39,6 +39,7 @@ def test_llm_task_routes_record_future_primary_provider() -> None:
         LLMTaskType.STOCK_RECOMMENDATION: "local",
         LLMTaskType.RESEARCH_QA: "cloud",
         LLMTaskType.DAILY_BRIEF: "local",
+        LLMTaskType.FILING_ANALYSIS: "local",
         LLMTaskType.RESEARCH_SUMMARY: "local",
         LLMTaskType.DECISION_ASSIST: "local",
         LLMTaskType.TAG_SENTIMENT: "local",
