@@ -122,3 +122,30 @@ Medium — 외부 API 연동(공개·무인증). 요청 간격과 `User-Agent`�
 - Do not weaken verification.
 - Do not modify protected files unless listed above.
 - Report assumptions and verification results.
+
+## Addendum (2026-10-13, orchestrator 실측 후)
+
+### 배경
+
+- 실제 EDGAR로 미국 3종목 10-K 2건씩 섹션 12건(약 55만 자)을 수집했고, 실제 Ollama `bge-m3`로 임베딩하니
+  537개 청크에 17분 18초가 걸렸다(`embed_documents` 1회 실행).
+- RQ 2.9.1의 기본 job timeout은 180초다(`rq.Queue.DEFAULT_TIMEOUT`). `app/scheduler/cron_config.py`는
+  `rq_cron.register(func, "default", cron=...)`로 timeout 없이 등록하므로, 워커에서 이 job은 180초에 강제 종료되고
+  트랜잭션이 롤백돼 공시 청크가 영원히 적재되지 않는다. 실 DB에서 `embed_documents` 최장 실행은 이미 2분 39초다.
+- `rq_cron.register`는 `job_timeout` 인자를 받는다(시그니처 확인).
+
+### 추가 범위
+
+1. `ScheduleDefinition`에 `job_timeout: int | None = None`을 추가하고 `cron_config._register_cron_jobs`와
+   `ManualSchedulerRunner.run`이 이 값을 넘기게 한다(`SchedulerQueue.enqueue` 프로토콜도 맞춘다).
+2. 값: `embed_documents` 1800초, `daily_research_agent` 3600초, `filing_collection` 900초. 나머지는 None(기본값 유지).
+   값은 `app/worker/jobs/` 또는 registry에 상수로 두고 출처(이 실측)를 주석 한 줄로 남긴다.
+3. API에서 직접 enqueue하는 일일 리서치(`app/api/v1/endpoints/worker.py`의 `run_daily_research_job`,
+   `app/worker/jobs/agents.py`의 `enqueue_daily_research_safe`)도 같은 3600초 상수로 `job_timeout`을 지정한다.
+4. 설계 `docs/designs/445-filing-knowledge-collection.md` §4에 실측(537청크 17분)과 timeout 결정을, 설계
+   `docs/designs/459-daily-research-agent.md` §6에 일일 리서치 job timeout을 한 줄씩 반영한다.
+
+### 추가 테스트
+
+- cron 등록 시 timeout 전달(`rq_cron.register` monkeypatch), 수동 실행 시 timeout 전달, 세 스케줄의 값
+- 일일 리서치 enqueue 두 곳의 `job_timeout`
