@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     NEWS_QUERY_URL_TEMPLATE: str = (
         "https://news.google.com/rss/search?q={query}&hl={hl}&gl={gl}&ceid={gl}:{hl}"
     )
+    FILING_PROVIDER: Literal["mock", "real"] = "mock"
+    SEC_USER_AGENT: str | None = None
     DISCLOSURE_PROVIDER: Literal["mock", "real"] = "mock"
     PORTFOLIO_PROVIDER: Literal["mock", "real"] = "mock"
     CORS_ORIGINS: Annotated[list[str], NoDecode] = []

@@ -357,11 +357,15 @@ def test_enqueue_analysis_job_api(client: TestClient, monkeypatch: pytest.Monkey
             self.name = name
             self.connection = connection
 
-        def enqueue(self, func: object, asset_ids: list[int]) -> FakeJob:
+        def enqueue(
+            self, func: object, asset_ids: list[int], *, job_timeout: int
+        ) -> FakeJob:
+            assert job_timeout == 3600
             captured["queue_name"] = self.name
             captured["connection"] = self.connection
             captured["func"] = func
             captured["asset_ids"] = asset_ids
+            captured["job_timeout"] = job_timeout
             return FakeJob()
 
     class FakeRedis:
@@ -395,6 +399,7 @@ def test_enqueue_analysis_job_api(client: TestClient, monkeypatch: pytest.Monkey
         "connection": redis_connection,
         "func": run_daily_research_job,
         "asset_ids": [3, 9],
+        "job_timeout": 3600,
     }
     app.dependency_overrides.clear()
 
@@ -424,7 +429,10 @@ def test_enqueue_analysis_job_rate_limit_allows_first_call(
         def __init__(self, name: str, connection: object) -> None:
             pass
 
-        def enqueue(self, func: object, asset_ids: list[int]) -> FakeJob:
+        def enqueue(
+            self, func: object, asset_ids: list[int], *, job_timeout: int
+        ) -> FakeJob:
+            assert job_timeout == 3600
             return FakeJob()
 
     monkeypatch.setattr("app.api.v1.endpoints.worker.Queue", FakeQueue)

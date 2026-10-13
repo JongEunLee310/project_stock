@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -7,6 +8,9 @@ from app.adapters.disclosure.mock import MockDisclosureProvider
 from app.adapters.embedding.base import Embedder
 from app.adapters.embedding.mock import MockEmbedder
 from app.adapters.embedding.openai import OpenAIEmbedder
+from app.adapters.filings.base import FilingProvider
+from app.adapters.filings.edgar import EdgarFilingProvider
+from app.adapters.filings.mock import MockFilingProvider
 from app.adapters.llm.base import LLMClient
 from app.adapters.llm.budget import DailyCallBudget
 from app.adapters.llm.cache import LLMResponseCache
@@ -249,3 +253,14 @@ def get_obsidian_writer() -> ObsidianWriter | None:
     return ObsidianWriter(
         Path(settings.OBSIDIAN_VAULT_PATH), settings.OBSIDIAN_EXPORT_DIR
     )
+
+
+def get_filing_provider(market: str) -> FilingProvider | None:
+    if settings.FILING_PROVIDER == "mock":
+        return MockFilingProvider()
+    if market not in {"NASDAQ", "NYSE"}:
+        return None
+    if not settings.SEC_USER_AGENT or not settings.SEC_USER_AGENT.strip():
+        logging.getLogger(__name__).warning("SEC_USER_AGENT is missing; skipping EDGAR")
+        return None
+    return EdgarFilingProvider(settings.SEC_USER_AGENT)

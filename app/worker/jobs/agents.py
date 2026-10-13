@@ -13,6 +13,7 @@ from app.domains.agents.daily_research.preparation import prepare_embeddings
 from app.domains.agents.daily_research.service import DailyResearchAgent
 from app.domains.jobs.service import JobRunService
 from app.worker.connection import get_redis_connection
+from app.worker.jobs.timeouts import DAILY_RESEARCH_JOB_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,9 @@ logger = logging.getLogger(__name__)
 def enqueue_daily_research_safe(asset_ids: list[int]) -> None:
     try:
         queue = Queue("default", connection=get_redis_connection())
-        queue.enqueue(run_daily_research_job, asset_ids)
+        queue.enqueue(
+            run_daily_research_job, asset_ids, job_timeout=DAILY_RESEARCH_JOB_TIMEOUT
+        )
     except Exception:
         logger.warning(
             "failed to enqueue daily research: asset_ids=%s", asset_ids, exc_info=True

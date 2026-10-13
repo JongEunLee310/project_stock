@@ -7,10 +7,16 @@ from app.worker.jobs.alerts import evaluate_alert_rules_job
 from app.worker.jobs.decision_review_triggers import (
     evaluate_decision_review_triggers_job,
 )
+from app.worker.jobs.filings import collect_filings_job
 from app.worker.jobs.news import collect_news_job
 from app.worker.jobs.prices import collect_prices_job
 from app.worker.jobs.rag import embed_documents_job
 from app.worker.jobs.signal_snapshots import snapshot_signal_states_job
+from app.worker.jobs.timeouts import (
+    DAILY_RESEARCH_JOB_TIMEOUT,
+    EMBED_DOCUMENTS_JOB_TIMEOUT,
+    FILING_COLLECTION_JOB_TIMEOUT,
+)
 
 
 @dataclass(frozen=True)
@@ -18,6 +24,7 @@ class ScheduleDefinition:
     job: SchedulerJob
     cron: str
     enabled: bool = True
+    job_timeout: int | None = None
 
 
 class SchedulerRegistry:
@@ -33,6 +40,12 @@ class SchedulerRegistry:
 
 default_scheduler_registry = SchedulerRegistry(
     [
+        ScheduleDefinition(
+            job=FunctionSchedulerJob(name="filing_collection", func=collect_filings_job),
+            cron="0 1 * * 6",
+            enabled=True,
+            job_timeout=FILING_COLLECTION_JOB_TIMEOUT,
+        ),
         ScheduleDefinition(
             job=FunctionSchedulerJob(
                 name="decision_review_trigger_evaluation",
@@ -69,6 +82,7 @@ default_scheduler_registry = SchedulerRegistry(
             job=FunctionSchedulerJob(name="embed_documents", func=embed_documents_job),
             cron="20 * * * *",
             enabled=True,
+            job_timeout=EMBED_DOCUMENTS_JOB_TIMEOUT,
         ),
         ScheduleDefinition(
             job=FunctionSchedulerJob(
@@ -77,6 +91,7 @@ default_scheduler_registry = SchedulerRegistry(
             ),
             cron="30 22 * * 0-4",
             enabled=True,
+            job_timeout=DAILY_RESEARCH_JOB_TIMEOUT,
         ),
         ScheduleDefinition(
             job=FunctionSchedulerJob(

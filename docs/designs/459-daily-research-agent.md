@@ -174,6 +174,8 @@ JSON Schema에는 Pydantic 제약으로 `item_classifications[].item`과 `new_de
 
 - job 함수 `run_daily_research_job(asset_ids: list[int] | None = None)`(`app/worker/jobs/agents.py`),
   `JobRunService`로 기록
+- #472의 공시 임베딩 실측(537청크, 17분 18초)을 반영해, 사전 임베딩을 포함하는 일일 리서치의
+  job timeout은 스케줄·수동 실행·관심종목 추가 enqueue 모두 3600초로 지정한다.
 - 스케줄은 `enabled=True`이며 `asset_ids=None`으로 전 관심종목을 처리한다. 실행 metadata에는
   `asset_ids`와 부분 실패 시 `partial_failures.failed`·`partial_failures.note_failures`를 남긴다.
 - `prepare_embeddings`는 job과 수동 스크립트가 에이전트 실행 전에 한 번 호출하고, `has_more=False`까지

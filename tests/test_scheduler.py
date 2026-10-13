@@ -21,6 +21,7 @@ from app.worker.jobs.alerts import evaluate_alert_rules_job
 from app.worker.jobs.decision_review_triggers import (
     evaluate_decision_review_triggers_job,
 )
+from app.worker.jobs.filings import collect_filings_job
 from app.worker.jobs.news import collect_news_job
 from app.worker.jobs.prices import collect_prices_job
 from app.worker.jobs.rag import embed_documents_job
@@ -37,9 +38,13 @@ class FakeQueue:
     def __init__(self, job_id: str = "rq-job-1") -> None:
         self.job_id = job_id
         self.enqueued: list[Callable[..., object]] = []
+        self.timeouts: list[int | None] = []
 
-    def enqueue(self, f: Callable[..., object]) -> FakeQueuedJob:
+    def enqueue(
+        self, f: Callable[..., object], *, job_timeout: int | None = None
+    ) -> FakeQueuedJob:
         self.enqueued.append(f)
+        self.timeouts.append(job_timeout)
         return FakeQueuedJob(self.job_id)
 
 
@@ -67,6 +72,7 @@ def test_manual_scheduler_runner_enqueues_registered_job() -> None:
     result = ManualSchedulerRunner(registry, queue).run("price_collection")
 
     assert queue.enqueued == [collect_prices_job]
+    assert queue.timeouts == [None]
     assert result.job_name == "price_collection"
     assert result.job_id == "price-rq-job"
     assert result.status == "queued"
@@ -95,6 +101,7 @@ def test_default_scheduler_registry_contains_expected_jobs() -> None:
     schedules_by_name = {schedule.job.name: schedule for schedule in schedules}
 
     assert set(schedules_by_name) == {
+        "filing_collection",
         "price_collection",
         "news_collection",
         "embed_documents",
@@ -103,6 +110,9 @@ def test_default_scheduler_registry_contains_expected_jobs() -> None:
         "alert_evaluation",
         "decision_review_trigger_evaluation",
     }
+    assert schedules_by_name["filing_collection"].job.func is collect_filings_job
+    assert schedules_by_name["filing_collection"].cron == "0 1 * * 6"
+    assert schedules_by_name["filing_collection"].enabled is True
     assert schedules_by_name["price_collection"].job.func is collect_prices_job
     assert schedules_by_name["price_collection"].cron == "10 22 * * 1-5"
     assert schedules_by_name["news_collection"].job.func is collect_news_job
@@ -153,16 +163,17 @@ def test_alert_engine_enabled_flag_controls_alert_entry(
 def test_cron_config_registers_enabled_scheduler_jobs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    registered: list[tuple[Callable[..., object], str, str | None]] = []
+    registered: list[tuple[Callable[..., object], str, str | None, int | None]] = []
 
     def fake_register(
         func: Callable[..., object],
         queue_name: str,
         *,
         cron: str | None = None,
+        job_timeout: int | None = None,
         **_: object,
     ) -> dict[str, object]:
-        registered.append((func, queue_name, cron))
+        registered.append((func, queue_name, cron, job_timeout))
         return {}
 
     import rq.cron
@@ -173,12 +184,13 @@ def test_cron_config_registers_enabled_scheduler_jobs(
     importlib.import_module("app.scheduler.cron_config")
 
     assert registered == [
-        (evaluate_decision_review_triggers_job, "default", "*/5 * * * *"),
-        (collect_prices_job, "default", "10 22 * * 1-5"),
-        (collect_news_job, "default", "0 * * * *"),
-        (embed_documents_job, "default", "20 * * * *"),
-        (run_daily_research_job, "default", "30 22 * * 0-4"),
-        (snapshot_signal_states_job, "default", "30 11 * * 1-5"),
+        (collect_filings_job, "default", "0 1 * * 6", 900),
+        (evaluate_decision_review_triggers_job, "default", "*/5 * * * *", None),
+        (collect_prices_job, "default", "10 22 * * 1-5", None),
+        (collect_news_job, "default", "0 * * * *", None),
+        (embed_documents_job, "default", "20 * * * *", 1800),
+        (run_daily_research_job, "default", "30 22 * * 0-4", 3600),
+        (snapshot_signal_states_job, "default", "30 11 * * 1-5", None),
     ]
 
 
@@ -245,3 +257,29 @@ def test_run_scheduler_job_once_api_returns_409_for_disabled_job(
     assert response.status_code == 409
     assert response.json()["detail"] == "scheduler job is disabled"
     assert queue.enqueued == []
+
+
+@pytest.mark.parametrize(
+    ("job_name", "expected_timeout"),
+    [
+        ("embed_documents", 1800),
+        ("daily_research_agent", 3600),
+        ("filing_collection", 900),
+        ("price_collection", None),
+        ("news_collection", None),
+        ("signal_snapshot", None),
+        ("alert_evaluation", None),
+        ("decision_review_trigger_evaluation", None),
+    ],
+)
+def test_schedule_timeout_and_manual_enqueue(
+    job_name: str, expected_timeout: int | None
+) -> None:
+    schedule = default_scheduler_registry.get(job_name)
+    assert schedule is not None
+    assert schedule.job_timeout == expected_timeout
+    if schedule.enabled:
+        queue = FakeQueue()
+        ManualSchedulerRunner(default_scheduler_registry, queue).run(job_name)
+        assert queue.enqueued == [schedule.job.func]
+        assert queue.timeouts == [expected_timeout]
