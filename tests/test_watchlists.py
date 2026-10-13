@@ -9,7 +9,7 @@ from app.adapters.market.base import QuoteResult
 from app.domains.portfolios.service import CASH_FLOOR_HIGH, CASH_FLOOR_MEDIUM
 from app.domains.signals.types import SignalType
 from app.domains.watchlists.types import BuyReadinessLevel
-from app.worker.jobs.analysis import analyze_watchlist_job
+from app.worker.jobs.agents import run_daily_research_job
 from tests.conftest import api_data, api_error, api_meta, set_current_user
 
 
@@ -157,23 +157,24 @@ def test_add_watchlist_item_success(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    enqueued: list[tuple[object, int]] = []
+    enqueued: list[tuple[object, list[int]]] = []
 
     class FakeQueue:
         def __init__(self, name: str, connection: object) -> None:
             assert name == "default"
 
-        def enqueue(self, func: object, watchlist_id: int) -> object:
-            enqueued.append((func, watchlist_id))
+        def enqueue(self, func: object, asset_ids: list[int]) -> object:
+            enqueued.append((func, asset_ids))
             return object()
 
     monkeypatch.setattr(
-        "app.worker.jobs.analysis.get_redis_connection",
+        "app.worker.jobs.agents.get_redis_connection",
         lambda: object(),
     )
-    monkeypatch.setattr("app.worker.jobs.analysis.Queue", FakeQueue)
+    monkeypatch.setattr("app.worker.jobs.agents.Queue", FakeQueue)
     set_current_user(1)
     watchlist = create_watchlist(client)
+    create_asset(client, "MSFT")
     asset = create_asset(client)
 
     response = client.post(
@@ -196,7 +197,7 @@ def test_add_watchlist_item_success(
     assert data["tags"] == ["ai", "large-cap"]
     assert data["memo"] == "Watch earnings."
     assert "created_at" in data
-    assert enqueued == [(analyze_watchlist_job, watchlist["id"])]
+    assert enqueued == [(run_daily_research_job, [asset["id"]])]
 
 
 def test_add_watchlist_item_succeeds_even_if_enqueue_fails(
@@ -208,10 +209,10 @@ def test_add_watchlist_item_succeeds_even_if_enqueue_fails(
             raise ConnectionError("redis unavailable")
 
     monkeypatch.setattr(
-        "app.worker.jobs.analysis.get_redis_connection",
+        "app.worker.jobs.agents.get_redis_connection",
         lambda: object(),
     )
-    monkeypatch.setattr("app.worker.jobs.analysis.Queue", FailingQueue)
+    monkeypatch.setattr("app.worker.jobs.agents.Queue", FailingQueue)
     set_current_user(1)
     watchlist = create_watchlist(client)
     asset = create_asset(client)

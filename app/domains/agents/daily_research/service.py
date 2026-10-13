@@ -37,7 +37,6 @@ from app.domains.news.model import NewsItem
 from app.domains.news.repository import NewsItemRepository
 from app.domains.prices.repository import PriceBarRepository
 from app.domains.rag.indexing import clean_body_text
-from app.domains.rag.indexing_service import EmbeddingIndexer
 from app.domains.rag.retrieval import CANDIDATE_K, extract_source_name, postprocess_hits
 from app.domains.rag.types import ChunkSourceType
 from app.domains.raw_news.repository import RawNewsEventRepository
@@ -158,11 +157,6 @@ class DailyResearchAgent:
         total = news.count_by_asset_created_after(asset_id, start)
         evidence = self._new_evidence(items)
         if items:
-            # The indexer scans from the beginning; finish all pages so a backlog cannot
-            # leave the current asset's new sources unindexed.
-            indexer = EmbeddingIndexer(self.db, self.embedder, self.vector_store)
-            while indexer.run().has_more:
-                pass
             past = self._past_evidence(asset_id, items, start)
         else:
             past = []

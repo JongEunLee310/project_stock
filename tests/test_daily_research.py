@@ -26,6 +26,7 @@ from app.domains.agents.daily_research.schema import (
     DailyBriefResult,
     DailyBriefSnapshot,
 )
+from app.domains.agents.daily_research.preparation import prepare_embeddings
 from app.domains.agents.daily_research.service import DailyResearchAgent
 from app.domains.alerts.model import Alert
 from app.domains.assets.model import Asset
@@ -524,7 +525,9 @@ def test_past_context_ten_and_excerpt_limit(db: Session) -> None:
         news(db, target, 60)
     news(db, target, body="공개 본문과 근거입니다. " * 50)
     client = CountingClient()
-    result = agent(db, client, ScoredStore()).run([target.id])
+    store = ScoredStore()
+    prepare_embeddings(db, MockEmbedder(8), store)
+    result = agent(db, client, store).run([target.id])
     assert not result.failed
     payload = client.payloads[0]
     assert len(payload["past_context"]) == 10
@@ -624,6 +627,7 @@ def test_past_window_excludes_truncated_news(
         news(db, target)
     store = ScoredStore()
     client = CountingClient()
+    prepare_embeddings(db, MockEmbedder(8), store)
     result = agent(db, client, store).run([target.id])
     assert not result.failed
     content = report(db, target).content
@@ -829,3 +833,15 @@ def test_failed_asset_lookup_does_not_abort_index(
     index = (tmp_path / f"stock-agent/daily/{DAY}.md").read_text()
     assert f"{first_id}({first_id}) 실패: asset lookup failure" in index
     assert f"[[stock-agent/daily/MSFT/{DAY}|MSFT]]" in index
+
+
+def test_asset_loop_does_not_index_embeddings(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    targets = [asset(db), asset(db, "MSFT")]
+    for target in targets:
+        news(db, target)
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("asset loop must not index embeddings")
+    monkeypatch.setattr(EmbeddingIndexer, "run", forbidden)
+    result = agent(db).run([target.id for target in targets])
+    assert result.processed == 2
+    assert result.failed == {}

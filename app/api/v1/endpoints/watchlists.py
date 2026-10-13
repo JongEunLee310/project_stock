@@ -33,7 +33,7 @@ from app.domains.watchlists.schema import (
 from app.domains.watchlists.service import WatchlistService
 from app.domains.watchlists.sparkline_service import WatchlistSparklineService
 from app.domains.watchlists.trend_service import WatchlistSummaryTrendService
-from app.worker.jobs.analysis import enqueue_watchlist_analysis_safe
+from app.worker.jobs.agents import enqueue_daily_research_safe
 
 router = APIRouter()
 watchlist_item_sort = sort_param(
@@ -316,7 +316,7 @@ def add_watchlist_item(
     current_user: User = Depends(get_current_user),
 ) -> ApiResponse[WatchlistItemResponse]:
     item = WatchlistService(db).add_item(watchlist_id, current_user.id, data)
-    enqueue_watchlist_analysis_safe(watchlist_id)
+    enqueue_daily_research_safe([item.asset_id])
     return success(item)
 
 

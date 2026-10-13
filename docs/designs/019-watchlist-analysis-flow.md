@@ -1,5 +1,7 @@
 # 019: 관심 종목 분석 통합 흐름
 
+Status: **Superseded** — ADR-020 및 설계 [459](459-daily-research-agent.md)로 대체됨.
+
 ## 목적
 
 관심 종목(Watchlist) 기준으로 뉴스 수집 → AI 요약 → 투자 가설 충돌 판단 → Research Report 생성 → Signal 생성 → Alert 생성까지 하나의 Job으로 연결한다.

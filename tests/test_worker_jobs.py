@@ -1,6 +1,5 @@
 from collections.abc import Generator
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -16,19 +15,18 @@ from app.domains.jobs.model import JobRun
 from app.domains.llm_analysis.schema import RunStatus
 from app.domains.raw_news.model import RawNewsEvent
 from app.domains.signals.snapshot_model import AssetSignalSnapshot
-from app.domains.watchlists.model import Watchlist
+from app.domains.watchlists.model import Watchlist, WatchlistItem
 from app.main import app
-from app.worker.jobs import analysis
 from app.worker.jobs import llm_analysis
 from app.worker.jobs import news
 from app.worker.jobs import signal_snapshots
 from app.worker.jobs.valuation import collect_valuation_job
 from app.worker.jobs.earnings import collect_earnings_job
-from app.worker.jobs.analysis import analyze_watchlist_job
+from app.worker.jobs.agents import run_daily_research_job
 from app.worker.jobs.llm_analysis import run_llm_analysis_job
 from app.worker.jobs.news import collect_news_job
 from app.worker.jobs.signal_snapshots import snapshot_signal_states_job
-from tests.conftest import api_data, set_current_user
+from tests.conftest import api_data, set_current_user, TestingSessionLocal as ApiSessionLocal
 
 engine = create_engine(
     "sqlite://",
@@ -147,77 +145,6 @@ def test_snapshot_signal_states_job_records_success(db: Session, monkeypatch: py
     assert snapshot.signal_id is None
     assert snapshot.signal_type is None
     assert snapshot.score is None
-
-
-def test_analyze_all_watchlists_job_isolates_watchlist_failures(
-    db: Session,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    db.add_all(
-        [
-            Watchlist(user_id=1, name="First"),
-            Watchlist(user_id=1, name="Second"),
-        ]
-    )
-    db.commit()
-    analyzed_watchlist_ids: list[int] = []
-
-    class PartiallyFailingService:
-        def __init__(
-            self,
-            db: Session,
-            gateway: object,
-            news_adapter: object,
-        ) -> None:
-            pass
-
-        def run(self, watchlist_id: int) -> SimpleNamespace:
-            analyzed_watchlist_ids.append(watchlist_id)
-            if watchlist_id == 1:
-                raise RuntimeError("first failed")
-            return SimpleNamespace(failures=[])
-
-    monkeypatch.setattr(analysis, "SessionLocal", TestingSessionLocal)
-    monkeypatch.setattr(analysis, "get_llm_gateway", object)
-    monkeypatch.setattr(analysis, "get_news_adapter", object)
-    monkeypatch.setattr(
-        analysis,
-        "WatchlistAnalysisService",
-        PartiallyFailingService,
-    )
-
-    analysis.analyze_all_watchlists_job()
-
-    job_run = db.scalars(select(JobRun)).one()
-    assert analyzed_watchlist_ids == [1, 2]
-    assert job_run.job_type == "all_watchlists_analysis"
-    assert job_run.status == "success"
-    assert job_run.metadata_ == {
-        "watchlist_ids": [1, 2],
-        "partial_failures": [
-            {"watchlist_id": 1, "error": "first failed"},
-        ],
-    }
-
-
-def test_analyze_all_watchlists_job_records_watchlist_query_failure(
-    db: Session,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def raise_query_error(*args: object) -> object:
-        raise RuntimeError("watchlist query failed")
-
-    monkeypatch.setattr(analysis, "SessionLocal", TestingSessionLocal)
-    monkeypatch.setattr(analysis, "select", raise_query_error)
-
-    with pytest.raises(RuntimeError, match="watchlist query failed"):
-        analysis.analyze_all_watchlists_job()
-
-    job_run = db.scalars(select(JobRun)).one()
-    assert job_run.job_type == "all_watchlists_analysis"
-    assert job_run.status == "failed"
-    assert job_run.error_message == "watchlist query failed"
-    assert job_run.metadata_ == {"watchlist_ids": []}
 
 
 @dataclass
@@ -410,7 +337,16 @@ def test_enqueue_earnings_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
     }
 
 
-def test_enqueue_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
+def seed_manual_watchlist() -> None:
+    with ApiSessionLocal() as db:
+        db.add(Watchlist(id=7, user_id=42, name="Manual"))
+        db.add_all([Asset(id=i, symbol=str(i), name=str(i), market="US") for i in [3, 9]])
+        db.flush()
+        db.add_all([WatchlistItem(watchlist_id=7, asset_id=i) for i in [3, 9]])
+        db.commit()
+
+
+def test_enqueue_analysis_job_api(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     class FakeJob:
@@ -421,11 +357,11 @@ def test_enqueue_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
             self.name = name
             self.connection = connection
 
-        def enqueue(self, func: object, watchlist_id: int) -> FakeJob:
+        def enqueue(self, func: object, asset_ids: list[int]) -> FakeJob:
             captured["queue_name"] = self.name
             captured["connection"] = self.connection
             captured["func"] = func
-            captured["watchlist_id"] = watchlist_id
+            captured["asset_ids"] = asset_ids
             return FakeJob()
 
     class FakeRedis:
@@ -443,6 +379,7 @@ def test_enqueue_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
         "app.api.v1.endpoints.worker.get_redis_connection",
         lambda: redis_connection,
     )
+    seed_manual_watchlist()
     set_current_user(42)
 
     with TestClient(app) as client:
@@ -456,8 +393,8 @@ def test_enqueue_analysis_job_api(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured == {
         "queue_name": "default",
         "connection": redis_connection,
-        "func": analyze_watchlist_job,
-        "watchlist_id": 7,
+        "func": run_daily_research_job,
+        "asset_ids": [3, 9],
     }
     app.dependency_overrides.clear()
 
@@ -473,6 +410,7 @@ def test_enqueue_analysis_job_requires_auth() -> None:
 
 
 def test_enqueue_analysis_job_rate_limit_allows_first_call(
+    client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeRedis:
@@ -486,7 +424,7 @@ def test_enqueue_analysis_job_rate_limit_allows_first_call(
         def __init__(self, name: str, connection: object) -> None:
             pass
 
-        def enqueue(self, func: object, watchlist_id: int) -> FakeJob:
+        def enqueue(self, func: object, asset_ids: list[int]) -> FakeJob:
             return FakeJob()
 
     monkeypatch.setattr("app.api.v1.endpoints.worker.Queue", FakeQueue)
@@ -494,6 +432,7 @@ def test_enqueue_analysis_job_rate_limit_allows_first_call(
         "app.api.v1.endpoints.worker.get_redis_connection",
         FakeRedis,
     )
+    seed_manual_watchlist()
     set_current_user(42)
 
     with TestClient(app) as client:
@@ -507,6 +446,7 @@ def test_enqueue_analysis_job_rate_limit_allows_first_call(
 
 
 def test_enqueue_analysis_job_rate_limit_blocks_second_call(
+    client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeRedis:
@@ -517,6 +457,7 @@ def test_enqueue_analysis_job_rate_limit_blocks_second_call(
         "app.api.v1.endpoints.worker.get_redis_connection",
         FakeRedis,
     )
+    seed_manual_watchlist()
     set_current_user(42)
 
     with TestClient(app) as client:
@@ -675,3 +616,39 @@ def test_embed_documents_job_records_failure(
     result = rag.embed_documents_job()
     assert result is not None
     assert result.embedded_documents == 1
+
+
+@pytest.mark.parametrize("owner", [43, None])
+def test_manual_research_rejects_unowned_or_missing_watchlist(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, owner: int | None,
+) -> None:
+    if owner is not None:
+        with ApiSessionLocal() as session:
+            session.add(Watchlist(id=7, user_id=owner, name="Other"))
+            session.commit()
+    set_current_user(42)
+    def forbidden() -> object:
+        pytest.fail("unauthorized request must not contact Redis")
+    monkeypatch.setattr("app.api.v1.endpoints.worker.get_redis_connection", forbidden)
+    response = client.post("/api/v1/worker/jobs/analysis", json={"watchlist_id": 7})
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "WATCHLIST_NOT_FOUND"
+
+
+def test_manual_research_empty_watchlist_skips_enqueue(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with ApiSessionLocal() as session:
+        session.add(Watchlist(id=7, user_id=42, name="Empty"))
+        session.commit()
+    set_current_user(42)
+    class FakeRedis:
+        def set(self, *args: object, **kwargs: object) -> bool:
+            return True
+    def forbidden(*args: object, **kwargs: object) -> object:
+        pytest.fail("empty watchlist must not enqueue")
+    monkeypatch.setattr("app.api.v1.endpoints.worker.get_redis_connection", FakeRedis)
+    monkeypatch.setattr("app.api.v1.endpoints.worker.Queue", forbidden)
+    response = client.post("/api/v1/worker/jobs/analysis", json={"watchlist_id": 7})
+    assert response.status_code == 200
+    assert api_data(response) == {"job_id": "", "status": "skipped"}
