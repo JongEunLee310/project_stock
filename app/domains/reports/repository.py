@@ -1,5 +1,5 @@
 import json
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import func, select, text
@@ -35,6 +35,51 @@ class ResearchReportRepository:
 
     def get_by_id(self, report_id: int) -> ResearchReport | None:
         return self.db.get(ResearchReport, report_id)
+
+    def get_by_source_ref(
+        self, asset_id: int, report_type: ReportType, source_ref: str
+    ) -> ResearchReport | None:
+        stmt = select(ResearchReport).where(
+            ResearchReport.asset_id == asset_id,
+            ResearchReport.report_type == report_type.value,
+            ResearchReport.source_ref == source_ref,
+        )
+        return self.db.scalars(stmt).first()
+
+    def create_filing_analysis(
+        self,
+        asset_id: int,
+        source_ref: str,
+        summary: str,
+        risk_level: str | None,
+        content: dict[str, Any],
+    ) -> ResearchReport:
+        report = ResearchReport(
+            asset_id=asset_id,
+            report_type=ReportType.FILING_ANALYSIS.value,
+            source_ref=source_ref,
+            summary=summary,
+            risk_level=risk_level,
+            content=content,
+        )
+        self.db.add(report)
+        self.db.flush()
+        return report
+
+    def list_filing_analyses_created_between(
+        self, asset_id: int, start: datetime, end: datetime
+    ) -> list[ResearchReport]:
+        stmt = (
+            select(ResearchReport)
+            .where(
+                ResearchReport.asset_id == asset_id,
+                ResearchReport.report_type == ReportType.FILING_ANALYSIS.value,
+                ResearchReport.created_at > start,
+                ResearchReport.created_at <= end,
+            )
+            .order_by(ResearchReport.created_at, ResearchReport.id)
+        )
+        return list(self.db.scalars(stmt).all())
 
     def upsert_daily_brief(
         self,
