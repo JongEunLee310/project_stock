@@ -19,7 +19,7 @@ PREVIOUS = "c3d4e5f60071"
 
 def test_single_head_and_model_constraints() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["c3d4e5f60073"]
+    assert script.get_heads() == ["c3d4e5f60074"]
     revision = script.get_revision(REVISION)
     assert revision is not None and revision.down_revision == PREVIOUS
     table = cast(Table, KnowledgeDocument.__table__)

@@ -379,6 +379,7 @@ def test_run_cycle_creates_event_delivery_and_never_creates_signal(db: Session) 
     assert summary.evaluated_count == 1
     assert summary.emitted_count == 1
     assert event.rule_id == active.id
+    assert event.source == "RULE"
     assert event.asset_id == 10
     assert event.triggered_value["current"] == 4.0
     assert event.evidence == [{"kind": "PRICE", "target_id": "AAPL"}]

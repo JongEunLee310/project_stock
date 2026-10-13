@@ -2,14 +2,72 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Select, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.domains.alert_events.model import AlertEvent
+from app.domains.alert_events.model import AlertDelivery, AlertEvent
+from app.domains.alert_events.types import AlertDeliveryStatus, AlertEventSource
+from app.domains.alert_rules.types import AlertChannel, AlertTargetType
 
 
 class AlertEventRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
+
+    def create_agent_event(
+        self,
+        user_id: int,
+        asset_id: int,
+        symbol: str,
+        title: str,
+        message: str,
+        severity: str,
+        evidence: list[dict[str, Any]],
+        dedup_key: str,
+        triggered_at: datetime,
+    ) -> AlertEvent | None:
+        try:
+            with self.db.begin_nested():
+                event = AlertEvent(
+                    rule_id=None,
+                    source=AlertEventSource.AGENT.value,
+                    user_id=user_id,
+                    asset_id=asset_id,
+                    target_type=AlertTargetType.SYMBOL.value,
+                    target_id=symbol,
+                    title=title,
+                    message=message,
+                    severity=severity,
+                    evidence=evidence,
+                    triggered_value={},
+                    dedup_key=dedup_key,
+                    triggered_at=triggered_at,
+                )
+                self.db.add(event)
+                self.db.flush()
+                self.db.add(
+                    AlertDelivery(
+                        alert_event_id=event.id,
+                        channel=AlertChannel.APP.value,
+                        status=AlertDeliveryStatus.SUCCESS.value,
+                        attempted_at=triggered_at,
+                        delivered_at=triggered_at,
+                    )
+                )
+                self.db.flush()
+        except IntegrityError:
+            if (
+                self.db.scalar(
+                    select(AlertEvent.id).where(
+                        AlertEvent.user_id == user_id,
+                        AlertEvent.dedup_key == dedup_key,
+                    )
+                )
+                is not None
+            ):
+                return None
+            raise
+        return event
 
     def get_by_id(self, alert_event_id: int) -> AlertEvent | None:
         return self.db.get(AlertEvent, alert_event_id)
@@ -49,8 +107,10 @@ class AlertEventRepository:
         read: bool | None = None,
         target_type: str | None = None,
     ) -> int:
-        stmt = select(func.count()).select_from(AlertEvent).where(
-            AlertEvent.user_id == user_id
+        stmt = (
+            select(func.count())
+            .select_from(AlertEvent)
+            .where(AlertEvent.user_id == user_id)
         )
         stmt = self._apply_filters(
             stmt,

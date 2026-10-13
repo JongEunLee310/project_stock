@@ -12,7 +12,8 @@ class AlertEventProjection(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
-    rule_id: int
+    rule_id: int | None
+    source: str
     user_id: int
     target_type: str
     target_id: str | None

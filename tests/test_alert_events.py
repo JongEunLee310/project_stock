@@ -46,7 +46,11 @@ def seed_alert_events(db: Session) -> list[AlertEvent]:
             title="Apple risk increased",
             message="News risk reached high.",
             severity="HIGH",
-            triggered_value={"current": "HIGH", "threshold": "HIGH", "previous": "MEDIUM"},
+            triggered_value={
+                "current": "HIGH",
+                "threshold": "HIGH",
+                "previous": "MEDIUM",
+            },
             evidence=[{"kind": "NEWS", "headline": "Supply concern"}],
             dedup_key="owner-aapl-high",
             read_at=None,
@@ -205,3 +209,98 @@ def test_detail_and_read_distinguish_forbidden_from_not_found(
     ):
         assert response.status_code == 404
         assert api_error(response)["code"] == "ALERT_EVENT_NOT_FOUND"
+
+
+def test_agent_event_creation_dedup_and_transaction(db: Session) -> None:
+    from sqlalchemy import select
+
+    from app.domains.alert_events.model import AlertDelivery
+    from app.domains.alert_events.repository import AlertEventRepository
+    from app.domains.assets.model import Asset
+
+    asset = Asset(symbol="AAPL", name="Apple", market="NASDAQ")
+    db.add(asset)
+    db.flush()
+    now = datetime.now(UTC)
+    repo = AlertEventRepository(db)
+    args: dict[str, Any] = dict(
+        user_id=1,
+        asset_id=asset.id,
+        symbol="AAPL",
+        title="점검 필요",
+        message="새 근거 확인",
+        severity="HIGH",
+        evidence=[{"kind": "BRIEF"}],
+        dedup_key="thesis-watch:1:2026-10-13",
+        triggered_at=now,
+    )
+    event = repo.create_agent_event(**args)
+    assert event is not None
+    assert event.rule_id is None and event.source == "AGENT"
+    assert event.user_id == 1 and event.asset_id == asset.id
+    assert event.target_type == "SYMBOL" and event.target_id == "AAPL"
+    assert event.title == "점검 필요" and event.message == "새 근거 확인"
+    assert event.severity == "HIGH" and event.evidence == [{"kind": "BRIEF"}]
+    assert event.triggered_value == {} and event.triggered_at == now
+    assert event.dedup_key == args["dedup_key"] and event.read_at is None
+    delivery = db.scalars(select(AlertDelivery)).one()
+    assert delivery.alert_event_id == event.id
+    assert delivery.channel == "APP" and delivery.status == "SUCCESS"
+    assert delivery.attempted_at.replace(tzinfo=UTC) == now
+    assert delivery.delivered_at is not None
+    assert delivery.delivered_at.replace(tzinfo=UTC) == now
+    assert delivery.error_code is None
+
+    asset.name = "Pending change"
+    assert repo.create_agent_event(**args) is None
+    assert db.is_active and asset.name == "Pending change"
+    assert db.scalars(select(AlertEvent)).all() == [event]
+    assert db.scalars(select(AlertDelivery)).all() == [delivery]
+    other = repo.create_agent_event(**{**args, "user_id": 2})
+    assert other is not None
+    db.rollback()
+    assert db.scalars(select(AlertEvent)).all() == []
+    assert db.scalars(select(AlertDelivery)).all() == []
+    assert db.get(Asset, asset.id) is None
+
+
+def test_agent_event_api_and_user_isolation(client: TestClient, db: Session) -> None:
+    from app.domains.alert_events.repository import AlertEventRepository
+
+    repo = AlertEventRepository(db)
+    own = repo.create_agent_event(
+        1, 1, "AAPL", "점검", "근거", "HIGH", [], "own", datetime.now(UTC)
+    )
+    other = repo.create_agent_event(
+        2, 1, "AAPL", "점검", "근거", "HIGH", [], "other", datetime.now(UTC)
+    )
+    assert own is not None and other is not None
+    db.commit()
+    set_current_user(1)
+    response = client.get(
+        "/api/v1/alert-events", params={"target_type": "SYMBOL", "read": False}
+    )
+    assert response.status_code == 200
+    assert api_meta(response)["total"] == 1
+    assert [item["id"] for item in api_data(response)] == [own.id]
+    for response in (
+        response,
+        client.get(f"/api/v1/alert-events/{own.id}"),
+        client.post(f"/api/v1/alert-events/{own.id}/read"),
+        client.post("/api/v1/alert-events/read", json={"alert_ids": [own.id]}),
+    ):
+        assert response.status_code == 200
+        data = api_data(response)
+        item = data[0] if isinstance(data, list) else data
+        assert item["rule_id"] is None and item["source"] == "AGENT"
+    db.refresh(own)
+    assert own.read_at is not None
+    for response in (
+        client.get(f"/api/v1/alert-events/{other.id}"),
+        client.post(f"/api/v1/alert-events/{other.id}/read"),
+        client.post("/api/v1/alert-events/read", json={"alert_ids": [other.id]}),
+    ):
+        assert response.status_code == 403
+        assert api_error(response)["code"] == "ALERT_EVENT_FORBIDDEN"
+    db.refresh(other)
+    assert other.read_at is None

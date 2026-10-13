@@ -13,7 +13,7 @@ from app.domains.alert_engine.types import (
     SnapshotProvider,
 )
 from app.domains.alert_events.model import AlertDelivery, AlertEvent
-from app.domains.alert_events.types import AlertDeliveryStatus
+from app.domains.alert_events.types import AlertDeliveryStatus, AlertEventSource
 from app.domains.alert_rules.model import AlertRule
 from app.domains.alert_rules.types import AlertChannel
 
@@ -113,6 +113,7 @@ class AlertEngineService:
             with self.db.begin_nested():
                 event = AlertEvent(
                     rule_id=rule.id,
+                    source=AlertEventSource.RULE.value,
                     user_id=rule.user_id,
                     target_type=rule.target_type,
                     target_id=rule.target_id,
