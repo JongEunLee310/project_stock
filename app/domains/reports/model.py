@@ -19,6 +19,15 @@ class ResearchReport(Base, TimestampMixin):
             postgresql_where=text("report_type = 'DAILY_BRIEF'"),
             sqlite_where=text("report_type = 'DAILY_BRIEF'"),
         ),
+        Index(
+            "uq_research_reports_source_ref",
+            "asset_id",
+            "report_type",
+            "source_ref",
+            unique=True,
+            postgresql_where=text("source_ref IS NOT NULL"),
+            sqlite_where=text("source_ref IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -29,6 +38,7 @@ class ResearchReport(Base, TimestampMixin):
         server_default=ReportType.ARTICLE.value,
         nullable=False,
     )
+    source_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
     brief_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     content: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     thesis_id: Mapped[int | None] = mapped_column(
