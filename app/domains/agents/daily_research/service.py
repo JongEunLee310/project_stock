@@ -10,6 +10,12 @@ from app.adapters.embedding.base import Embedder
 from app.adapters.llm.gateway import LLMGateway
 from app.adapters.llm.prompts.daily_brief import build_daily_brief_system_prompt
 from app.adapters.llm.types import LLMTaskType
+from app.adapters.obsidian.writer import (
+    DailyBriefNote,
+    DailyIndexEntry,
+    DailySignalLine,
+    ObsidianWriter,
+)
 from app.adapters.vector.base import VectorStore
 from app.adapters.vector.types import ChunkFilter
 from app.domains.agents.daily_research.citations import validate_brief_citations
@@ -71,12 +77,14 @@ class DailyResearchAgent:
         vector_store: VectorStore,
         gateway: LLMGateway,
         now: Callable[[], datetime] = utc_now,
+        obsidian_writer: ObsidianWriter | None = None,
     ) -> None:
         self.db = db
         self.embedder = embedder
         self.vector_store = vector_store
         self.gateway = gateway
         self.now = now
+        self.obsidian_writer = obsidian_writer
 
     def run(
         self, asset_ids: list[int] | None = None, brief_date: date | None = None
@@ -91,15 +99,40 @@ class DailyResearchAgent:
             else list(dict.fromkeys(asset_ids))
         )
         result = DailyResearchResult()
+        entries: list[DailyIndexEntry] = []
         for asset_id in targets:
             try:
-                self._run_asset(asset_id, brief_date, generated_at, result)
+                entries.append(
+                    self._run_asset(asset_id, brief_date, generated_at, result)
+                )
             except Exception as exc:
                 self.db.rollback()
                 result.failed[asset_id] = str(exc)
                 logger.warning(
                     "Daily research failed: asset_id=%s", asset_id, exc_info=True
                 )
+                if self.obsidian_writer is not None:
+                    try:
+                        asset = AssetRepository(self.db).get_by_id(asset_id)
+                    except Exception:
+                        self.db.rollback()
+                        asset = None
+                    entries.append(
+                        DailyIndexEntry(
+                            symbol=asset.symbol if asset else str(asset_id),
+                            asset_name=asset.name if asset else str(asset_id),
+                            headline="",
+                            new_item_count=0,
+                            note_path=None,
+                            failed_reason=str(exc),
+                        )
+                    )
+        if asset_ids is None and self.obsidian_writer is not None:
+            try:
+                self.obsidian_writer.write_daily_index(brief_date, entries)
+                result.notes_written += 1
+            except (OSError, ValueError) as exc:
+                result.note_failures["index"] = str(exc)
         return result
 
     def _run_asset(
@@ -108,10 +141,11 @@ class DailyResearchAgent:
         brief_date: date,
         generated_at: datetime,
         outcome: DailyResearchResult,
-    ) -> None:
+    ) -> DailyIndexEntry:
         asset = AssetRepository(self.db).get_by_id(asset_id)
         if asset is None:
             raise ValueError("asset not found")
+        symbol, asset_name = asset.symbol, asset.name
         reports = ResearchReportRepository(self.db)
         previous = reports.get_latest_daily_brief_before(asset_id, brief_date)
         start = (
@@ -244,16 +278,67 @@ class DailyResearchAgent:
         outcome.processed += 1
         if not items:
             outcome.skipped_no_news += 1
+        signals: list[DailySignalLine] = []
         if items and not synthesis_failed:
-            engine = RuleEngine(default_rules(), SignalRepository(self.db))
-            alerts = AlertService(self.db)
-            owners = WatchlistItemRepository(self.db).list_owner_ids_by_asset(asset_id)
-            for item in items:
-                for signal in engine.run(RuleContext(asset_id, item)):
-                    outcome.signals_created += 1
-                    for owner in owners:
-                        if alerts.create_alert(owner, signal) is not None:
-                            outcome.alerts_created += 1
+            try:
+                engine = RuleEngine(default_rules(), SignalRepository(self.db))
+                alerts = AlertService(self.db)
+                owners = WatchlistItemRepository(self.db).list_owner_ids_by_asset(
+                    asset_id
+                )
+                for item in items:
+                    for signal in engine.run(RuleContext(asset_id, item)):
+                        outcome.signals_created += 1
+                        signals.append(
+                            DailySignalLine(
+                                signal.signal_type,
+                                signal.score,
+                                signal.reason,
+                            )
+                        )
+                        for owner in owners:
+                            if alerts.create_alert(owner, signal) is not None:
+                                outcome.alerts_created += 1
+            except Exception as exc:
+                self.db.rollback()
+                outcome.failed[asset_id] = str(exc)
+                logger.warning(
+                    "Daily research signals failed: asset_id=%s",
+                    asset_id,
+                    exc_info=True,
+                )
+        note_path = None
+        if self.obsidian_writer is not None:
+            try:
+                note_path = self.obsidian_writer.write_daily_brief_note(
+                    DailyBriefNote(
+                        symbol=symbol,
+                        asset_name=asset_name,
+                        brief_date=brief_date,
+                        generated_at=generated_at,
+                        content=content,
+                        signals=signals,
+                    )
+                )
+                outcome.notes_written += 1
+            except (OSError, ValueError) as exc:
+                outcome.note_failures[asset_id] = str(exc)
+        reasons = [
+            reason
+            for reason in (
+                outcome.failed.get(asset_id),
+                outcome.note_failures.get(asset_id),
+            )
+            if reason is not None
+        ]
+        return DailyIndexEntry(
+            symbol=symbol,
+            asset_name=asset_name,
+            headline=content.headline,
+            new_item_count=content.stats.new_item_count,
+            note_path=note_path,
+            failed_reason="; ".join(reasons) if reasons else None,
+        )
 
     def _project(self, evidence: BriefEvidence) -> BriefEvidenceProjection:
         return BriefEvidenceProjection(
