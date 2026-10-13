@@ -2,6 +2,7 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -22,6 +23,7 @@ from app.domains.agents.daily_research.citations import validate_brief_citations
 from app.domains.agents.daily_research.schema import (
     BriefEvidence,
     BriefEvidenceProjection,
+    BriefFilingAnalysis,
     BriefPrice,
     BriefStats,
     BriefUpcoming,
@@ -30,6 +32,8 @@ from app.domains.agents.daily_research.schema import (
     DailyBriefSnapshot,
     DailyResearchResult,
 )
+from app.core.config import settings
+from app.domains.agents.filing_analysis.schema import FilingAnalysisContent
 from app.domains.alerts.service import AlertService
 from app.domains.assets.repository import AssetRepository
 from app.domains.earnings.repository import EarningsRepository
@@ -152,6 +156,29 @@ class DailyResearchAgent:
             if previous
             else generated_at - timedelta(hours=FIRST_RUN_LOOKBACK_HOURS)
         )
+        export_dir = (
+            self.obsidian_writer.export_dir
+            if self.obsidian_writer is not None
+            else settings.OBSIDIAN_EXPORT_DIR
+        )
+        filing_analyses = []
+        for report in reports.list_filing_analyses_created_between(
+            asset_id, start, generated_at
+        ):
+            analysis = FilingAnalysisContent.model_validate(report.content)
+            year = analysis.new_filing.fiscal_year
+            filing_analyses.append(
+                BriefFilingAnalysis(
+                    report_id=report.id,
+                    symbol=symbol,
+                    fiscal_year=year,
+                    headline=analysis.headline,
+                    max_importance=analysis.max_importance,
+                    note_path=(
+                        Path(export_dir) / "filings" / symbol / f"FY{year}-10-K"
+                    ).as_posix(),
+                )
+            )
         news = NewsItemRepository(self.db)
         items = news.list_by_asset_created_after(asset_id, start, MAX_NEW_ITEMS)
         total = news.count_by_asset_created_after(asset_id, start)
@@ -260,6 +287,7 @@ class DailyResearchAgent:
                 citation_corrections=corrections,
             ),
             no_news=not items,
+            filing_analyses=filing_analyses,
         )
         reports.upsert_daily_brief(
             asset_id,

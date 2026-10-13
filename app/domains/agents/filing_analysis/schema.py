@@ -154,3 +154,5 @@ class FilingAnalysisResult(BaseModel):
     llm_calls: int = 0
     signals_created: int = 0
     alerts_created: int = 0
+    notes_written: int = 0
+    note_failures: dict[int, str] = Field(default_factory=dict)

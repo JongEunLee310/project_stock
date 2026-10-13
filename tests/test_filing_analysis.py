@@ -481,3 +481,61 @@ def test_real_gateway_with_mock_provider_is_runnable(db: Session) -> None:
         section.limitations and "Mock" in section.limitations
         for section in content.sections.values()
     )
+
+
+@pytest.mark.parametrize(
+    "failure", [None, OSError("disk full"), ValueError("bad path")]
+)
+def test_note_success_and_failure_preserve_report_signal_alerts(
+    db: Session,
+    failure: Exception | None,
+) -> None:
+    target = pair(db)
+    owners(db, target)
+    writer = Mock()
+    writer.write_filing_analysis_note.side_effect = failure
+    agent = FilingAnalysisAgent(db, gateway(), obsidian_writer=writer)
+    result = agent.run([target.id])
+    assert result.analyzed == result.signals_created == 1 and result.alerts_created == 2
+    assert not result.failed
+    assert result.notes_written == (1 if failure is None else 0)
+    assert result.note_failures == (
+        {} if failure is None else {target.id: str(failure)}
+    )
+    written = writer.write_filing_analysis_note.call_args.args[0]
+    assert written.symbol == target.symbol and written.asset_name == target.name
+    assert written.content.headline == "새 위험"
+    assert db.scalars(select(ResearchReport)).one()
+    assert db.scalars(select(Signal)).one()
+    assert len(list(db.scalars(select(Alert)))) == 2
+    writer.reset_mock()
+    assert agent.run([target.id]).skipped_existing == 1
+    writer.write_filing_analysis_note.assert_not_called()
+
+
+def test_signal_failure_still_writes_note(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = pair(db)
+    monkeypatch.setattr(
+        "app.domains.agents.filing_analysis.service.SignalRepository.create",
+        Mock(side_effect=RuntimeError("signal broken")),
+    )
+    writer = Mock()
+    result = FilingAnalysisAgent(db, gateway(), obsidian_writer=writer).run([target.id])
+    assert result.notes_written == 1 and not result.note_failures
+    assert "signal broken" in result.failed[target.id]
+    writer.write_filing_analysis_note.assert_called_once()
+
+
+def test_absent_writer_and_skipped_pair_note_counts(db: Session) -> None:
+    target = pair(db)
+    result = FilingAnalysisAgent(db, gateway()).run([target.id])
+    assert result.notes_written == 0 and result.note_failures == {}
+    unpaired = asset(db, "MSFT")
+    writer = Mock()
+    result = FilingAnalysisAgent(db, gateway(), obsidian_writer=writer).run(
+        [unpaired.id]
+    )
+    assert result.skipped_no_pair == 1 and result.notes_written == 0
+    writer.write_filing_analysis_note.assert_not_called()
